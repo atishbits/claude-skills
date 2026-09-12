@@ -30,6 +30,10 @@ from datetime import date, datetime, timedelta
 import requests
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Fallback only: callers pass their own cache_dir. This file is often a symlink
+# into a skills repo, and Python resolves symlinks when it sets the import path,
+# so ROOT here can be the repo checkout rather than the portfolio project --
+# which would drop the cache next to the source instead of next to the data.
 CACHE_DIR = os.path.join(ROOT, "data", ".cache")
 CACHE_DAYS = 7
 WINDOW_DAYS = 365          # how far back a dealing counts as recent
@@ -181,14 +185,14 @@ def sast_summary(payload):
 
 # ---------------------------------------------------------------------- fetch
 
-def _cache_path(ticker):
-    return os.path.join(CACHE_DIR, f"{ticker}-nse-{date.today().isoformat()}.json")
+def _cache_path(ticker, cache_dir):
+    return os.path.join(cache_dir, f"{ticker}-nse-{date.today().isoformat()}.json")
 
 
-def _cached(ticker):
+def _cached(ticker, cache_dir):
     """Any NSE file for this ticker from the last CACHE_DAYS days."""
     newest, newest_day = None, None
-    for path in glob.glob(os.path.join(CACHE_DIR, f"{ticker}-nse-*.json")):
+    for path in glob.glob(os.path.join(cache_dir, f"{ticker}-nse-*.json")):
         m = re.search(r"-nse-(\d{4}-\d{2}-\d{2})\.json$", path)
         if not m:
             continue
@@ -204,11 +208,14 @@ def _cached(ticker):
         return None
 
 
-def fetch(ticker, session=None, force=False):
+def fetch(ticker, session=None, force=False, cache_dir=None):
     """Pledge, insider and SAST for one symbol. Never raises: on failure the
-    block says it is unavailable, which reads differently from "nothing found"."""
+    block says it is unavailable, which reads differently from "nothing found".
+
+    cache_dir belongs to the caller's project; see the note on CACHE_DIR."""
+    cache_dir = cache_dir or CACHE_DIR
     if not force:
-        hit = _cached(ticker)
+        hit = _cached(ticker, cache_dir)
         if hit is not None:
             hit["from_cache"] = True
             return hit
@@ -231,9 +238,9 @@ def fetch(ticker, session=None, force=False):
         except Exception as exc:                      # network, HTTP, or bad JSON
             out[key] = {"available": False, "error": str(exc)[:120]}
 
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(cache_dir, exist_ok=True)
     try:
-        with open(_cache_path(ticker), "w", encoding="utf-8") as fh:
+        with open(_cache_path(ticker, cache_dir), "w", encoding="utf-8") as fh:
             json.dump(out, fh)
     except OSError:
         pass
@@ -272,5 +279,8 @@ def flags(nse):
 if __name__ == "__main__":
     import sys
     for t in sys.argv[1:] or ["BAJFINANCE"]:
-        print(t, json.dumps(fetch(t.upper(), force="--refresh" in sys.argv), indent=2))
-        print("flags:", flags(fetch(t.upper())))
+        if t.startswith("-"):
+            continue
+        data = fetch(t.upper(), force="--refresh" in sys.argv)
+        print(t, json.dumps(data, indent=2))
+        print("flags:", flags(data))
