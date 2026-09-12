@@ -1,0 +1,17 @@
+{
+  "_comment": "Statutory constants only. Nothing here is specific to a person: anything that depends on someone's slab, bank or surcharge band lives in a profile file in the user's own folder, never in this repo. See tax-profile-template.json.",
+  "due_dates": {
+    "_comment": "Advance tax schedule per Section 208/211 (renumbered 424/425 under the Income Tax Act 2025). Cumulative % of estimated annual tax payable by each date, net of tax already paid this FY.",
+    "schedule": [
+      {"label": "Q1", "due": "15 June", "cum_pct": 0.15},
+      {"label": "Q2", "due": "15 September", "cum_pct": 0.45},
+      {"label": "Q3", "due": "15 December", "cum_pct": 0.75},
+      {"label": "Q4", "due": "15 March", "cum_pct": 1.00}
+    ]
+  },
+  "statutory": {
+    "_comment": "The same for every taxpayer. house_rent_standard_deduction_pct is Section 24(a); cess_multiplier is the 4% health and education cess.",
+    "house_rent_standard_deduction_pct": 0.30,
+    "cess_multiplier": 1.04
+  }
+}
