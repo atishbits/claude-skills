@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Invariant for this repo: it holds tools, never anyone's financial data.
+#
+# The skills here get symlinked into working folders that DO hold personal data
+# -- broker exports, per-stock notes with quantities and cost, generated
+# portfolio reports, tax paperwork -- and the scripts then run from inside this
+# checkout. A stray `git add` is a realistic way for that to end up public. This
+# hook blocks a commit whose staged files look like data rather than tooling.
+#
+# Install in a fresh clone:  git config core.hooksPath hooks
+# Deliberate override:       git commit --no-verify
+set -uo pipefail
+
+fail=0
+note() { echo "  ✗ $1"; fail=1; }
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+echo "pre-commit: checking staged files for personal data"
+
+while IFS= read -r f; do
+  base=$(basename "$f")
+  low=$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')
+
+  # The one holdings file allowed here: invented rows, shipped as a format guide.
+  case "$base" in holdings-template.csv) continue ;; esac
+
+  # Generated from someone's book, whatever it is called.
+  case "$low" in
+    portfolio.md|*/portfolio.md|stocks/*.md|*/stocks/*.md|data/*|*/data/*)
+      note "$f — generated from someone's holdings"; continue ;;
+  esac
+
+  # Source files are judged on their content further down, never on their name.
+  # A skill *about* tax is legitimate tooling: skills/advance-tax/SKILL.md must
+  # not trip a rule meant for a tax statement.
+  case "$low" in
+    *.md|*.py|*.sh|*.yml|*.yaml|*.toml|*.cfg|*.ini|*.txt) continue ;;
+  esac
+
+  case "$low" in
+    *.xlsx|*.xls|*.ods|*.pdf|*.ofx|*.qif)
+      note "$f — spreadsheets and statements do not belong in a tools repo"; continue ;;
+  esac
+  # Name checks use the basename: a path like skills/advance-tax/config.json is
+  # a skill's own configuration, not a tax document.
+  lowbase=$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')
+  case "$lowbase" in
+    *holdings*|*zerodha*|*tradebook*|*contract?note*|*ledger*|*pnl*)
+      note "$f — looks like a broker export"; continue ;;
+  esac
+  case "$lowbase" in
+    *tax*|*itr*|*form16*|*form-16*|*26as*|*ais*|*capital?gain*)
+      note "$f — a data file named like tax paperwork"; continue ;;
+  esac
+
+  # Everything personal in this project arrives as a CSV, and the only CSV with
+  # a reason to be here is the template skipped above. A genuine fixture can go
+  # in with --no-verify, deliberately.
+  case "$lowbase" in
+    *.csv) note "$f — CSV files are data; only holdings-template.csv belongs here" ;;
+  esac
+done <<< "$staged"
+
+# Content, checked against what is staged rather than the working tree. Lines
+# that are plainly showing a format rather than a value are skipped, so a skill
+# can document what a PAN looks like.
+added=$(git diff --cached --unified=0 --diff-filter=ACMR | grep '^+' | grep -v '^+++' \
+        | grep -viE 'example|placeholder|e\.g\.|format|xxxx|nnnn|<[a-z_ ]+>' || true)
+
+scan() { # pattern, description
+  if printf '%s' "$added" | grep -Eq "$1"; then
+    note "staged content matches $2"
+  fi
+}
+
+scan '\b[A-Z]{5}[0-9]{4}[A-Z]\b'            "a PAN number"
+scan '\b[0-9]{4}[ -][0-9]{4}[ -][0-9]{4}\b' "an Aadhaar number"
+scan '\bIN[0-9]{14}\b'                      "an NSDL demat ID"
+scan '\b12[0-9]{14}\b'                      "a CDSL demat ID"
+scan '\b[0-9]{9,18}\b.*(IFSC|ifsc)'         "bank account details"
+
+# The Zerodha export header, allowed only in the template handled above.
+if printf '%s' "$added" | grep -qE '"?Instrument"?,\s*"?Qty\."?,\s*"?Avg\. cost'; then
+  if ! printf '%s' "$staged" | grep -q 'holdings-template.csv'; then
+    note "staged content contains a broker export header row"
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  cat <<'MSG'
+
+Commit blocked: this repo must never contain personal financial data.
+
+Unstage it:                      git restore --staged <file>
+Genuine false positive:          git commit --no-verify
+
+A skill that needs personal input should read it at runtime from the user's own
+project folder, not carry a copy here.
+MSG
+  exit 1
+fi
+
+echo "pre-commit: clean"
+exit 0

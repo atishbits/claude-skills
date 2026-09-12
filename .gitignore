@@ -10,19 +10,15 @@ PORTFOLIO.md
 *holdings*.csv
 !skills/*/holdings-template.csv
 
-# Personal financial records have no reason to be here at all. Belt to the
-# pre-commit hook's braces, since `git add -f` walks straight past a hook only
-# when someone also passes --no-verify.
+# Statements and spreadsheets: the file types personal records actually arrive
+# in. Belt to the pre-commit hook's braces. Deliberate exception: `git add -f`.
+#
+# Matched by extension only, on purpose. Name patterns like *tax* would swallow
+# a legitimate skill -- skills/advance-tax/ is exactly that -- and an ignored
+# source file fails silently, which is worse than a noisy hook.
 *.xlsx
 *.xls
 *.ods
 *.pdf
 *.ofx
 *.qif
-*zerodha*
-*tradebook*
-*ledger*.csv
-*tax*
-*itr*
-*form16*
-*26as*
