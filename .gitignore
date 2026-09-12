@@ -9,3 +9,20 @@ stocks/
 PORTFOLIO.md
 *holdings*.csv
 !skills/*/holdings-template.csv
+
+# Personal financial records have no reason to be here at all. Belt to the
+# pre-commit hook's braces, since `git add -f` walks straight past a hook only
+# when someone also passes --no-verify.
+*.xlsx
+*.xls
+*.ods
+*.pdf
+*.ofx
+*.qif
+*zerodha*
+*tradebook*
+*ledger*.csv
+*tax*
+*itr*
+*form16*
+*26as*
