@@ -20,15 +20,73 @@ Run `python3 compute_advance_tax.py --help` for all options.
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
+# Statutory constants ship with the skill. Personal rates never do: they live in
+# a profile file in the user's own folder, or come in on the command line.
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "tax-profile-template.json"
+PROFILE_NAME = "tax-profile.json"
+
+PERSON_KEYS = ("fd_interest_rate", "fd_tax_pct", "savings_interest_rate",
+               "other_tax_pct", "surcharge_multiplier")
 
 
 def load_config():
     with open(CONFIG_PATH) as f:
         return json.load(f)
+
+
+def find_profile(explicit=None):
+    """--profile PATH, else $TAX_PROFILE, else tax-profile.json in the working
+    directory. Returns None when there is none: the rates can also be passed
+    as flags, and a missing file is only fatal if neither is given."""
+    for candidate in (explicit, os.environ.get("TAX_PROFILE"), Path.cwd() / PROFILE_NAME):
+        if candidate and Path(candidate).is_file():
+            return Path(candidate)
+    return None
+
+
+def person_from_args(args):
+    """Rates given directly on the command line, for a one-off computation that
+    saves nothing to disk."""
+    given = {k: getattr(args, k) for k in PERSON_KEYS if getattr(args, k, None) is not None}
+    return given or None
+
+
+def load_person(args, statutory):
+    """The person's rates, from --profile / $TAX_PROFILE / ./tax-profile.json,
+    overridden by anything passed explicitly."""
+    cfg = {}
+    profile_path = find_profile(args.profile)
+    if profile_path:
+        with open(profile_path) as f:
+            profile = json.load(f)
+        people = profile.get("people") or {}
+        if args.person not in people:
+            raise SystemExit(f"{profile_path} has no entry for {args.person!r}; "
+                             f"it defines: {', '.join(people) or 'nobody'}")
+        cfg.update(people[args.person])
+
+    cfg.update(person_from_args(args) or {})
+    cfg = {k: v for k, v in cfg.items() if not k.startswith("_")}
+
+    missing = [k for k in PERSON_KEYS if cfg.get(k) is None]
+    if missing:
+        raise SystemExit(
+            f"Missing rate(s) for {args.person!r}: {', '.join(missing)}.\n"
+            f"These are personal and are never stored with the skill. Either:\n"
+            f"  - copy {TEMPLATE_PATH} to ./{PROFILE_NAME} (or anywhere, and pass --profile\n"
+            f"    or set $TAX_PROFILE) and fill it in from last year's ITR, a salary slip\n"
+            f"    or an FD receipt, or\n"
+            f"  - pass them for this run: "
+            + " ".join(f"--{k.replace('_', '-')} N" for k in missing))
+    cfg.setdefault("house_rent_standard_deduction_pct",
+                   statutory["house_rent_standard_deduction_pct"])
+    cfg.setdefault("cess_multiplier", statutory["cess_multiplier"])
+    return cfg
 
 
 def resolve_cum_pct(config, installment=None, cum_pct=None):
@@ -66,7 +124,13 @@ def compute(person_cfg, fdr_total, savings_balance, dividends_total, house_rent_
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--person", required=True, help="Key under 'people' in config.json, e.g. self or spouse")
+    p.add_argument("--person", default="self",
+                   help="Key under 'people' in your tax profile (default: self)")
+    p.add_argument("--profile", help=f"Path to your {PROFILE_NAME} (default: $TAX_PROFILE, "
+                                     f"then {PROFILE_NAME} in the working directory)")
+    for key in PERSON_KEYS:
+        p.add_argument(f"--{key.replace('_', '-')}", type=float, dest=key,
+                       help=f"Override {key} for this run, instead of reading it from a profile")
     p.add_argument("--installment", help="Q1, Q2, Q3 or Q4 (maps to 15/45/75/100pct per config.json)")
     p.add_argument("--cum-pct", type=float, help="Override cumulative %% directly (e.g. 0.45), instead of --installment")
     p.add_argument("--fdr-total", type=float, required=True, help="Total FD principal (Rs)")
@@ -78,9 +142,7 @@ def main():
     args = p.parse_args()
 
     config = load_config()
-    if args.person not in config["people"]:
-        raise SystemExit(f"Unknown person {args.person!r}; known: {list(config['people'])}")
-    person_cfg = config["people"][args.person]
+    person_cfg = load_person(args, config["statutory"])
 
     cum_pct, cum_label = resolve_cum_pct(config, args.installment, args.cum_pct)
 

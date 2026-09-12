@@ -8,7 +8,9 @@ data/
 stocks/
 PORTFOLIO.md
 *holdings*.csv
-!skills/*/holdings-template.csv
+tax-profile.json
+*profile*.json
+!skills/*/*-template.*
 
 # Statements and spreadsheets: the file types personal records actually arrive
 # in. Belt to the pre-commit hook's braces. Deliberate exception: `git add -f`.

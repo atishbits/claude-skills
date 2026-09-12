@@ -1,0 +1,19 @@
+{
+  "_comment": "Copy this to your own folder as tax-profile.json and fill in real values. It never belongs in this repo. Every rate below is personal: read it off last year's ITR, a salary slip, or an FD receipt.",
+  "_where_each_number_comes_from": {
+    "fd_interest_rate": "the contracted rate on your fixed deposits, from the FD receipt (0.065 = 6.5%)",
+    "fd_tax_pct": "your marginal slab rate applied to FD interest, from last year's ITR",
+    "savings_interest_rate": "the rate your savings account pays (0.035 = 3.5%)",
+    "other_tax_pct": "your marginal slab rate for other-sources income, from last year's ITR",
+    "surcharge_multiplier": "1.0 below Rs 50L total income, 1.10 / 1.15 / 1.25 / 1.37 in the bands above it; check against last year's ITR computation"
+  },
+  "people": {
+    "self": {
+      "fd_interest_rate": 0.0,
+      "fd_tax_pct": 0.0,
+      "savings_interest_rate": 0.0,
+      "other_tax_pct": 0.0,
+      "surcharge_multiplier": 1.0
+    }
+  }
+}
