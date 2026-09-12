@@ -7,12 +7,12 @@ for a sector.
    2 with the tickers the user named. `--screen` works without a portfolio; the sector and swap
    reasoning below simply does not apply, and you should say so rather than inventing a book.
 1. **Pick candidates from sectors where the book is thin.** Read the sector list in
-   `PORTFOLIO.md` and avoid adding to the top of it. Remember that the CSV's tags understate some
+   the portfolio folder's `PORTFOLIO.md` and avoid adding to the top of it. Remember that the CSV's tags understate some
    themes, e.g. auto-cycle names tagged as Capital Goods.
 2. **Screen them, never pick from memory:**
 
    ```
-   python3 scripts/fetch_fundamentals.py --screen TICKER ...
+   python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py --screen TICKER ...
    ```
 
    It uses the same signal rows, technicals and one-off flags as the holdings, writes

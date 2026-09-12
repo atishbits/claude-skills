@@ -14,15 +14,19 @@ import json
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The cache belongs to the portfolio folder, not to wherever this script is
+# installed: $PORTFOLIO_ROOT, else the working directory. Same rule as
+# fetch_fundamentals.py, which wrote the cache in the first place.
+ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 CACHE_DIR = os.path.join(ROOT, "data", ".cache")
 
 
 def closes(ticker):
     files = sorted(glob.glob(os.path.join(CACHE_DIR, f"{ticker}-chart-*.json")))
     if not files:
-        sys.exit(f"No cached chart for {ticker}. Run: python3 scripts/fetch_fundamentals.py "
-                 f"{ticker}  (or --screen {ticker} if you don't hold it)")
+        sys.exit(f"No cached chart for {ticker} under {CACHE_DIR}.\n"
+                 f"Run fetch_fundamentals.py {ticker} first (or --screen {ticker} if you "
+                 f"don't hold it), from the portfolio folder.")
     with open(files[-1], encoding="utf-8") as fh:
         data = json.load(fh)
     for ds in data.get("datasets", []):

@@ -14,7 +14,7 @@ line each, not paragraphs. Match this structure:
 
 **Rating:** <BUY | HOLD | SELL / trim><, UPGRADED or DOWNGRADED from <prev> if it moved>
 **Action:** Now: <buy N / nothing / trim N>. Then: <what, at which level, or "nothing">.
-**Signal row:** Row <N> → *<row description from CHEATSHEET.md>* (confidence: <high | low, and why>)
+**Signal row:** Row <N> → *<row description from the cheat sheet>* (confidence: <high | low, and why>)
 
 **Snapshot (<date>):** Price ₹X (screener, <date><; CSV ₹Y on <date> if they differ by more than 2%>),
 <N>% up the 52wk range (₹low–high). P/E N<, forward range if trailing and run-rate diverge>.
