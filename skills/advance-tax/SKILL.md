@@ -4,10 +4,10 @@ description: >-
   Compute advance income tax due for a given installment date (15 Jun / 15 Sep / 15 Dec / 15 Mar),
   from estimated FD interest, savings balance, dividends and house rent income. Use when the user
   asks what advance tax they owe, for a specific due date or "next installment", for themselves or
-  a named person (e.g. a named person).
+  for another person they name.
 argument-hint: "[person] [due date | Q1-Q4] [FDR total] [savings balance] [dividends] [house rent] [already paid]"
 allowed-tools:
-  - Bash(python3 scripts/compute_advance_tax.py*)
+  - Bash(python3 *compute_advance_tax.py*)
   - Read
   - Edit
   - Glob
@@ -29,11 +29,20 @@ the Income Tax Act, 1961 (renumbered 424/425 under the Income Tax Act 2025):
 
 `Advance tax due now = cum_pct x estimated annual tax on other-sources income - tax already paid this FY (TDS + prior installments)`
 
+**Where the personal numbers live.** The skill ships statutory constants only — the due-date
+schedule, the Section 24(a) standard deduction and the 4% cess. Every rate that depends on the
+person (slab, FD and savings rates, surcharge band) comes from *their* `tax-profile.json`, which
+lives in their own folder and never in the skills repo. Run the script from that folder, or pass
+`--profile /path/to/tax-profile.json`. If a rate is missing the script says exactly which, and it
+accepts them as flags for a one-off run that saves nothing.
+
 ## Step 1 — identify who and which due date
 
-- **Person**: `self` or another profile key (config keys in `config.json`). If the user names someone not in
-  `config.json`, ask for their FD tax %, other-income tax % (slab), surcharge and cess multipliers
-  before proceeding — do not guess a slab.
+- **Person**: the key under `people` in their profile (`self` by default). If they name someone the
+  profile does not have, do not guess a slab: derive the rates from what they give you — last
+  year's ITR computation is the best source, a salary slip or Form 16 for the slab, an FD receipt
+  for the deposit rate — then either pass those as flags for this run, or offer to add an entry to
+  their profile. Never write those numbers into the skill folder.
 - **Due date**: map "15 June" / "next due date" / a specific date to Q1-Q4. If today's date is
   between two due dates and the user says "the upcoming one" or doesn't specify, pick the next
   unpassed due date in the current FY.
@@ -43,21 +52,20 @@ the Income Tax Act, 1961 (renumbered 424/425 under the Income Tax Act 2025):
 Ask for (or take from the user's message):
 1. **FDR total** — total FD principal across all fixed deposits (Rs).
 2. **Savings balance** — total balance across savings accounts (Rs). This is taxed as *balance x
-   assumed interest rate x tax%*, not the actual interest — same convention as the user's existing
-   `advanceTax.xlsx` ("Sheet A" / "Sheet B" sheets).
+   assumed interest rate x tax%*, not the actual interest — the convention carried over from the
+   spreadsheet this skill replaced.
 3. **Dividends total** — estimated total dividend income for the full FY (Rs). Taxed directly at the
    slab rate (not discounted through an interest-rate factor — that was a bug in the pre-existing
    spreadsheet, fixed here per the user's confirmation on 12 Sep 2026).
 4. **House rent total** — estimated total rental income for the full FY (Rs), before deductions.
-   `config.json`'s `house_rent_standard_deduction_pct` (30%, Section 24(a)) is applied automatically.
+   The 30% standard deduction (Section 24(a)) is applied automatically.
    If the user has home loan interest (Sec 24(b)) or municipal taxes paid to net off beyond the flat
    30%, ask and pass a reduced `--house-rent-total` (net of those) since the script only knows the
    flat statutory deduction.
 
-If the user doesn't have fresh numbers for one of these, check
-`<your advance-tax spreadsheet>` (sheets "Sheet A" / "Sheet B")
-for the most recent quarter's figures as a starting estimate, and say clearly which numbers you
-carried forward versus which the user gave you fresh.
+If the user doesn't have fresh numbers for one of these, ask them for the source rather than
+assuming: last year's ITR, a recent salary slip, an FD receipt, or their own spreadsheet. Say
+clearly which numbers you carried forward from an older figure and which they gave you fresh.
 
 Also ask **how much tax has already been paid this FY** — TDS credited so far (e.g. on FD interest,
 salary) plus any advance tax installments already paid. This nets off in the formula; if omitted,
@@ -65,9 +73,11 @@ assume 0 and say so (this will overstate what's due now).
 
 ## Step 3 — compute
 
+Run it from the user's own folder, the one holding their `tax-profile.json`:
+
 ```
-python3 scripts/compute_advance_tax.py \
-  --person <person key> \
+python3 ${CLAUDE_SKILL_DIR}/scripts/compute_advance_tax.py \
+  --person <key from their profile> \
   --installment <Q1|Q2|Q3|Q4> \
   --fdr-total <N> \
   --savings-balance <N> \
@@ -76,9 +86,11 @@ python3 scripts/compute_advance_tax.py \
   --already-paid <N>
 ```
 
-Never do this arithmetic yourself — always run the script. If a custom person's constants were
-gathered in Step 1, pass them by temporarily adding an entry to `config.json` under `people`, or ask
-the user whether to save it there permanently for reuse.
+Never do this arithmetic yourself — always run the script. If the rates were gathered in Step 1
+rather than read from a profile, pass them as flags (`--fd-tax-pct`, `--other-tax-pct`,
+`--surcharge-multiplier`, `--fd-interest-rate`, `--savings-interest-rate`) and offer to save them
+into the user's own `tax-profile.json` for next time. Never into the skill folder: it is a public
+repo, and a slab rate is personal information.
 
 ## Step 4 — report
 
