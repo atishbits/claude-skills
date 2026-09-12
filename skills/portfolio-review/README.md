@@ -11,30 +11,35 @@ section. `CHEATSHEET.md` explains all of it.
 
 ## Layout
 
-The skill expects to run from a project folder that holds your own data, with the scripts at the
-project root:
+Install the skill once; keep your data anywhere else. The scripts ship with the skill and are
+pointed at a portfolio folder at run time, so nothing personal ever sits next to the code.
 
 ```
-<your project>/
-  .claude/skills/portfolio-review/    SKILL.md, note-template.md, new-ideas.md (from this folder)
-  scripts/                            fetch_fundamentals.py, nse_disclosures.py, close_on.py
-  CHEATSHEET.md
-  zerodha_holdings_<date>.csv         your broker export — never commit this
-  stocks/                             one note per holding, written by the skill
-  data/                               daily snapshots and the fetch cache
-  PORTFOLIO.md                        generated summary table
+~/.claude/skills/portfolio-review -> <this folder>      installed once, for every project
+
+<your portfolio folder>/
+  zerodha_holdings_<date>.csv     your broker export — the only file you provide
+  stocks/                         one note per holding, written by the skill
+  data/                           daily snapshots and the fetch cache
+  PORTFOLIO.md                    generated summary table
 ```
 
-`SKILL.md` calls the scripts as `python3 scripts/fetch_fundamentals.py`, so they belong at the
-project root rather than inside the skill folder.
+The folder is chosen, in order, by `--root PATH`, then `$PORTFOLIO_ROOT`, then the working
+directory — so running from the portfolio folder just works, and `SKILL.md` tells Claude to do
+exactly that.
 
 ## Setup
 
 1. Python 3 with `requests`. `pdftotext` (poppler-utils) if you want guidance read from concall
    transcripts.
-2. Copy `SKILL.md`, `note-template.md` and `new-ideas.md` into
-   `<your project>/.claude/skills/portfolio-review/`, and `scripts/` and `CHEATSHEET.md` to the
-   project root.
+2. Install the skill for every project by linking this folder into your Claude skills directory:
+
+   ```
+   ln -s "$PWD/skills/portfolio-review" ~/.claude/skills/portfolio-review
+   ```
+
+   A symlink keeps the checkout as the single copy: `git pull` updates the skill in place. Copying
+   the folder instead works too, and then updates have to be copied again.
 
 ### Two ways to use it
 

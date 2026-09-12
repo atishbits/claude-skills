@@ -31,9 +31,28 @@ import requests
 
 import nse_disclosures
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE_DIR = os.path.join(ROOT, "data", ".cache")
-DATA_DIR = os.path.join(ROOT, "data")
+# The project root is where the *data* lives -- the holdings CSV, and the
+# stocks/, data/ and PORTFOLIO.md the run produces. It is deliberately not
+# derived from this file's location: the script is installed once inside a
+# skill and pointed at whichever folder holds the portfolio.
+#
+#   --root PATH   explicit, wins
+#   $PORTFOLIO_ROOT
+#   the working directory  (the skill runs from the data folder)
+def resolve_root(explicit=None):
+    return os.path.abspath(explicit or os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
+
+
+def set_root(path):
+    global ROOT, CACHE_DIR, DATA_DIR
+    ROOT = resolve_root(path)
+    DATA_DIR = os.path.join(ROOT, "data")
+    CACHE_DIR = os.path.join(DATA_DIR, ".cache")
+    return ROOT
+
+
+ROOT = CACHE_DIR = DATA_DIR = None
+set_root(None)
 CACHE_KEEP_DAYS = 2  # today + yesterday; older days are never read again
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -150,6 +169,8 @@ def latest_holdings_csv(required=True):
             sys.exit(f"No holdings CSV found in {ROOT}.\n"
                      "Put a broker export there as zerodha_holdings_<date>.csv (columns: "
                      "Instrument, Qty., Avg. cost, LTP, Invested, Cur. val, P&L, Net chg.),\n"
+                     "or point the script at the right folder with --root PATH "
+                     "(or $PORTFOLIO_ROOT),\n"
                      "or rate a stock without holding it: "
                      "fetch_fundamentals.py --screen TICKER")
         return None
@@ -1393,7 +1414,7 @@ def prune_cache():
 
 
 def parse_args(argv):
-    """`fetch_fundamentals.py [--refresh] [--screen] [--no-nse] [TICKER ...]`
+    """`fetch_fundamentals.py [--root PATH] [--refresh] [--screen] [--no-nse] [TICKER ...]`
 
     No tickers  -> full refresh of every holding, rebuilds the day's snapshot.
     Tickers     -> refresh just those and merge them into the day's snapshot.
@@ -1404,20 +1425,31 @@ def parse_args(argv):
                    has moved since the last run today.
     --no-nse    -> skip the NSE pledge/insider/SAST calls. They are cached for a
                    week, so only the first run of the week pays for them, but a
-                   cold full run is three extra calls per holding."""
-    force, screen, only, nse = False, False, [], True
-    for a in argv:
+                   cold full run is three extra calls per holding.
+    --root PATH -> the folder holding the portfolio data. Defaults to
+                   $PORTFOLIO_ROOT, then the working directory."""
+    force, screen, only, nse, root = False, False, [], True, None
+    args = list(argv)
+    while args:
+        a = args.pop(0)
         if a in ("--refresh", "-r"):
             force = True
         elif a == "--screen":
             screen = True
         elif a == "--no-nse":
             nse = False
+        elif a == "--root":
+            if not args:
+                sys.exit("--root needs a path")
+            root = args.pop(0)
+        elif a.startswith("--root="):
+            root = a.split("=", 1)[1]
         elif a.startswith("-"):
-            sys.exit(f"Unknown option: {a}\n"
-                     "Usage: fetch_fundamentals.py [--refresh] [--screen] [--no-nse] [TICKER ...]")
+            sys.exit(f"Unknown option: {a}\nUsage: fetch_fundamentals.py [--root PATH] "
+                     "[--refresh] [--screen] [--no-nse] [TICKER ...]")
         else:
             only.append(a.upper())
+    set_root(root)
     if screen and not only:
         sys.exit("--screen needs the candidate tickers to fetch.")
     return force, screen, only, nse

@@ -8,8 +8,8 @@ description: >-
   portfolio-wide sweep or refresh; or ideas for stocks outside the portfolio.
 argument-hint: "[TICKER ...] | [filter, e.g. \"not analysed in 30 days\"]"
 allowed-tools:
-  - Bash(python3 scripts/fetch_fundamentals.py*)
-  - Bash(python3 scripts/close_on.py*)
+  - Bash(python3 *fetch_fundamentals.py*)
+  - Bash(python3 *close_on.py*)
   - Read
   - Write
   - Edit
@@ -22,8 +22,13 @@ Request for this run: **$ARGUMENTS**
 
 You are helping with a long-term Indian equity portfolio held on Zerodha. The goal is long-term
 compounding: hold quality names, average down where something is genuinely undervalued, and avoid
-value traps. Ratings are advisory only — never place or suggest placing an order. Run every
-command from the project root.
+value traps. Ratings are advisory only — never place or suggest placing an order.
+
+**Where things live.** The scripts ship with this skill; the data does not. Run every command from
+the user's portfolio folder — the one holding their broker CSV — because that is where the script
+writes `data/`, `stocks/` and `PORTFOLIO.md`. If the working directory is somewhere else, pass
+`--root /path/to/that/folder`. Write `stocks/<TICKER>.md` notes into that same folder, never beside
+the skill.
 
 **Route the request first:**
 - **Tickers the user holds** → Steps 1, 3 and 4.
@@ -41,8 +46,8 @@ command from the project root.
 Scope the fetch to what you are actually reviewing:
 
 ```
-python3 scripts/fetch_fundamentals.py TICKER ...   # tickers named — refresh just those
-python3 scripts/fetch_fundamentals.py              # no tickers named — refresh everything
+python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py TICKER ...   # refresh just those
+python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py              # refresh everything
 ```
 
 A subset run refreshes the named tickers and **merges** them into today's snapshot, so the other
@@ -59,8 +64,8 @@ calls. Re-run freely — never skip Step 4 to save time.
 For stocks the user does not hold, use `--screen` instead (see `new-ideas.md`); it never touches the
 snapshot or `PORTFOLIO.md`.
 
-Add `--refresh` to bypass the cache and re-fetch live: `python3 scripts/fetch_fundamentals.py
---refresh AARTIIND`. Use it only when the user explicitly asks for fresh prices, or when a
+Add `--refresh` to bypass the cache and re-fetch live:
+`python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py --refresh AARTIIND`. Use it only when the user explicitly asks for fresh prices, or when a
 same-day price move is itself the subject — the ratios only change quarterly, so on an ordinary
 re-run the cache is the correct source.
 
@@ -109,7 +114,7 @@ For each ticker being researched (named in the request, or on the shortlist from
 1. **The prior note** at `stocks/<TICKER>.md`, if it exists. Its rating, date and reasoning are the
    baseline you are updating. If it recorded management guidance, you will score it this run.
 2. **This run's entry** in `data/snapshot-<today>.json`. Beyond the ratios, signal row, quarters,
-   pros/cons and `technicals` block (see `CHEATSHEET.md`), it carries:
+   pros/cons and `technicals` block (see `${CLAUDE_SKILL_DIR}/CHEATSHEET.md`), it carries:
    - `basis` (consolidated or standalone), `fiscal_year_end`, `latest_quarter_end`, `results_stale`
    - `price`, `fetched_at`, and the holdings CSV's `ltp` / `csv_date` / `price_vs_csv_pct`
    - `week52_check` — screener's 52-week range against the chart's own daily closes
@@ -193,8 +198,8 @@ A confident conclusion built on a bad input is worse than no conclusion. Do thes
   - **Check the year.** Results mix "Q1 FY26" and "Q1 FY27" reports under the same quarter name.
     HUL's Goldman, UBS and Nuvama targets from 2025 surfaced as current. An undated target is
     unusable.
-  - **Reference close:** `python3 scripts/close_on.py TICKER YYYY-MM-DD` prints the close on the
-    report date and flags anything beyond 15%. Never use an aggregator's "price at report" column:
+  - **Reference close:** `python3 ${CLAUDE_SKILL_DIR}/scripts/close_on.py TICKER YYYY-MM-DD`
+    prints the close on the report date and flags anything beyond 15%. Never use an aggregator's "price at report" column:
     Trendlyne's shows today's price on every row.
   - **Sources:** Trendlyne's research-reports page is dated but lags by weeks (in Sep it had no Aug
     reports for Hero). TradingView's Moneycontrol mirror ("Buy X; target of Rs N: Broker") and
@@ -331,7 +336,8 @@ summary. Say in the summary that the pass ran, and what it changed.
 
 ## Step 4 — re-run and summarise
 
-Run `python3 scripts/fetch_fundamentals.py` (no arguments, no `--refresh`) once more so
+Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py` (no arguments, no `--refresh`)
+once more so
 `PORTFOLIO.md` picks up the new ratings from the `stocks/<TICKER>.md` files you just wrote. Every
 ticker is already cached from Step 1, so this is a sub-second rebuild with no network calls — run
 the full form here even when Step 1 was scoped, so the whole table is rebuilt.
