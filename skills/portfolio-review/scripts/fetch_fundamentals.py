@@ -136,10 +136,23 @@ ROW_TEXT = {
 
 # --------------------------------------------------------------------------- io
 
-def latest_holdings_csv():
-    files = glob.glob(os.path.join(ROOT, "zerodha_holdings_*.csv"))
+def latest_holdings_csv(required=True):
+    """The newest broker export in the project root. Zerodha's own filename is
+    the common case, but any *holdings*.csv with the same columns works.
+
+    Returns None when there is none and the caller can live without it: a
+    --screen run rates stocks nobody owns, so it should not need a portfolio."""
+    files = (glob.glob(os.path.join(ROOT, "zerodha_holdings_*.csv"))
+             + glob.glob(os.path.join(ROOT, "*holdings*.csv")))
+    files = [f for f in set(files) if not os.path.basename(f).startswith("holdings-template")]
     if not files:
-        sys.exit("No zerodha_holdings_*.csv found in " + ROOT)
+        if required:
+            sys.exit(f"No holdings CSV found in {ROOT}.\n"
+                     "Put a broker export there as zerodha_holdings_<date>.csv (columns: "
+                     "Instrument, Qty., Avg. cost, LTP, Invested, Cur. val, P&L, Net chg.),\n"
+                     "or rate a stock without holding it: "
+                     "fetch_fundamentals.py --screen TICKER")
+        return None
     return max(files, key=os.path.getmtime)
 
 
@@ -1210,9 +1223,15 @@ def write_portfolio_md(results, csv_name, full_refresh_at=None, risk=None):
         L.append(f"*Prices fetched {oldest}"
                  + (f" — {newest}" if newest != oldest else "")
                  + (f". Last full refresh {full}.*\n" if full else ".*\n"))
-    L.append(f"**Invested ₹{total_inv:,.0f} · Current ₹{total_cur:,.0f} · "
-             f"P&L ₹{total_cur - total_inv:,.0f} "
-             f"({(total_cur - total_inv) / total_inv * 100:+.1f}%)**\n")
+    # A broker export with only Instrument and Qty. still builds a usable table,
+    # so the money line must survive having no cost or value columns at all.
+    if total_inv:
+        L.append(f"**Invested ₹{total_inv:,.0f} · Current ₹{total_cur:,.0f} · "
+                 f"P&L ₹{total_cur - total_inv:,.0f} "
+                 f"({(total_cur - total_inv) / total_inv * 100:+.1f}%)**\n")
+    else:
+        L.append("*No cost or value columns in the holdings CSV, so there is no P&L line "
+                 "and weights are unavailable.*\n")
 
     L.append("| Stock | Qty | Wt % | Avg cost | Price | P&L % | P/E | ROE | ROCE | Row | "
              "vs 200DMA | RSI | Rating | Last reviewed |")
@@ -1238,7 +1257,7 @@ def write_portfolio_md(results, csv_name, full_refresh_at=None, risk=None):
             f"{t['rsi14']:.0f}" + {"oversold": " ↓", "overbought": " ↑"}.get(t.get("rsi_note"), ""))
         L.append(
             f"| {s['ticker']} | {money(s['qty'], 0)} | {wt} | {money(s['avg_cost'])} | "
-            f"{money(s['price'], 2)} | {pnl:+.1f}% | "
+            f"{money(s['price'], 2)} | {'-' if pnl is None else format(pnl, '+.1f') + '%'} | "
             f"{'n/a' if s['pe'] is None else format(s['pe'], 'g')} | "
             f"{money(s['roe'], 1)} | {money(s['roce'], 1)} | {row_cell} | "
             f"{dma_cell} | {rsi_cell} | "
@@ -1510,8 +1529,8 @@ def merge_stocks(base, fresh, held):
 
 def main():
     force, screen, only, use_nse = parse_args(sys.argv[1:])
-    csv_path = latest_holdings_csv()
-    held = read_holdings(csv_path)
+    csv_path = latest_holdings_csv(required=not screen)
+    held = read_holdings(csv_path) if csv_path else []
     if screen:
         run_screen(only, held, force, use_nse)
         return

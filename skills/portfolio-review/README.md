@@ -32,11 +32,39 @@ project root rather than inside the skill folder.
 
 1. Python 3 with `requests`. `pdftotext` (poppler-utils) if you want guidance read from concall
    transcripts.
-2. Export your holdings as `zerodha_holdings_<date>.csv` in the project root, with the columns
-   `Instrument, Qty., Avg. cost, LTP, Invested, Cur. val, P&L, Net chg.` Any broker export works
-   if you rename the columns to match.
-3. `python3 scripts/fetch_fundamentals.py` builds `data/snapshot-<today>.json` and `PORTFOLIO.md`.
-4. In Claude Code: `/portfolio-review TICKER ...`, or just ask about a holding.
+2. Copy `SKILL.md`, `note-template.md` and `new-ideas.md` into
+   `<your project>/.claude/skills/portfolio-review/`, and `scripts/` and `CHEATSHEET.md` to the
+   project root.
+
+### Two ways to use it
+
+**Just rate a stock — no portfolio needed.** Nothing to set up beyond step 1:
+
+```
+python3 scripts/fetch_fundamentals.py --screen TITAN
+```
+
+Then ask Claude about it. `--screen` writes `data/screen-<today>.json` and touches nothing else.
+The portfolio-level parts of a review (position size, sector weight, what to swap) simply do not
+apply, and the skill says so rather than inventing a book.
+
+**Review your own holdings.** Put a broker export in the project root as
+`zerodha_holdings_<date>.csv` (any `*holdings*.csv` name works) with these columns:
+
+```
+Instrument,Qty.,Avg. cost,LTP,Invested,Cur. val,P&L,Net chg.
+```
+
+`holdings-template.csv` in this folder is a working example — Zerodha's own export already matches,
+and other brokers need the headers renamed. Only `Instrument` is truly required: with just
+`Instrument` and `Qty.` you still get every rating, minus P&L and position weights.
+
+Then `python3 scripts/fetch_fundamentals.py` builds `data/snapshot-<today>.json` and
+`PORTFOLIO.md`, and in Claude Code you run `/portfolio-review TICKER ...` or just ask about a
+holding.
+
+A first full run of ~70 holdings takes around 15 minutes, mostly waiting out screener's rate limit.
+Everything is cached per day afterwards, so later runs that day rebuild in under a second.
 
 ## Data sources
 

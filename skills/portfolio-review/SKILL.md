@@ -1,7 +1,7 @@
 ---
 name: portfolio-review
 description: >-
-  Review the user's long-term Indian equity portfolio (Zerodha, ~73 holdings). Refreshes
+  Review a long-term Indian equity portfolio from a broker export (Zerodha's by default). Refreshes
   fundamentals from screener.in, places each stock in the P/E vs ROE/ROCE signal rows, rates
   BUY / HOLD / SELL-trim, and writes stocks/<TICKER>.md notes. Use when the user asks
   about their holdings or a named stock: whether to buy, add, hold, trim or sell; a
@@ -47,7 +47,7 @@ python3 scripts/fetch_fundamentals.py              # no tickers named — refres
 
 A subset run refreshes the named tickers and **merges** them into today's snapshot, so the other
 holdings keep the rows the last full run gave them. Either way `data/snapshot-<today>.json` and
-`PORTFOLIO.md` end up complete — 73 holdings, not 1.
+`PORTFOLIO.md` end up complete — every holding in the CSV, not just the one you named.
 
 If today's snapshot does not exist yet, a subset run says so and promotes itself to a full refresh;
 let it. That is the first run of the day paying for the network, and it is what makes every later
@@ -84,9 +84,10 @@ Report what changed at the portfolio level and stop. Do not research anything:
   "financials stale" flag first, since every ratio on that row is suspect
 - any holding whose signal row moved since the previous `data/snapshot-*.json`
 - the "Risk and concentration" section: beta against the Nifty, the book's 1-year return against
-  the index at today's weights, effective positions against the 73 held, and the tail of
+  the index at today's weights, effective positions against the number actually held, and the tail of
   sub-0.5% positions. Report the effective-position count whenever the user asks whether they
-  hold too many names — 73 holdings is not 73 bets, and that section says how many it really is.
+  hold too many names — a long list of holdings is not the same number of bets, and that section
+  says how many it really is.
   The 1-year return line applies today's weights to each holding's own 1-year price move, so it is
   not the user's actual return: never present it as their performance.
 - the "Notes on an old template" list, if present
