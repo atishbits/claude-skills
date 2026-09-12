@@ -1488,7 +1488,9 @@ def fetch_nse(ticker, session, stats, enabled):
     if not enabled:
         return None
     try:
-        data = nse_disclosures.fetch(ticker, session)
+        # Pass this project's cache dir: the module can be imported through a
+        # symlink, in which case its own idea of ROOT is the skills repo.
+        data = nse_disclosures.fetch(ticker, session, cache_dir=CACHE_DIR)
     except Exception as exc:                       # the module fails soft; this is the belt
         return {"available": False, "error": str(exc)[:120]}
     stats["nse_cached" if data.get("from_cache") else "nse_fetched"] += 1

@@ -1,0 +1,11 @@
+# A skill folder here may be symlinked into a working project, so the scripts
+# run from inside this checkout. Keep what that produces out of git.
+__pycache__/
+*.pyc
+
+# Anything a run writes: caches, snapshots, generated reports, broker exports.
+data/
+stocks/
+PORTFOLIO.md
+*holdings*.csv
+!skills/*/holdings-template.csv
