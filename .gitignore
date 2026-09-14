@@ -10,6 +10,15 @@ PORTFOLIO.md
 *holdings*.csv
 tax-profile.json
 *profile*.json
+
+# What an itr2-filing-assistant run writes into a working folder: one
+# conclusions file per schedule, plus the filled worksheet. Named distinctly
+# from the skill's own sources (references/00_intake_checklist.md and friends)
+# so ignoring these never swallows the tooling.
+ITR2_*.md
+00_Document_Review*.md
+sbi-tt-rates.json
+
 !skills/*/*-template.*
 
 # Statements and spreadsheets: the file types personal records actually arrive

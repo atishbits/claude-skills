@@ -55,3 +55,12 @@ skills/
 3. Write the instructions the skill should follow
 4. Keep the invariant above: no real data in examples, and anything the skill generates from a
    user's own files belongs in `.gitignore`
+
+## License
+
+[MIT](LICENSE). Take these, fork them, adapt them.
+
+The skills that touch money — `advance-tax`, `itr2-filing-assistant`, `portfolio-review` — are
+tooling for my own use, published in case they are useful. They are not tax, legal or investment
+advice, and the MIT warranty disclaimer means exactly what it says: verify anything that matters
+with your own CA or adviser before acting on it.
