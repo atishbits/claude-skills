@@ -87,7 +87,13 @@ Report what changed at the portfolio level and stop. Do not research anything:
 - total P&L, the row distribution, and the top of the sector-exposure list
 - everything under "Worth a look" in `PORTFOLIO.md`, which is mechanical flags only — call out any
   "financials stale" flag first, since every ratio on that row is suspect
-- any holding whose signal row moved since the previous `data/snapshot-*.json`
+- any holding whose signal row moved since the previous `data/snapshot-*.json` — before calling a
+  move a "threshold crossing," check `profit_yoy_pct` (or the one-off–adjusted figure in
+  `one_offs`) for that ticker. A P/E rising through a row boundary because profit fell is an
+  earnings problem, not multiple noise, and must be named as such rather than filed as minor.
+  Example: STOCKA moves from row 4 to row 3 because its P/E crossed 30 as TTM profit fell ~40% YoY
+  (no one-off), not because the price re-rated — that is the single most material item to flag
+  in the run, not an aside.
 - the "Risk and concentration" section: beta against the Nifty, the book's 1-year return against
   the index at today's weights, effective positions against the number actually held, and the tail of
   sub-0.5% positions. Report the effective-position count whenever the user asks whether they
@@ -207,6 +213,20 @@ A confident conclusion built on a bad input is worse than no conclusion. Do thes
     StreetInsider (foreign-house target changes) fetch reliably. Business Standard and Zee Business
     block fetches (403/402), so use their search snippets to find a call, then confirm it
     elsewhere.
+  - **Broad "consensus" aggregators (S&P/stockanalysis.com, Trendlyne's own blended line, Univest,
+    Alpha Spread) are not a cross-check baseline.** Two pulls of the same aggregator on the same
+    day for the same stock have disagreed by 5–10% (e.g. ₹1,200 avg / ₹1,300 high from one
+    pull and ₹1,260 avg / ₹1,400 high from another, on the same day). If your named/dated
+    average disagrees with an aggregator's headline number, that is not by itself evidence of an
+    error — check whether the aggregator itself is stable before revising a target down to match
+    it. The named, dated, post-result average is the deliberately narrower and more defensible
+    number; don't let a noisier, wider one overrule it without a real reason (a target you missed,
+    one that's actually stale, or a math error in your own average).
+  - **If no named, dated brokerage target exists**, say so precisely rather than "no analyst
+    coverage": name that an unattributed aggregator figure may exist and was excluded per the rule
+    above, so the reader knows the gap is a sourcing choice, not a blank screen. An aggregator
+    consensus that is correctly excluded and then described to the user as "no analyst coverage"
+    overstates the gap.
 - **The latest result**, and the quality of its growth (see 3d).
 - **Management guidance** from the latest earnings call or investor presentation: what was guided,
   and when it was said. Guidance may be missed, but it must be recorded so the next note can score
@@ -228,6 +248,13 @@ A confident conclusion built on a bad input is worse than no conclusion. Do thes
   figure is gross, excludes cash, and comes from the last annual or half-year balance sheet, so the
   quarter's investor presentation is usually the better source. Date whichever you use.
 - Corporate actions, capacity changes, management changes, regulatory news.
+  - **Date a corporate action (OFS, buyback, block deal) from news coverage, not from the NSE
+    `sast` filing date alone.** The filing date can lag the actual event by a week or more —
+    a `sast` block can date an OFS more than a week after the day it actually opened. A week's difference changes how "recent" the overhang reads and
+    whether other price action in between is being correctly attributed to it. Search
+    `<company> OFS/buyback <month> <year>` to confirm the actual date, and note if it was
+    oversubscribed — that's a materially different read on whether the overhang has cleared than
+    the bare fact that a sale happened.
 
 Prefer recent Indian market sources. If coverage is thin, which is common for smallcaps, say so
 rather than inventing a consensus.
@@ -279,6 +306,11 @@ BUY, HOLD or SELL / trim. Weigh:
   assumption stated. Anchor the base case on management guidance or consensus EPS, not a number you
   picked. Screener's dividend yield is trailing. When earnings are falling, give a forward yield
   from guided EPS times the usual payout (e.g. 5.5% trailing, ~4.5% forward).
+  Even when `pe_runrate_diverges` is false (the gap didn't trip the script's threshold), if
+  `pe_runrate` is meaningfully higher than trailing P/E because of one soft quarter, lead with the
+  run-rate figure in any one-line summary, not just in the note's fine print. A note can
+  correctly say "size any add with 19x in mind, not the headline 12x," while a later summary to
+  the user quotes only 12 — the caveat has to survive compression, not just exist in the note.
 - **Portfolio context.** Position weight, sector weight, and whether a same-sector holding already
   does the job better. The comparison for adding to STOCKA is STOCKA against STOCKB, its same-sector peer in the book,
   not STOCKA against cash. The CSV's sector tags understate some themes: truck and tractor-engine
@@ -348,5 +380,12 @@ Then give the user a short summary: the rating and Action for each researched ti
 versus the previous note (corrections first), and any rotation worth considering: where to trim
 and where that money could go, given the rest of the book and its sector weights. Keep it to a few
 sentences per stock.
+
+**When multiple BUYs share a sector or theme, say so in the summary, not just in each note.** Each
+note's own Portfolio context line can carry a concentration caveat, but if the summary lists them
+as parallel, independent picks, the reader loses that they're two adds to the same bet. For
+example, BANKX and BANKY (both Financial Services, already a quarter of the book) and STOCKA and
+STOCKB (both auto-linked, about a tenth of it) presented as four separate BUYs with no mention
+that they pair up — state the shared exposure explicitly when it's there.
 
 Close with: *Not investment advice — verify prices and figures before acting.*
