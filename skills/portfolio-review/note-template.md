@@ -1,4 +1,4 @@
-# Per-stock note format — `stocks/<TICKER>.md`
+# Per-stock note format — `data/skill-data/stocks/<TICKER>.md`
 
 Read this before writing or rewriting any note. `PORTFOLIO.md` checks every note for the required
 fields and lists any that are missing under "Notes on an old template".
