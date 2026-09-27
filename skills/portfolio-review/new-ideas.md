@@ -9,6 +9,11 @@ for a sector.
 1. **Pick candidates from sectors where the book is thin.** Read the sector list in
    the portfolio folder's `PORTFOLIO.md` and avoid adding to the top of it. Remember that the CSV's tags understate some
    themes, e.g. auto-cycle names tagged as Capital Goods.
+   Secular themes are one more way to choose which thin sector to look at first: ICE to EV,
+   renewables, AI-linked capex (power, cables, data centres), and the public-to-private shift in
+   defence, space and energy have been multi-year value-migration stories in India. This is a
+   sourcing hint, not a substitute for the screen and research in steps 2–4 below — a stock riding
+   a real theme still has to clear the same earnings-quality bar as anything else.
 2. **Screen them, never pick from memory:**
 
    ```

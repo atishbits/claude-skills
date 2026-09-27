@@ -954,6 +954,23 @@ def is_financial(sector_info, ticker):
     return any(w in haystack for w in FINANCIAL_SECTOR_WORDS)
 
 
+LENDER_INDUSTRY_WORDS = ("bank", "non banking financial", "nbfc", "insurance")
+
+
+def is_lender(sector_info):
+    """Businesses whose operating cash flow is really deposit/loan/premium
+    movement rather than a quality signal -- not every 'Financial Services'
+    company `is_financial` catches. A bank or NBFC's cash flow is deposit and
+    loan movement, and an insurer's is premium collected against claims paid
+    and investment purchases; neither is comparable to ordinary CFO. An AMC
+    or exchange has ordinary operating cash flow and real borrowings that are
+    just as meaningful a signal as any non-financial's. HDFCAMC was wrongly
+    getting cash_flow and leverage suppressed as "lender: n/a" under the
+    broader check."""
+    industry = (sector_info.get("industry") or "").lower()
+    return any(w in industry for w in LENDER_INDUSTRY_WORDS)
+
+
 def classify(pe, roe, roce, sector_info, ticker):
     """Return signal row 1-4 plus the reasoning behind it."""
     band, basis = pe_band(sector_info, ticker)
@@ -1143,7 +1160,7 @@ def build(holding, doc, chart=None, csv_date=None, bench=None, nse=None):
         "pe_runrate_diverges": bool(pe and pe_rr and max(pe, pe_rr) / min(pe, pe_rr) > 2),
         "roe": roe,
         "roce": roce,
-        "leverage": leverage(doc, detail["financial"]),
+        "leverage": leverage(doc, is_lender(sector_info)),
         "market_cap_cr": mcap,
         "book_value": to_float(ratios.get("Book Value", "")),
         "dividend_yield": to_float(ratios.get("Dividend Yield", "")),
@@ -1159,7 +1176,7 @@ def build(holding, doc, chart=None, csv_date=None, bench=None, nse=None):
         "sales_yoy_pct": pct_change(quarters.get("sales")),
         "profit_yoy_pct": pct_change(quarters.get("net_profit")),
         "one_offs": one_off_check(quarters, mcap),
-        "cash_flow": parse_cash_flow(doc, detail["financial"]),
+        "cash_flow": parse_cash_flow(doc, is_lender(sector_info)),
         "ratio_history": parse_ratio_history(doc),
         "growth_ranges": parse_growth_ranges(doc),
         "shareholding": parse_shareholding(doc),

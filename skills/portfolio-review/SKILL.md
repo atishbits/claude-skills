@@ -108,6 +108,14 @@ Report what changed at the portfolio level and stop. Do not research anything:
   says how many it really is.
   The 1-year return line applies today's weights to each holding's own 1-year price move, so it is
   not the user's actual return: never present it as their performance.
+- the biggest rupee P&L contributors and drags across the book, not just the largest percentage
+  movers — a small position's 40% gain can matter less than a large position's 8% move. The CSV
+  and snapshot have position size and price move; compute this rather than eyeballing percentages.
+- when the user asks how the book's sectors compare to the market, not just to itself: the
+  snapshot's `sector_weight_pct` is the book's own concentration, not the Nifty's sector
+  composition. Get the Nifty's sector weights from a WebSearch (same sourcing discipline as
+  consensus targets — dated, from a named source) rather than approximating them, and say plainly
+  if you can't find a current breakdown.
 - the "Notes on an old template" list, if present
 
 Then tell the user they can run `/portfolio-review TICKER ...` to get a rating on any of them.
@@ -286,6 +294,45 @@ BUY, HOLD or SELL / trim. Weigh:
   margin. ITC's cigarette volume fell only 5% because ITC absorbed tax, and cigarette EBIT fell 31%.
 - **The balance sheet.** Leverage and its direction. Rising debt during a margin squeeze is how a
   cyclical problem becomes a structural one.
+- **Related-party transactions**, from the latest annual report or Secretarial Compliance Report's
+  notes to accounts — the snapshot carries neither, and this is easy to skip for lack of a concrete
+  method, so use one: fetch the annual report PDF from the company's investor page or BSE/NSE
+  filings, then `pdftotext -layout <file>.pdf -` (the `-layout` flag matters — plain `pdftotext` on
+  a multi-column financial table silently scrambles which number belongs to which line, and
+  misattributed a dividend-to-parent line as a fee payment on one run, with no error to catch it),
+  then read the RPT schedule itself. **Don't grep for the section title alone** — "related party"
+  and "contingent liabilities" recur as running headers and TOC/cross-reference entries dozens of
+  times before the note with actual numbers in a large annual report, so `grep -inA5 "related
+  party"` lands on a heading, not the transaction table. Grep for a distinctive line-item label
+  instead ("Purchase of Goods", "Guarantees", "Dividend received", "Sale of Goods") to land on the
+  disclosure with figures. Loans, guarantees or sales to promoter-linked entities off market terms,
+  or transactions made without required Audit Committee approval, are red flags on their own,
+  orthogonal to the pledge and insider checks above; size any RPT you find against net worth before
+  calling it material — a small one that was later ratified is a line, not a rating driver.
+  **Contingent liabilities need sector-aware reading, not a blanket check.** `pros_cons.cons`
+  sometimes already carries screener's auto-flagged figure — for a bank or NBFC this is off-balance-
+  sheet notional (guarantees, forward contracts, derivatives) that is structurally large for that
+  sector and not comparable to the same line for a non-financial company; don't flag it as a red
+  flag by its size alone without checking the notes-to-accounts breakup for anything unusual inside
+  it.
+- **Growth against the price paid — but only after the peak-earnings check above, not instead of
+  it.** Read `growth_ranges`' 3/5-year profit CAGR alongside the P/E as a rough GARP cross-check
+  (P/E at or below the CAGR is priced fairly for its growth). This CAGR is backward-looking, so if
+  the signal row was just re-placed on guided forward earnings (exclusivity ending, commodity peak,
+  one-off), do the same here: a favourable backward PEG built on earnings the business is losing is
+  not a "cheap growth" signal, it's the peak-earnings case wearing a growth costume. Natco read
+  PEG ≈ 0.5 on a +28% five-year CAGR that was entirely the Revlimid exclusivity window, while
+  forward guidance implied a profit *decline* — use the guided figure, not the trailing CAGR, once
+  3d's exclusivity check has already fired.
+- **Reinvestment**, as a qualitative read, not a computed ratio — for manufacturing, mining and
+  pharma only; the concept doesn't fit IT, banks or NBFCs. The snapshot has no fixed-assets/CWIP
+  field, so a fixed-assets-plus-working-capital-against-cash-flow number means scraping screener's
+  balance sheet by hand for a figure that is often not informative anyway: it misses M&A-funded
+  growth entirely (Natco's actual reinvestment was the Adcock stake increase, invisible to this
+  formula) and says nothing a bank/IT exclusion doesn't already say for those sectors. Use it only
+  as a qualitative sense-check — is the company visibly plowing cash into capex while `roce_fading`
+  is true, or is growth coming from M&A/stake buys the ratio can't see — and skip computing it
+  rather than reporting a number with no real insight behind it.
 - **Whether profit becomes cash.** `cash_flow.cfo_to_pat` below ~0.6 over five years says reported
   profit is not arriving as cash, which is the value-trap tell the ratios miss. Read it with
   `ratio_history.debtor_days`: profit that stays in receivables is the usual reason. Both are
