@@ -18,7 +18,7 @@ import sys
 # installed: $PORTFOLIO_ROOT, else the working directory. Same rule as
 # fetch_fundamentals.py, which wrote the cache in the first place.
 ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
-CACHE_DIR = os.path.join(ROOT, "data", ".cache")
+CACHE_DIR = os.path.join(ROOT, "data", "skill-data", ".cache")
 
 
 def closes(ticker):

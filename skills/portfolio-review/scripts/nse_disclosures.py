@@ -34,7 +34,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # into a skills repo, and Python resolves symlinks when it sets the import path,
 # so ROOT here can be the repo checkout rather than the portfolio project --
 # which would drop the cache next to the source instead of next to the data.
-CACHE_DIR = os.path.join(ROOT, "data", ".cache")
+CACHE_DIR = os.path.join(ROOT, "data", "skill-data", ".cache")
 CACHE_DAYS = 7
 WINDOW_DAYS = 365          # how far back a dealing counts as recent
 STALE_AFTER_DAYS = 270     # newest filing older than this: treat coverage as unusable

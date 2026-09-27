@@ -16,7 +16,7 @@ for a sector.
    ```
 
    It uses the same signal rows, technicals and one-off flags as the holdings, writes
-   `data/screen-<today>.json`, and leaves the snapshot and `PORTFOLIO.md` alone. Held tickers are
+   `data/skill-data/screen-<today>.json`, and leaves the snapshot and `PORTFOLIO.md` alone. Held tickers are
    skipped, because they belong in the normal run. Ratios move every quarter, so a list from
    memory is stale.
 3. **Drop the row-1 names whose earnings are not normal, before researching anything.** The screen
