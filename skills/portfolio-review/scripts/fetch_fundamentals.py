@@ -31,27 +31,39 @@ import requests
 
 import nse_disclosures
 
-# The project root is where the *data* lives -- the holdings CSV, and the
-# stocks/, data/ and PORTFOLIO.md the run produces. It is deliberately not
-# derived from this file's location: the script is installed once inside a
-# skill and pointed at whichever folder holds the portfolio.
+# The project root is where the *data* lives. Two tiers under it, both
+# gitignored wholesale by the repo's `data/` rule regardless of which root is
+# in use:
+#
+#   data/                 what you provide -- the holdings CSV or a
+#                         zerodha-portfolio-<date>.md export
+#   data/skill-data/      what this script fetches or writes -- the fetch
+#                         cache, snapshot/screen JSON, stocks/<T>.md notes and
+#                         PORTFOLIO.md
+#
+# It is deliberately not derived from this file's location: the script is
+# installed once inside a skill and pointed at whichever folder holds the
+# portfolio.
 #
 #   --root PATH   explicit, wins
 #   $PORTFOLIO_ROOT
-#   the working directory  (the skill runs from the data folder)
+#   the working directory  (the skill runs from the portfolio folder, which
+#                          may just be this skill's own checkout)
 def resolve_root(explicit=None):
     return os.path.abspath(explicit or os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 
 
 def set_root(path):
-    global ROOT, CACHE_DIR, DATA_DIR
+    global ROOT, DATA_DIR, SKILL_DATA_DIR, CACHE_DIR, STOCKS_DIR
     ROOT = resolve_root(path)
     DATA_DIR = os.path.join(ROOT, "data")
-    CACHE_DIR = os.path.join(DATA_DIR, ".cache")
+    SKILL_DATA_DIR = os.path.join(DATA_DIR, "skill-data")
+    CACHE_DIR = os.path.join(SKILL_DATA_DIR, ".cache")
+    STOCKS_DIR = os.path.join(SKILL_DATA_DIR, "stocks")
     return ROOT
 
 
-ROOT = CACHE_DIR = DATA_DIR = None
+ROOT = DATA_DIR = SKILL_DATA_DIR = CACHE_DIR = STOCKS_DIR = None
 set_root(None)
 CACHE_KEEP_DAYS = 2  # today + yesterday; older days are never read again
 
@@ -155,20 +167,26 @@ ROW_TEXT = {
 
 # --------------------------------------------------------------------------- io
 
-def latest_holdings_csv(required=True):
-    """The newest broker export in the project root. Zerodha's own filename is
-    the common case, but any *holdings*.csv with the same columns works.
+def latest_holdings_file(required=True):
+    """The newest holdings input under data/: either a broker CSV export
+    (zerodha_holdings_*.csv, or any *holdings*.csv with the same columns) or a
+    lot-level Zerodha Console export (zerodha-portfolio-<date>.md).
 
     Returns None when there is none and the caller can live without it: a
     --screen run rates stocks nobody owns, so it should not need a portfolio."""
-    files = (glob.glob(os.path.join(ROOT, "zerodha_holdings_*.csv"))
-             + glob.glob(os.path.join(ROOT, "*holdings*.csv")))
-    files = [f for f in set(files) if not os.path.basename(f).startswith("holdings-template")]
+    csvs = (glob.glob(os.path.join(DATA_DIR, "zerodha_holdings_*.csv"))
+            + glob.glob(os.path.join(DATA_DIR, "*holdings*.csv")))
+    csvs = [f for f in set(csvs) if not os.path.basename(f).startswith("holdings-template")]
+    mds = [f for f in glob.glob(os.path.join(DATA_DIR, "zerodha-portfolio-*.md"))
+           if not os.path.basename(f).startswith("zerodha-portfolio-template")]
+    files = csvs + mds
     if not files:
         if required:
-            sys.exit(f"No holdings CSV found in {ROOT}.\n"
+            sys.exit(f"No holdings file found in {DATA_DIR}.\n"
                      "Put a broker export there as zerodha_holdings_<date>.csv (columns: "
                      "Instrument, Qty., Avg. cost, LTP, Invested, Cur. val, P&L, Net chg.),\n"
+                     "or a lot-level Zerodha Console export as zerodha-portfolio-<date>.md "
+                     "(see zerodha-portfolio-template.md),\n"
                      "or point the script at the right folder with --root PATH "
                      "(or $PORTFOLIO_ROOT),\n"
                      "or rate a stock without holding it: "
@@ -178,9 +196,14 @@ def latest_holdings_csv(required=True):
 
 
 def holdings_date(path):
-    """The export date is in the filename (zerodha_holdings_6September2026.csv);
-    the CSV's LTP column is that day's price, not a live one."""
-    m = re.search(r"(\d{1,2})([A-Za-z]+)(\d{4})", os.path.basename(path))
+    """The export date is in the filename -- zerodha_holdings_6September2026.csv
+    or zerodha-portfolio-2026-09-27.md -- because the file's own price/LTP
+    column is that day's price, not a live one."""
+    base = os.path.basename(path)
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", base)
+    if m:
+        return m.group(1)
+    m = re.search(r"(\d{1,2})([A-Za-z]+)(\d{4})", base)
     if m:
         for fmt_ in ("%d%B%Y", "%d%b%Y"):
             try:
@@ -191,6 +214,10 @@ def holdings_date(path):
 
 
 def read_holdings(path):
+    return read_holdings_md(path) if path.lower().endswith(".md") else read_holdings_csv(path)
+
+
+def read_holdings_csv(path):
     holdings = []
     with open(path, newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
@@ -208,6 +235,67 @@ def read_holdings(path):
                 "pnl_pct": num(row.get("Net chg.")),
             })
     return holdings
+
+
+def read_holdings_md(path):
+    """Parse the 'Holdings with lots' table from a Zerodha Console export
+    (see zerodha-portfolio-template.md). Adds the lot-level LTCG fields a plain
+    broker CSV doesn't carry: which quantity is already long-term, when the
+    next lot turns long-term, and the unrealised gain split by holding period."""
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    m = re.search(r"## Holdings with lots\s*\n(.+?)(?:\n##|\Z)", text, re.S)
+    if not m:
+        return []
+    rows = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")]
+    rows = [r for r in rows if not re.match(r"^\|\s*-", r) and not re.match(r"^\|\s*Symbol\s*\|", r)]
+    holdings = []
+    for row in rows:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        if len(cells) < 12:
+            continue
+        (sym, qty, avg, ltp, value, pnl, pnl_pct, lt_qty, st_qty,
+         next_lt, unreal_lt_st, sector, lots) = cells[:13]
+        lt_gain, lt_loss = None, None
+        lt_st = [p.strip() for p in unreal_lt_st.split("/")]
+        if len(lt_st) == 2:
+            lt_gain, lt_loss = num(lt_st[0]), num(lt_st[1])
+        holdings.append({
+            "ticker": sym,
+            "qty": num(qty),
+            "avg_cost": num(avg),
+            "ltp": num(ltp),
+            "current_value": num(value),
+            "pnl": num(pnl),
+            "pnl_pct": num(pnl_pct.rstrip("%")),
+            "invested": (num(value) - num(pnl)) if num(value) is not None and num(pnl) is not None else None,
+            "lt_qty": None if lt_qty == "-" else num(lt_qty),
+            "st_qty": None if st_qty == "-" else num(st_qty),
+            "next_lot_turns_lt": None if next_lt == "-" else next_lt,
+            "unrealized_lt_pnl": lt_gain,
+            "unrealized_st_pnl": lt_loss,
+            "broker_sector": sector or None,
+            "lots": parse_lots(lots),
+        })
+    return holdings
+
+
+def parse_lots(cell):
+    """'2025-11-28 10@381.75; 2026-01-13 1@358.85' -> per-lot buy date, qty and
+    cost. A lot from a demerger or an unreconciled corporate action carries a
+    non-numeric cost (e.g. '5@demerger'); kept as text rather than dropped, since
+    the date and quantity are still real for LTCG purposes."""
+    if not cell or cell.strip().lower() == "none in tradebook":
+        return []
+    lots = []
+    for part in cell.split(";"):
+        part = part.strip()
+        m = re.match(r"(\d{4}-\d{2}-\d{2})\s+([\d.]+)@(.+)", part)
+        if not m:
+            continue
+        d, qty, cost = m.groups()
+        lots.append({"date": d, "qty": num(qty), "cost": num(cost) if num(cost) is not None else cost})
+    return lots
 
 
 def num(v):
@@ -1089,7 +1177,7 @@ def build(holding, doc, chart=None, csv_date=None, bench=None, nse=None):
 def read_stock_note(ticker):
     """Pull the standing rating out of stocks/<T>.md so the summary table can
     carry it forward without Claude having to retype 73 rows."""
-    path = os.path.join(ROOT, "stocks", f"{ticker}.md")
+    path = os.path.join(STOCKS_DIR, f"{ticker}.md")
     if not os.path.exists(path):
         return {}
     text = open(path, encoding="utf-8").read()
@@ -1387,7 +1475,8 @@ def write_portfolio_md(results, csv_name, full_refresh_at=None, risk=None):
     L.append("\n---\n\n*Not investment advice — I'm not a financial advisor. "
              "Verify prices and figures before acting.*")
 
-    path = os.path.join(ROOT, "PORTFOLIO.md")
+    os.makedirs(SKILL_DATA_DIR, exist_ok=True)
+    path = os.path.join(SKILL_DATA_DIR, "PORTFOLIO.md")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(L) + "\n")
     return path
@@ -1419,8 +1508,8 @@ def parse_args(argv):
     No tickers  -> full refresh of every holding, rebuilds the day's snapshot.
     Tickers     -> refresh just those and merge them into the day's snapshot.
     --screen    -> the tickers are candidates you don't hold: fetch and classify
-                   them into data/screen-<today>.json, leaving the snapshot and
-                   PORTFOLIO.md untouched.
+                   them into data/skill-data/screen-<today>.json, leaving the
+                   snapshot and PORTFOLIO.md untouched.
     --refresh   -> ignore the per-day cache and re-fetch live, for when a price
                    has moved since the last run today.
     --no-nse    -> skip the NSE pledge/insider/SAST calls. They are cached for a
@@ -1491,7 +1580,8 @@ def run_screen(tickers, held, force, use_nse=True):
         except Exception as exc:
             failures.append({"ticker": t, "error": str(exc)})
             print(f"FAILED: {exc}")
-    out = os.path.join(DATA_DIR, f"screen-{date.today().isoformat()}.json")
+    os.makedirs(SKILL_DATA_DIR, exist_ok=True)
+    out = os.path.join(SKILL_DATA_DIR, f"screen-{date.today().isoformat()}.json")
     with open(out, "w", encoding="utf-8") as fh:
         json.dump({"generated_at": datetime.now().isoformat(timespec="seconds"),
                    "row_definitions": ROW_TEXT, "stocks": results, "failures": failures},
@@ -1563,15 +1653,15 @@ def merge_stocks(base, fresh, held):
 
 def main():
     force, screen, only, use_nse = parse_args(sys.argv[1:])
-    csv_path = latest_holdings_csv(required=not screen)
+    csv_path = latest_holdings_file(required=not screen)
     held = read_holdings(csv_path) if csv_path else []
     if screen:
         run_screen(only, held, force, use_nse)
         return
     csv_date = holdings_date(csv_path)
     today = date.today().isoformat()
-    os.makedirs(DATA_DIR, exist_ok=True)
-    out = os.path.join(DATA_DIR, f"snapshot-{today}.json")
+    os.makedirs(SKILL_DATA_DIR, exist_ok=True)
+    out = os.path.join(SKILL_DATA_DIR, f"snapshot-{today}.json")
     base = load_snapshot(out)
 
     if only and base is None:

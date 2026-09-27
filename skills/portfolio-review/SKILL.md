@@ -24,11 +24,18 @@ You are helping with a long-term Indian equity portfolio held on Zerodha. The go
 compounding: hold quality names, average down where something is genuinely undervalued, and avoid
 value traps. Ratings are advisory only — never place or suggest placing an order.
 
-**Where things live.** The scripts ship with this skill; the data does not. Run every command from
-the user's portfolio folder — the one holding their broker CSV — because that is where the script
-writes `data/`, `stocks/` and `PORTFOLIO.md`. If the working directory is somewhere else, pass
-`--root /path/to/that/folder`. Write `stocks/<TICKER>.md` notes into that same folder, never beside
-the skill.
+**Where things live.** Everything the skill reads or writes sits under `${CLAUDE_SKILL_DIR}/data/`,
+which is gitignored wholesale, and splits into two tiers:
+- `data/` directly — what the user provides: a broker CSV (`zerodha_holdings_<date>.csv`) or a
+  lot-level Console export (`zerodha-portfolio-<date>.md`, see `zerodha-portfolio-template.md`).
+- `data/skill-data/` — everything the skill fetches or writes: the fetch cache, `snapshot-*.json` /
+  `screen-*.json`, `stocks/<TICKER>.md` notes and `PORTFOLIO.md`.
+
+Run every command from `${CLAUDE_SKILL_DIR}` so the script's default root (the working directory)
+resolves there. If the user keeps their data in a separate folder instead — the safer option if this
+checkout is ever shared or backed up somewhere public — pass `--root /path/to/that/folder` (or set
+`$PORTFOLIO_ROOT`); everything below still applies, just rooted there instead. Write
+`stocks/<TICKER>.md` notes into `data/skill-data/stocks/`, not anywhere else.
 
 **Route the request first:**
 - **Tickers the user holds** → Steps 1, 3 and 4.
@@ -51,7 +58,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py              # refresh
 ```
 
 A subset run refreshes the named tickers and **merges** them into today's snapshot, so the other
-holdings keep the rows the last full run gave them. Either way `data/snapshot-<today>.json` and
+holdings keep the rows the last full run gave them. Either way `data/skill-data/snapshot-<today>.json` and
 `PORTFOLIO.md` end up complete — every holding in the CSV, not just the one you named.
 
 If today's snapshot does not exist yet, a subset run says so and promotes itself to a full refresh;
@@ -87,7 +94,7 @@ Report what changed at the portfolio level and stop. Do not research anything:
 - total P&L, the row distribution, and the top of the sector-exposure list
 - everything under "Worth a look" in `PORTFOLIO.md`, which is mechanical flags only — call out any
   "financials stale" flag first, since every ratio on that row is suspect
-- any holding whose signal row moved since the previous `data/snapshot-*.json` — before calling a
+- any holding whose signal row moved since the previous `data/skill-data/snapshot-*.json` — before calling a
   move a "threshold crossing," check `profit_yoy_pct` (or the one-off–adjusted figure in
   `one_offs`) for that ticker. A P/E rising through a row boundary because profit fell is an
   earnings problem, not multiple noise, and must be named as such rather than filed as minor.
@@ -119,7 +126,7 @@ For each ticker being researched (named in the request, or on the shortlist from
 
 1. **The prior note** at `stocks/<TICKER>.md`, if it exists. Its rating, date and reasoning are the
    baseline you are updating. If it recorded management guidance, you will score it this run.
-2. **This run's entry** in `data/snapshot-<today>.json`. Beyond the ratios, signal row, quarters,
+2. **This run's entry** in `data/skill-data/snapshot-<today>.json`. Beyond the ratios, signal row, quarters,
    pros/cons and `technicals` block (see `${CLAUDE_SKILL_DIR}/CHEATSHEET.md`), it carries:
    - `basis` (consolidated or standalone), `fiscal_year_end`, `latest_quarter_end`, `results_stale`
    - `price`, `fetched_at`, and the holdings CSV's `ltp` / `csv_date` / `price_vs_csv_pct`
