@@ -2,6 +2,8 @@ import os
 import sys
 import unittest
 
+import requests
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import nse_index  # noqa: E402
 
@@ -92,6 +94,83 @@ class TestParseConstituents(unittest.TestCase):
         payload = {"data": None}
         result = nse_index.parse_constituents(payload)
         self.assertEqual(result, [])
+
+    def test_non_dict_payload_returns_empty(self):
+        """A list, string or number payload returns [] rather than raising."""
+        for payload in (["ZENTRO"], "ZENTRO", 42):
+            self.assertEqual(nse_index.parse_constituents(payload), [])
+
+    def test_data_not_a_list_returns_empty(self):
+        self.assertEqual(nse_index.parse_constituents({"data": "ZENTRO"}), [])
+        self.assertEqual(nse_index.parse_constituents({"data": {"symbol": "ZENTRO"}}), [])
+
+    def test_non_dict_rows_and_non_string_symbols_skipped(self):
+        payload = {
+            "data": [
+                "ZENTRO",                          # not a dict
+                None,                              # not a dict
+                ["QORVIK"],                        # not a dict
+                {"symbol": 123, "priority": 0},    # non-string symbol
+                {"symbol": None, "priority": 0},   # null symbol
+                {"symbol": "MALBEX", "priority": 0},
+            ]
+        }
+        self.assertEqual(nse_index.parse_constituents(payload), ["MALBEX"])
+
+
+class FakeResponse:
+    def __init__(self, status_code=200, body=None, bad_json=False):
+        self.status_code = status_code
+        self._body = body
+        self._bad_json = bad_json
+
+    def json(self):
+        if self._bad_json:
+            # What requests itself raises on a non-JSON body.
+            raise requests.JSONDecodeError("Expecting value", "<html>", 0)
+        return self._body
+
+
+class FakeSession:
+    def __init__(self, responses=None, exc=None):
+        self.headers = {}
+        self._responses = list(responses or [])
+        self._exc = exc
+
+    def get(self, url, **kwargs):
+        if self._exc is not None:
+            raise self._exc
+        return self._responses.pop(0)
+
+
+class TestFetchConstituents(unittest.TestCase):
+    """fetch_constituents against a fake session -- no network."""
+
+    def test_success_parses_payload(self):
+        session = FakeSession([FakeResponse(), FakeResponse(body={"data": [{"symbol": "ZENTRO"}]})])
+        self.assertEqual(nse_index.fetch_constituents("NIFTY TEST 50", session=session), ["ZENTRO"])
+
+    def test_bad_json_reports_parse_failure_not_request_failure(self):
+        session = FakeSession([FakeResponse(), FakeResponse(bad_json=True)])
+        with self.assertRaises(RuntimeError) as ctx:
+            nse_index.fetch_constituents("NIFTY TEST 50", session=session)
+        self.assertIn("failed to parse JSON", str(ctx.exception))
+        self.assertNotIn("Request failed", str(ctx.exception))
+        self.assertIsInstance(ctx.exception.__cause__, ValueError)
+
+    def test_request_exception_is_chained(self):
+        err = requests.ConnectionError("connection reset")
+        session = FakeSession(exc=err)
+        with self.assertRaises(RuntimeError) as ctx:
+            nse_index.fetch_constituents("NIFTY TEST 50", session=session)
+        self.assertIn("Request failed", str(ctx.exception))
+        self.assertIs(ctx.exception.__cause__, err)
+
+    def test_non_200_names_endpoint_and_status(self):
+        session = FakeSession([FakeResponse(), FakeResponse(status_code=401)])
+        with self.assertRaises(RuntimeError) as ctx:
+            nse_index.fetch_constituents("NIFTY TEST 50", session=session)
+        self.assertIn("equity-stockIndices: HTTP 401", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -22,25 +22,30 @@ def parse_constituents(payload: dict) -> list[str]:
     the sorted, deduplicated list of constituent ticker symbols (strings,
     already upper-cased, whitespace-stripped), excluding the priority==1
     row and any row with a missing/blank symbol. Never raises on a
-    malformed payload -- payload=None or payload without a "data" list
-    returns []."""
-    if payload is None:
+    malformed payload: a payload that is None or not a dict, or whose
+    "data" is missing or not a list, returns []; a row that is not a dict,
+    or whose symbol is missing, blank or not a string, is skipped."""
+    if not isinstance(payload, dict):
         return []
 
-    rows = payload.get("data") or []
-    if not rows:
+    rows = payload.get("data")
+    if not isinstance(rows, list):
         return []
 
     symbols = set()
     for row in rows:
+        if not isinstance(row, dict):
+            continue
+
         # Skip the summary row (priority == 1)
         if row.get("priority") == 1:
             continue
 
-        # Skip rows with missing or blank symbols
-        symbol = (row.get("symbol") or "").strip()
-        if not symbol:
+        # Skip rows with missing, blank or non-string symbols
+        symbol = row.get("symbol")
+        if not isinstance(symbol, str) or not symbol.strip():
             continue
+        symbol = symbol.strip()
 
         symbols.add(symbol.upper())
 
@@ -90,9 +95,18 @@ def fetch_constituents(index_name: str, session=None) -> list[str]:
             raise RuntimeError(
                 f"GET https://www.nseindia.com/api/equity-stockIndices: HTTP {r.status_code}"
             )
-
-        return parse_constituents(r.json())
     except requests.RequestException as e:
-        raise RuntimeError(f"Request failed: {e}")
+        raise RuntimeError(f"Request failed: {e}") from e
+
+    # Parse outside the network try: requests.JSONDecodeError subclasses
+    # RequestException (requests >= 2.27), so catching it above would
+    # misreport a bad body as a failed request. It (and the older
+    # json/simplejson decode errors) is always a ValueError.
+    try:
+        payload = r.json()
     except ValueError as e:
-        raise RuntimeError(f"Failed to parse JSON response: {e}")
+        raise RuntimeError(
+            f"GET https://www.nseindia.com/api/equity-stockIndices: "
+            f"failed to parse JSON response: {e}"
+        ) from e
+    return parse_constituents(payload)
