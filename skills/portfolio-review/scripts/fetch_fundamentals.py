@@ -180,6 +180,14 @@ def latest_holdings_file(required=True):
     mds = [f for f in glob.glob(os.path.join(DATA_DIR, "zerodha-portfolio-*.md"))
            if not os.path.basename(f).startswith("zerodha-portfolio-template")]
     files = csvs + mds
+    if len(files) > 1:
+        # Pick by the date embedded in the filename, not file mtime: a fresh
+        # export can land with an older mtime than a stale one still sitting
+        # around (a cloud-synced copy, a file moved rather than freshly
+        # saved), and the filename date is what the user actually means by
+        # "latest". Only fall back to mtime as a tiebreaker for a same-date
+        # collision.
+        files.sort(key=lambda f: (holdings_date(f), os.path.getmtime(f)))
     if not files:
         if required:
             sys.exit(f"No holdings file found in {DATA_DIR}.\n"
@@ -192,7 +200,7 @@ def latest_holdings_file(required=True):
                      "or rate a stock without holding it: "
                      "fetch_fundamentals.py --screen TICKER")
         return None
-    return max(files, key=os.path.getmtime)
+    return files[-1]
 
 
 def holdings_date(path):
@@ -252,7 +260,7 @@ def read_holdings_md(path):
     holdings = []
     for row in rows:
         cells = [c.strip() for c in row.strip().strip("|").split("|")]
-        if len(cells) < 12:
+        if len(cells) < 13:
             continue
         (sym, qty, avg, ltp, value, pnl, pnl_pct, lt_qty, st_qty,
          next_lt, unreal_lt_st, sector, lots) = cells[:13]
@@ -278,6 +286,51 @@ def read_holdings_md(path):
             "lots": parse_lots(lots),
         })
     return holdings
+
+
+def _rupees(s):
+    """'₹1,390' -> 1390.0, '-62,882' -> -62882.0, '49.16k' -> 49160.0."""
+    if s is None:
+        return None
+    s = s.strip()
+    mult = 1000.0 if s.lower().endswith("k") else 1.0
+    s = re.sub(r"[₹,\s]|k$", "", s, flags=re.I)
+    try:
+        return float(s) * mult
+    except ValueError:
+        return None
+
+
+def parse_tax_position(text):
+    """The '## Tax position' section of a Zerodha Console export (see
+    zerodha-portfolio-template.md) -- Console's own realised gains and
+    loss-harvesting estimate for the FY, already computed against everything
+    in the account (stocks and MFs), not just what this file tracks. Nobody
+    read this section before tax_lots.py --harvest: it sat in the file,
+    generated every time, unused. Returns None if the section is absent (a
+    plain CSV input, or an older Console export predating this section)."""
+    m = re.search(r"## Tax position (FY [\d-]+)[^\n]*\n(.+?)(?:\n##|\Z)", text, re.S)
+    if not m:
+        return None
+    fy, body = m.group(1), m.group(2)
+    out = {"fy": fy}
+    realised = re.search(r"Realised STCG:\s*₹?([\d,.]+).*?Realised LTCG:\s*₹?([\d,.]+)", body)
+    if realised:
+        out["realised_stcg"] = _rupees(realised.group(1))
+        out["realised_ltcg"] = _rupees(realised.group(2))
+    save_up_to = re.search(r"'save up to'\s*₹?([\d,.k]+)", body, re.I)
+    if save_up_to:
+        out["console_harvest_savings"] = _rupees(save_up_to.group(1))
+    stocks_only = re.search(
+        r"Stocks only.*?unrealised LT gains\s*₹?(-?[\d,.]+)\s*.*?"
+        r"LT losses\s*₹?(-?[\d,.]+)\s*.*?ST gains\s*₹?(-?[\d,.]+)\s*.*?"
+        r"ST losses\s*₹?(-?[\d,.]+)", body)
+    if stocks_only:
+        out["stocks_only"] = {
+            "lt_gains": _rupees(stocks_only.group(1)), "lt_losses": _rupees(stocks_only.group(2)),
+            "st_gains": _rupees(stocks_only.group(3)), "st_losses": _rupees(stocks_only.group(4)),
+        }
+    return out if len(out) > 1 else None
 
 
 def parse_lots(cell):
@@ -1757,6 +1810,10 @@ def main():
         full_refresh_at = now
     add_portfolio_context(stocks)
     risk = portfolio_risk(stocks, bench)
+    tax_position = None
+    if csv_path.lower().endswith(".md"):
+        with open(csv_path, encoding="utf-8") as fh:
+            tax_position = parse_tax_position(fh.read())
 
     with open(out, "w", encoding="utf-8") as fh:
         json.dump({
@@ -1766,6 +1823,7 @@ def main():
             "holdings_date": csv_date,
             "row_definitions": ROW_TEXT,
             "portfolio_risk": risk,
+            "tax_position": tax_position,
             "stocks": stocks,
         }, fh, indent=2, ensure_ascii=False)
 

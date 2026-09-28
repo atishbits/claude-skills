@@ -6,7 +6,7 @@ exists so the CAGR arithmetic, and the temptation to eyeball a P/E band by
 skimming a chart, never happens by hand.
 
     python3 scripts/three_year_case.py TICKER
-        [--fwd-eps-base N] [--fwd-eps-bear N] [--div-yield-pct N]
+        [--fwd-eps-base N] [--fwd-eps-bear N] --eps-asof YYYY-MM-DD [--div-yield-pct N]
         [--exit-pe-base N] [--exit-pe-bear N] [--years N]
 
 Forward EPS is not something this script can know: source it yourself
@@ -14,6 +14,13 @@ Forward EPS is not something this script can know: source it yourself
 --fwd-eps-base/--fwd-eps-bear it only prints the P/E band and the Nifty
 hurdle -- useful on its own for the peak-SELL read (where today's P/E sits
 in the stock's own range).
+
+--eps-asof is the fiscal year-end the forward EPS is FOR (e.g. 2029-03-31 for
+"FY29E"), required whenever --fwd-eps-base is given: a fixed "3 years" is
+meaningless without knowing whether the EPS you sourced is one year out or
+four, and using the wrong horizon silently understates or overstates the
+CAGR. The exit horizon is computed as the time from today to that date plus
+~2 months (results and re-rating lag the year-end close), not a flat 3.
 
 Reads today's cached screener page for TICKER (run fetch_fundamentals.py, or
 --screen, first). Fetches one extra long-history chart for the ticker and,
@@ -150,20 +157,41 @@ def median_of(values):
     return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
 
 
-def three_year_cagr(current_price, fwd_eps, exit_pe, div_yield_pct=0.0):
-    """The arithmetic behind one side (base or bear) of the 3-year case: an
-    exit price from forward EPS x an exit multiple, the price CAGR to get
-    there in 3 years, and dividends added as a simple annual addition (not
-    compounded -- a reasonable approximation at these magnitudes, not a
-    reinvestment model). Raises ValueError on a non-positive input rather
-    than silently returning nonsense (a zero or negative price/EPS/multiple
-    has no defined CAGR)."""
-    if current_price <= 0 or fwd_eps <= 0 or exit_pe <= 0:
-        raise ValueError("current_price, fwd_eps and exit_pe must all be positive")
+DEFAULT_HORIZON_YEARS = 3.0
+SHORT_HORIZON_YEARS = 2.0  # below this, annualising exaggerates the base/bear spread
+
+
+def exit_horizon_years(eps_asof, today=None):
+    """Years from today to the fiscal year-end the forward EPS is FOR, plus
+    ~2 months -- results and any re-rating lag the year-end close itself, so
+    the exit isn't priced in on day one. `eps_asof` is that fiscal year-end
+    date. Raises ValueError if it's not in the future (an "FY29E" EPS with
+    an eps_asof already past is not a forward estimate)."""
+    today = today or date.today()
+    horizon_days = (eps_asof - today).days + 60
+    if horizon_days <= 0:
+        raise ValueError(f"eps_asof {eps_asof} is not in the future (as of {today})")
+    return horizon_days / 365.25
+
+
+def three_year_cagr(current_price, fwd_eps, exit_pe, div_yield_pct=0.0, years=DEFAULT_HORIZON_YEARS):
+    """The arithmetic behind one side (base or bear) of the N-year case
+    (default 3, but should be the actual horizon to the forward EPS's own
+    fiscal year -- see exit_horizon_years): an exit price from forward EPS x
+    an exit multiple, the price CAGR to get there over `years`, and
+    dividends added as a simple annual addition (not compounded -- a
+    reasonable approximation at these magnitudes, not a reinvestment model).
+    Raises ValueError on a non-positive input rather than silently returning
+    nonsense (a zero or negative price/EPS/multiple/years has no defined
+    CAGR)."""
+    if current_price <= 0 or fwd_eps <= 0 or exit_pe <= 0 or years <= 0:
+        raise ValueError("current_price, fwd_eps, exit_pe and years must all be positive")
     exit_price = fwd_eps * exit_pe
-    price_cagr_pct = ((exit_price / current_price) ** (1 / 3) - 1) * 100
+    total_price_return_pct = (exit_price / current_price - 1) * 100
+    price_cagr_pct = ((exit_price / current_price) ** (1 / years) - 1) * 100
     return {
         "exit_price": exit_price,
+        "total_price_return_pct": total_price_return_pct,
         "price_cagr_pct": price_cagr_pct,
         "total_cagr_pct": price_cagr_pct + div_yield_pct,
     }
@@ -180,11 +208,18 @@ def main():
     p.add_argument("ticker")
     p.add_argument("--fwd-eps-base", type=float)
     p.add_argument("--fwd-eps-bear", type=float)
+    p.add_argument("--eps-asof", type=date.fromisoformat, metavar="YYYY-MM-DD",
+                    help="fiscal year-end the forward EPS is FOR, e.g. 2029-03-31 for FY29E "
+                         "-- required with --fwd-eps-base")
     p.add_argument("--div-yield-pct", type=float, default=0.0)
     p.add_argument("--exit-pe-base", type=float)
     p.add_argument("--exit-pe-bear", type=float)
-    p.add_argument("--years", type=int, default=LONG_CHART_YEARS_DEFAULT)
+    p.add_argument("--years", type=int, default=LONG_CHART_YEARS_DEFAULT,
+                    help="years of history for the P/E band (not the forward horizon -- see --eps-asof)")
     args = p.parse_args()
+    if args.fwd_eps_base is not None and args.eps_asof is None:
+        sys.exit("--eps-asof is required with --fwd-eps-base: a fixed horizon is meaningless "
+                  "without knowing which fiscal year the forward EPS is for.")
     ticker = args.ticker.upper()
 
     doc_path = os.path.join(ff.CACHE_DIR, f"{ticker}-{date.today().isoformat()}.html")
@@ -260,18 +295,34 @@ def main():
         pes = [v for _, v in valid]
         exit_pe_base = args.exit_pe_base or median_of(pes)
         exit_pe_bear = args.exit_pe_bear or min(pes)
-        base = three_year_cagr(current_price, args.fwd_eps_base, exit_pe_base, args.div_yield_pct)
-        bear = three_year_cagr(current_price, args.fwd_eps_bear, exit_pe_bear, args.div_yield_pct)
+        try:
+            horizon = exit_horizon_years(args.eps_asof)
+        except ValueError as exc:
+            sys.exit(str(exc))
+        base = three_year_cagr(current_price, args.fwd_eps_base, exit_pe_base, args.div_yield_pct, horizon)
+        bear = three_year_cagr(current_price, args.fwd_eps_bear, exit_pe_bear, args.div_yield_pct, horizon)
         base_div_note = (f", + {args.div_yield_pct:.1f}% div = total ~{base['total_cagr_pct']:+.1f}%/yr"
                           if args.div_yield_pct else "")
         bear_div_note = (f", + {args.div_yield_pct:.1f}% div = total ~{bear['total_cagr_pct']:+.1f}%/yr"
                           if args.div_yield_pct else "")
-        print(f"\n3-year case (current price {current_price:.2f}):")
+        print(f"\n{horizon:.1f}-year case (current price {current_price:.2f}, "
+              f"forward EPS asof {args.eps_asof.isoformat()}):")
+        if horizon < SHORT_HORIZON_YEARS:
+            print(f"  *** SHORT HORIZON ({horizon:.1f}y, well under the {SHORT_HORIZON_YEARS:.0f}y "
+                  f"this case is meant to span): annualising a base/bear EPS spread over a short "
+                  f"window mechanically inflates the CAGR gap between them (a modest difference in "
+                  f"forward EPS estimates can look like a wildly divergent, near-binary outcome once "
+                  f"raised to the 1/{horizon:.1f} power). Read the total (non-annualised) price move "
+                  f"below alongside the CAGR, and don't describe the stock as more binary than the "
+                  f"underlying EPS estimates actually are. This is common, not a data problem: dated "
+                  f"forward multiples rarely extend past the next fiscal year. ***")
         print(f"  Base: fwd EPS {args.fwd_eps_base:.2f} x exit {exit_pe_base:.1f}x "
-              f"= exit price {base['exit_price']:.0f}, price CAGR {base['price_cagr_pct']:+.1f}%/yr"
+              f"= exit price {base['exit_price']:.0f}, total price move "
+              f"{base['total_price_return_pct']:+.1f}%, CAGR {base['price_cagr_pct']:+.1f}%/yr"
               f"{base_div_note}")
         print(f"  Bear: fwd EPS {args.fwd_eps_bear:.2f} x exit {exit_pe_bear:.1f}x "
-              f"= exit price {bear['exit_price']:.0f}, price CAGR {bear['price_cagr_pct']:+.1f}%/yr"
+              f"= exit price {bear['exit_price']:.0f}, total price move "
+              f"{bear['total_price_return_pct']:+.1f}%, CAGR {bear['price_cagr_pct']:+.1f}%/yr"
               f"{bear_div_note}")
         if hurdle:
             hc = hurdle["cagr_pct"]

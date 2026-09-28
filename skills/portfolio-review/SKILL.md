@@ -51,6 +51,9 @@ checkout is ever shared or backed up somewhere public — pass `--root /path/to/
 - **Invoked from a plain question rather than `/portfolio-review`:** take the tickers from the
   user's message. If their scope is unclear and the fetch would be broad, confirm the scope before
   researching.
+- **Tax-loss harvesting, gain booking, or "what should I sell for tax reasons"** → Step 1, then
+  `python3 ${CLAUDE_SKILL_DIR}/scripts/tax_lots.py --harvest` (3e). No per-ticker research needed
+  unless the user then asks about a specific name it surfaces.
 
 ## Step 1 — refresh the data
 
@@ -338,7 +341,7 @@ BUY, HOLD or SELL / trim. Weigh:
 
   ```
   python3 ${CLAUDE_SKILL_DIR}/scripts/three_year_case.py TICKER \
-    --fwd-eps-base N --fwd-eps-bear N [--div-yield-pct N]
+    --fwd-eps-base N --fwd-eps-bear N --eps-asof YYYY-MM-DD [--div-yield-pct N]
   ```
 
   It builds the stock's own 5-10yr trailing P/E band from data already fetched (screener's annual
@@ -347,10 +350,19 @@ BUY, HOLD or SELL / trim. Weigh:
   get misquoted. Source `--fwd-eps-base`/`--fwd-eps-bear` yourself first (guided or dated consensus
   EPS for the base case, a trend/normalised figure for the bear case — the same sourcing discipline
   as a consensus target); the script multiplies each against an exit P/E (the band's median for
-  base, its low for bear, by default) to give a 3-year CAGR, and states plainly whether it clears
-  the Nifty hurdle. A stock whose base case doesn't beat the index-fund hurdle by a real margin has
-  a weak case for new money regardless of how the signal row reads. Run it without `--fwd-eps-*` to
-  get the band alone — useful on its own for the peak-SELL read below.
+  base, its low for bear, by default) to give a CAGR over the actual time to `--eps-asof` (the
+  fiscal year-end that forward EPS is FOR — a fixed "3 years" is meaningless without knowing
+  whether the EPS you sourced is one year out or four, and the script refuses to run without it once
+  you pass `--fwd-eps-base`), and states plainly whether it clears the Nifty hurdle. A stock whose
+  base case doesn't beat the index-fund hurdle by a real margin has a weak case for new money
+  regardless of how the signal row reads. Run it without `--fwd-eps-*` to get the band alone —
+  useful on its own for the peak-SELL read below.
+  **A short horizon (common — dated forward multiples rarely reach past the next fiscal year)
+  inflates the annualised base/bear gap.** The script flags this itself when the horizon comes out
+  under 2 years and prints the un-annualised total price move alongside the CAGR; quote that total
+  move in the note, not just the CAGR, so a modest EPS spread doesn't read as a near-binary outcome
+  (ITC's FY28E-based case: a ±19pp total-return spread became a ±20pp/yr *annualised* one on a
+  1.7-year horizon).
   **A dated, named EPS estimate is rarer than a price target — don't block on one.** If nothing
   turns up (common: analysts publish price targets far more often than explicit EPS numbers),
   extrapolate from TTM EPS at management's own guided growth rate (credit growth, volume guidance,
@@ -417,7 +429,8 @@ BUY, HOLD or SELL / trim. Weigh:
 - **No argument may depend on the user's cost basis.** Test each sentence: if it would change or
   vanish with a different average cost, delete it. "Adding lowers my average" and "adding would
   worsen an already-good position" both fail. The purchase price is sunk. The only legitimate use
-  is tax (the 12-month long-term holding period, harvesting a loss), and it must be labelled as tax.
+  is tax (the long-term holding period — more than 12 months, not 12 months to the day —
+  harvesting a loss, or booking a tax-free gain), and it must be labelled as tax.
 - **A SELL or trim names which lots, using the script rather than eyeballing purchase dates:**
 
   ```
@@ -427,9 +440,19 @@ BUY, HOLD or SELL / trim. Weigh:
   It reads today's snapshot's per-lot data and prints each lot's LT/ST status, days held, unrealized
   gain, and flags any short-term lot within ~60 days of turning long-term (20% → 12.5%, and
   exemption-eligible) — a real choice between selling now and waiting worth naming explicitly, not
-  leaving implicit. It cannot see gains realized elsewhere this FY, so it cannot say how much of the
-  ₹1.25L/FY LTCG exemption is already used; ask the user or check their broker Console for that
-  before sizing a loss-harvest or a tax-free gain-booking sale, rather than assuming full headroom.
+  leaving implicit. A lot with no numeric cost (a demerger, an unreconciled corporate action) falls
+  back to the position's own average cost, labelled as an estimate, rather than being dropped from
+  every total — TMCV's 25 demerger-cost shares out of 29 were silently excluded from its gain
+  entirely before this fallback existed, on exactly the position most likely to get a trim call.
+  For the portfolio-wide view — realised gains this FY, LTCG exemption headroom, and which lots
+  across every holding are the best gain-booking or loss-harvesting candidates — run
+  `python3 ${CLAUDE_SKILL_DIR}/scripts/tax_lots.py --harvest` instead. It reads the Console export's
+  own "Tax position" section (present only in a lot-level `.md` export, not a plain CSV) for this
+  FY's realised STCG/LTCG and Console's own loss-harvesting estimate, so it isn't guessing at
+  exemption headroom the way a single-ticker run has to. Realised gains are usually small early in
+  the FY, which means loss-harvesting has little current-year value (it mostly creates a carry-
+  forward) — the bigger lever is usually the unused LTCG exemption itself: booking LT gains up to
+  that headroom before FY-end is tax-free, and `--harvest` names the lots that do it.
 - **The rating and the Action must agree.** BUY means buying at today's price is right. If the
   level you would add at is more than ~5% below the current price, either rate it HOLD with "add at
   ₹X", or keep BUY and state the split: how much now, how much at the level.

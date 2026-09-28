@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import three_year_case as tyc  # noqa: E402
@@ -90,6 +91,64 @@ class TestThreeYearCagr(unittest.TestCase):
     def test_rejects_non_positive_exit_pe(self):
         with self.assertRaises(ValueError):
             tyc.three_year_cagr(current_price=100, fwd_eps=10, exit_pe=0)
+
+    def test_rejects_non_positive_years(self):
+        with self.assertRaises(ValueError):
+            tyc.three_year_cagr(current_price=100, fwd_eps=10, exit_pe=10, years=0)
+
+    def test_default_horizon_is_three_years(self):
+        out_default = tyc.three_year_cagr(current_price=100, fwd_eps=20, exit_pe=10)
+        out_explicit = tyc.three_year_cagr(current_price=100, fwd_eps=20, exit_pe=10, years=3.0)
+        self.assertAlmostEqual(out_default["price_cagr_pct"], out_explicit["price_cagr_pct"], places=9)
+
+    def test_longer_horizon_gives_lower_annualised_cagr_for_same_multiple(self):
+        # Same doubling, but over 6 years instead of 3 -> a lower annual rate.
+        cagr_3y = tyc.three_year_cagr(current_price=100, fwd_eps=20, exit_pe=10, years=3)["price_cagr_pct"]
+        cagr_6y = tyc.three_year_cagr(current_price=100, fwd_eps=20, exit_pe=10, years=6)["price_cagr_pct"]
+        self.assertLess(cagr_6y, cagr_3y)
+
+    def test_total_price_return_is_horizon_independent(self):
+        # The un-annualised total move is the same regardless of years -- only
+        # the annualised CAGR should change with the horizon.
+        out_short = tyc.three_year_cagr(current_price=100, fwd_eps=20, exit_pe=10, years=1)
+        out_long = tyc.three_year_cagr(current_price=100, fwd_eps=20, exit_pe=10, years=5)
+        self.assertAlmostEqual(out_short["total_price_return_pct"], 100.0)
+        self.assertAlmostEqual(out_long["total_price_return_pct"], 100.0)
+        self.assertNotAlmostEqual(out_short["price_cagr_pct"], out_long["price_cagr_pct"], places=1)
+
+    def test_short_horizon_inflates_annualised_spread_vs_total_spread(self):
+        # Same base/bear exit prices; a short horizon should widen the CAGR
+        # gap relative to the (horizon-independent) total-return gap -- the
+        # exact distortion the ITC/TMCV test runs surfaced.
+        base_short = tyc.three_year_cagr(current_price=100, fwd_eps=18, exit_pe=18, years=1.7)
+        bear_short = tyc.three_year_cagr(current_price=100, fwd_eps=15, exit_pe=15, years=1.7)
+        base_long = tyc.three_year_cagr(current_price=100, fwd_eps=18, exit_pe=18, years=5)
+        bear_long = tyc.three_year_cagr(current_price=100, fwd_eps=15, exit_pe=15, years=5)
+        total_spread = base_short["total_price_return_pct"] - bear_short["total_price_return_pct"]
+        cagr_spread_short = base_short["price_cagr_pct"] - bear_short["price_cagr_pct"]
+        cagr_spread_long = base_long["price_cagr_pct"] - bear_long["price_cagr_pct"]
+        self.assertAlmostEqual(
+            base_long["total_price_return_pct"] - bear_long["total_price_return_pct"], total_spread)
+        self.assertGreater(cagr_spread_short, cagr_spread_long)
+
+
+class TestExitHorizonYears(unittest.TestCase):
+    def test_roughly_three_years_out(self):
+        today = date(2026, 9, 28)
+        # 3 years out plus the 60-day lag this function always adds.
+        eps_asof = date(2029, 9, 28)
+        years = tyc.exit_horizon_years(eps_asof, today=today)
+        self.assertAlmostEqual(years, 3 + 60 / 365.25, places=2)
+
+    def test_rejects_a_past_asof_date(self):
+        with self.assertRaises(ValueError):
+            tyc.exit_horizon_years(date(2025, 3, 31), today=date(2026, 9, 28))
+
+    def test_asof_date_is_today_gives_just_the_lag(self):
+        # Not a rejection -- an FY that ends today still has ~2 months of
+        # results/re-rating lag before the exit is "priced in".
+        years = tyc.exit_horizon_years(date(2026, 9, 28), today=date(2026, 9, 28))
+        self.assertAlmostEqual(years, 60 / 365.25, places=4)
 
 
 class TestClearsHurdle(unittest.TestCase):
