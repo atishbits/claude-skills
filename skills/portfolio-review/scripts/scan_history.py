@@ -167,25 +167,16 @@ def cmd_report(args):
     if args.borderline:
         entries = [e for e in entries if e["outcome"] == "BORDERLINE"]
 
-    if not entries:
+    # Print the filtered entries report (if any)
+    if entries:
+        for line in build_report(entries):
+            print(line)
+    elif not args.tickers and not args.borderline:
+        # Only show "no entries" if we're showing the full ledger (no filters)
         print("No scan history entries yet.")
-        return
-
-    # Print the filtered entries report
-    by_ticker = {}
-    for e in entries:
-        by_ticker.setdefault(e["ticker"], []).append(e)
-
-    for ticker in sorted(by_ticker):
-        rows = by_ticker[ticker]
-        print(f"{ticker}")
-        for e in rows:
-            checkin_str = f"  next: {e['next_checkin']}" if "next_checkin" in e else ""
-            print(f"  {e['date']}  {e['stage']:<10}  {e['outcome']:<10}  {e['reason']}{checkin_str}")
-        print()
 
     # Always add overdue re-checks section (regardless of filters)
-    # This always checks the FULL history
+    # This always checks the FULL history, not the filtered view
     overdue = overdue_checkins(all_entries)
     print("Overdue re-checks:")
     if overdue:
