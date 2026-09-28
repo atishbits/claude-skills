@@ -1,6 +1,13 @@
+import argparse
+import glob
+import io
+import json
 import os
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stdout
+from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import multibagger_screen as mb  # noqa: E402
@@ -206,22 +213,22 @@ class TestRsiTag(unittest.TestCase):
         self.assertEqual(v1, v2)
 
 
-class TestRunScreen(unittest.TestCase):
+class TestScreenAll(unittest.TestCase):
     def test_ticker_filter_restricts_to_named_tickers(self):
         stocks = [make_record(ticker="AAA"), make_record(ticker="BBB"), make_record(ticker="CCC")]
-        results = mb.run_screen(stocks, ["bbb"], THRESHOLDS)
+        results = mb.screen_all(stocks, ["bbb"], THRESHOLDS)
         self.assertEqual([r["ticker"] for r in results], ["BBB"])
 
     def test_no_ticker_filter_screens_everything(self):
         stocks = [make_record(ticker="AAA"), make_record(ticker="BBB")]
-        results = mb.run_screen(stocks, [], THRESHOLDS)
+        results = mb.screen_all(stocks, [], THRESHOLDS)
         self.assertEqual(len(results), 2)
 
 
 class TestBuildShortlist(unittest.TestCase):
     def test_shape_has_required_top_level_keys(self):
         stocks = [make_record(ticker="AAA")]
-        results = mb.run_screen(stocks, [], THRESHOLDS)
+        results = mb.screen_all(stocks, [], THRESHOLDS)
         shortlist = mb.build_shortlist(results, "/tmp/screen-2026-09-28.json", THRESHOLDS)
         self.assertEqual(shortlist["source_file"], "screen-2026-09-28.json")
         self.assertEqual(shortlist["screened"], 1)
@@ -234,10 +241,139 @@ class TestBuildShortlist(unittest.TestCase):
             make_record(ticker="PASSER"),
             make_record(ticker="FAILER", roce=None),
         ]
-        results = mb.run_screen(stocks, [], THRESHOLDS)
+        results = mb.screen_all(stocks, [], THRESHOLDS)
         shortlist = mb.build_shortlist(results, "/tmp/screen-2026-09-28.json", THRESHOLDS)
         tickers = {s["ticker"] for s in shortlist["stocks"]}
         self.assertEqual(tickers, {"PASSER", "FAILER"})
+
+    def test_generated_at_is_seconds_precision_timestamp(self):
+        shortlist = mb.build_shortlist([], "/tmp/screen-2026-09-28.json", THRESHOLDS)
+        # e.g. 2026-09-28T10:15:00 -- date, "T", time to the second, no microseconds
+        parsed = datetime.fromisoformat(shortlist["generated_at"])
+        self.assertEqual(parsed.microsecond, 0)
+        self.assertRegex(shortlist["generated_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+
+    def test_every_shortlist_stock_carries_a_reason(self):
+        stocks = [make_record(ticker="PASSER"), make_record(ticker="FAILER", roce=None)]
+        shortlist = mb.build_shortlist(mb.screen_all(stocks, [], THRESHOLDS),
+                                       "/tmp/screen-2026-09-28.json", THRESHOLDS)
+        for s in shortlist["stocks"]:
+            self.assertTrue(s["reason"].strip())
+
+
+class TestReason(unittest.TestCase):
+    def reason(self, **overrides):
+        return mb.screen_stock(make_record(**overrides), THRESHOLDS)["reason"]
+
+    def test_pass_not_near_low(self):
+        self.assertEqual(self.reason(), "quality pass; not near a local low")
+
+    def test_pass_near_low(self):
+        r = self.reason(pct_of_52wk_range=5.0, technicals={"pct_vs_dma200": -3.0, "rsi14": 40.0})
+        self.assertEqual(r, "quality pass; near local low")
+
+    def test_borderline_names_failing_check_and_margin(self):
+        # (18 - 16.4) / 18 = 8.9%
+        self.assertEqual(self.reason(roce=16.4), "roce short 8.9%; not near a local low")
+
+    def test_multiple_failures_listed_in_check_order(self):
+        # growth 20 (max of 5y/3y) -> allowed PE 50; PE 56 -> 12% over.
+        # cfo_to_pat 0.57 vs 0.6 -> 5% short.
+        r = self.reason(pe=56.0,
+                        growth_ranges={"profit_growth": {"5_years": 20.0, "3_years": 18.0}},
+                        cash_flow={"applicable": True, "cfo_to_pat": 0.57})
+        self.assertEqual(r, "pe_growth over by 12.0%; cash_conversion short 5.0%; not near a local low")
+
+    def test_no_margin_failures_name_the_cause(self):
+        self.assertEqual(self.reason(ratio_history={"roce_fading": True}),
+                         "roce fading; not near a local low")
+        self.assertEqual(self.reason(roce=None), "roce missing; not near a local low")
+        self.assertEqual(self.reason(cash_flow={"applicable": True, "cfo_to_pat": None}),
+                         "cash_conversion missing; not near a local low")
+
+    def test_leverage_failure_named(self):
+        r = self.reason(leverage={"applicable": True, "trend": "rising"}, roce=10.0)
+        self.assertIn("leverage rising with weak roce", r)
+        self.assertTrue(r.startswith("roce short 44.4%"))
+
+    def test_growth_missing_names_both_affected_checks(self):
+        r = self.reason(growth_ranges={"profit_growth": {"5_years": None, "3_years": None}})
+        self.assertEqual(r, "growth missing; pe_growth growth missing; not near a local low")
+
+
+class TestSourceWarnings(unittest.TestCase):
+    def test_complete_file_without_failures_has_no_warnings(self):
+        data = {"stocks": [], "failures": [],
+                "scan_meta": {"index": "NIFTY TEST 50", "total_constituents": 50,
+                              "already_held_skipped": 0, "fetched_so_far": 50,
+                              "failed_so_far": 0, "complete": True}}
+        self.assertEqual(mb.source_warnings(data), [])
+
+    def test_snapshot_shape_has_no_warnings(self):
+        self.assertEqual(mb.source_warnings({"stocks": []}), [])
+
+    def test_incomplete_scan_warns_with_progress(self):
+        data = {"stocks": [], "failures": [],
+                "scan_meta": {"index": "NIFTY TEST 500", "total_constituents": 500,
+                              "already_held_skipped": 20, "fetched_so_far": 100,
+                              "failed_so_far": 0, "complete": False}}
+        warnings = mb.source_warnings(data)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("incomplete", warnings[0])
+        self.assertIn("100/480", warnings[0])
+        self.assertIn("partial universe", warnings[0])
+
+    def test_failures_warn_with_count_and_names(self):
+        data = {"stocks": [], "failures": [{"ticker": "ZENTRO", "error": "HTTP 404"},
+                                           {"ticker": "QORVIK", "error": "timeout"}]}
+        warnings = mb.source_warnings(data)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("2 tickers failed to fetch", warnings[0])
+        self.assertIn("ZENTRO, QORVIK", warnings[0])
+
+
+class TestCmdScreen(unittest.TestCase):
+    """End to end through cmd_screen against a temp data dir: warnings print,
+    screening still proceeds (non-fatal), and the shortlist carries reasons."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.saved_dir = mb.DATA_DIR
+        mb.DATA_DIR = self.tmp.name
+
+    def tearDown(self):
+        mb.DATA_DIR = self.saved_dir
+        self.tmp.cleanup()
+
+    def run_cmd(self, source_doc):
+        with open(os.path.join(self.tmp.name, "screen-2026-06-01.json"), "w", encoding="utf-8") as fh:
+            json.dump(source_doc, fh)
+        args = argparse.Namespace(source="screen", tickers=[], **{
+            k: v for k, v in mb.DEFAULT_THRESHOLDS.items()})
+        out = io.StringIO()
+        with redirect_stdout(out):
+            mb.cmd_screen(args)
+        shortlists = glob.glob(os.path.join(self.tmp.name, "multibagger-shortlist-*.json"))
+        with open(shortlists[0], encoding="utf-8") as fh:
+            return out.getvalue(), json.load(fh)
+
+    def test_incomplete_scan_with_failures_warns_and_still_screens(self):
+        output, shortlist = self.run_cmd({
+            "stocks": [make_record(ticker="ZENTRO")],
+            "failures": [{"ticker": "QORVIK", "error": "HTTP 404"}],
+            "scan_meta": {"index": "NIFTY TEST 50", "total_constituents": 50,
+                          "already_held_skipped": 0, "fetched_so_far": 1,
+                          "failed_so_far": 1, "complete": False},
+        })
+        self.assertIn("Warning: this scan of NIFTY TEST 50 is incomplete (1/50", output)
+        self.assertIn("Warning: 1 tickers failed to fetch and are excluded from this screen: QORVIK", output)
+        self.assertLess(output.index("Warning:"), output.index("Screened:"))
+        self.assertEqual(shortlist["screened"], 1)
+        self.assertEqual(shortlist["stocks"][0]["reason"], "quality pass; not near a local low")
+
+    def test_clean_file_prints_no_warning(self):
+        output, _ = self.run_cmd({"stocks": [make_record(ticker="ZENTRO")], "failures": []})
+        self.assertNotIn("Warning", output)
 
 
 if __name__ == "__main__":

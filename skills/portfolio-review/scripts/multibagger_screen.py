@@ -19,15 +19,20 @@ not printed individually, to keep a large scan's output readable.
         [--cfo-to-pat-min 0.6] [--pct52-max 20.0] [--pct200dma-max 0.0]
 
 Writes `data/skill-data/multibagger-shortlist-<today>.json` with every
-screened stock's verdict (not just survivors), so `scan_history.py` has the
-full record to log.
+screened stock's verdict and a mechanical one-line `reason` (not just
+survivors), so `scan_history.py record-shortlist FILE` can log the full
+record in one call.
+
+Before screening, prints a (non-fatal) warning if the source file is an
+incomplete `--scan` (scan_meta.complete is False) or lists tickers that
+failed to fetch -- either way the universe being screened is partial.
 """
 import argparse
 import glob
 import json
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 
 ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 DATA_DIR = os.path.join(ROOT, "data", "skill-data")
@@ -75,8 +80,10 @@ def check_roce(record, thresholds):
     never borderline-eligible."""
     roce_fading = bool(_get(record, "ratio_history.roce_fading"))
     roce = _get(record, "roce")
-    if roce_fading or roce is None:
-        return {"passed": False, "margin": None}
+    if roce_fading:
+        return {"passed": False, "margin": None, "why": "fading"}
+    if roce is None:
+        return {"passed": False, "margin": None, "why": "missing"}
     if roce < thresholds["roce_min"]:
         margin = (thresholds["roce_min"] - roce) / thresholds["roce_min"]
         return {"passed": False, "margin": margin}
@@ -85,10 +92,10 @@ def check_roce(record, thresholds):
 
 def check_growth(record, thresholds, prof_growth):
     """Check 2. Fails if profit growth is missing or below the floor."""
-    if prof_growth is None or prof_growth < thresholds["profit_growth_min"]:
-        margin = None
-        if prof_growth is not None:
-            margin = (thresholds["profit_growth_min"] - prof_growth) / thresholds["profit_growth_min"]
+    if prof_growth is None:
+        return {"passed": False, "margin": None, "why": "missing"}
+    if prof_growth < thresholds["profit_growth_min"]:
+        margin = (thresholds["profit_growth_min"] - prof_growth) / thresholds["profit_growth_min"]
         return {"passed": False, "margin": margin}
     return {"passed": True, "margin": None}
 
@@ -100,8 +107,12 @@ def check_pe_growth(record, thresholds, prof_growth):
     pe_runrate = _get(record, "pe_runrate")
     pe = _get(record, "pe")
     pe_use = pe_runrate if pe_runrate is not None else pe
-    if pe_use is None or prof_growth is None or prof_growth <= 0:
-        return {"passed": False, "margin": None}
+    if pe_use is None:
+        return {"passed": False, "margin": None, "why": "pe missing"}
+    if prof_growth is None:
+        return {"passed": False, "margin": None, "why": "growth missing"}
+    if prof_growth <= 0:
+        return {"passed": False, "margin": None, "why": "growth not positive"}
     allowed = thresholds["pe_growth_multiple"] * prof_growth
     if pe_use > allowed:
         margin = (pe_use - allowed) / allowed
@@ -117,7 +128,7 @@ def check_leverage(record):
     roce_fading = bool(_get(record, "ratio_history.roce_fading"))
     roce = _get(record, "roce")
     if applicable and trend == "rising" and (roce_fading or (roce is not None and roce < 15)):
-        return {"passed": False, "margin": None}
+        return {"passed": False, "margin": None, "why": "rising with weak roce"}
     return {"passed": True, "margin": None}
 
 
@@ -128,10 +139,10 @@ def check_cash_conversion(record, thresholds):
     if _get(record, "cash_flow.applicable") is False:
         return {"passed": True, "margin": None}
     cfo_to_pat = _get(record, "cash_flow.cfo_to_pat")
-    if cfo_to_pat is None or cfo_to_pat < thresholds["cfo_to_pat_min"]:
-        margin = None
-        if cfo_to_pat is not None:
-            margin = (thresholds["cfo_to_pat_min"] - cfo_to_pat) / thresholds["cfo_to_pat_min"]
+    if cfo_to_pat is None:
+        return {"passed": False, "margin": None, "why": "missing"}
+    if cfo_to_pat < thresholds["cfo_to_pat_min"]:
+        margin = (thresholds["cfo_to_pat_min"] - cfo_to_pat) / thresholds["cfo_to_pat_min"]
         return {"passed": False, "margin": margin}
     return {"passed": True, "margin": None}
 
@@ -139,7 +150,10 @@ def check_cash_conversion(record, thresholds):
 def classify_quality(record, thresholds):
     """Runs all five checks and returns (verdict, checks) where verdict is
     one of "pass"/"borderline"/"fail" and checks is a dict of the five
-    per-check {"passed", "margin"} results, keyed by name.
+    per-check {"passed", "margin"} results, keyed by name. A failed check
+    whose margin is None also carries a short "why" label (e.g. "fading",
+    "missing") so describe_reason can name the cause without re-reading
+    the record.
 
     Rule: all pass -> pass. Leverage fails -> fail, always (never
     borderline). Otherwise, exactly one of the four margin-eligible checks
@@ -183,9 +197,38 @@ def rsi_tag(rsi14):
     return "neutral/n/a"
 
 
+CHECK_ORDER = ("roce", "growth", "pe_growth", "leverage", "cash_conversion")
+
+
+def describe_check_failure(name, check):
+    """One failed check as a short phrase: "roce short 8.9%", "pe_growth
+    over by 12.0%" (PE runs ahead of growth, so the miss is an overshoot),
+    or "roce fading" / "cash_conversion missing" when there is no margin."""
+    margin = check.get("margin")
+    if margin is not None:
+        word = "over by" if name == "pe_growth" else "short"
+        return f"{name} {word} {margin * 100:.1f}%"
+    return f"{name} {check.get('why') or 'failed'}"
+
+
+def describe_reason(verdict, checks, near_local_low):
+    """Deterministic one-line reason for the shortlist and scan_history:
+    "quality pass; near local low" for a pass, otherwise every failed check
+    in CHECK_ORDER with its margin, "; "-joined, followed by the
+    near-local-low state. Pure naming of already-computed results -- no
+    judgment."""
+    low = "near local low" if near_local_low else "not near a local low"
+    if verdict == "pass":
+        return f"quality pass; {low}"
+    parts = [describe_check_failure(n, checks[n]) for n in CHECK_ORDER
+             if n in checks and not checks[n]["passed"]]
+    return "; ".join(parts + [low])
+
+
 def screen_stock(record, thresholds):
-    """One stock's full result: verdict, checks, near_local_low, and the
-    key metrics the printed sections and shortlist file both need."""
+    """One stock's full result: verdict, checks, near_local_low, a
+    mechanical one-line reason (see describe_reason), and the key metrics
+    the printed sections and shortlist file both need."""
     verdict, checks = classify_quality(record, thresholds)
     near_low = is_near_local_low(record, thresholds)
     rsi14 = _get(record, "technicals.rsi14")
@@ -193,6 +236,7 @@ def screen_stock(record, thresholds):
         "ticker": _get(record, "ticker"),
         "quality_verdict": verdict,
         "near_local_low": near_low,
+        "reason": describe_reason(verdict, checks, near_low),
         "checks": checks,
         "metrics": {
             "roce": _get(record, "roce"),
@@ -233,19 +277,13 @@ def format_survivor_line(result):
 
 def format_borderline_line(result):
     failing = [name for name in BORDERLINE_ELIGIBLE if not result["checks"][name]["passed"]]
-    if failing:
-        name = failing[0]
-        margin = result["checks"][name]["margin"]
-        margin_str = f"{margin * 100:.1f}%" if margin is not None else "n/a"
-        detail = f"{name} short by {margin_str}"
-    else:
-        detail = "n/a"
+    detail = describe_check_failure(failing[0], result["checks"][failing[0]]) if failing else "n/a"
     return f"{result['ticker']:<12} {detail}  near_local_low={result['near_local_low']}"
 
 
 def build_shortlist(results, source_file, thresholds):
     return {
-        "generated_at": date.today().isoformat(),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
         "source_file": os.path.basename(source_file),
         "thresholds": thresholds,
         "screened": len(results),
@@ -253,7 +291,7 @@ def build_shortlist(results, source_file, thresholds):
     }
 
 
-def run_screen(stocks, tickers, thresholds):
+def screen_all(stocks, tickers, thresholds):
     """Pure: takes the raw stock records already loaded from a source file
     and an optional ticker filter, returns the list of screen_stock results
     in source order."""
@@ -261,6 +299,35 @@ def run_screen(stocks, tickers, thresholds):
         wanted = {t.strip().upper() for t in tickers}
         stocks = [s for s in stocks if (s.get("ticker") or "").strip().upper() in wanted]
     return [screen_stock(s, thresholds) for s in stocks]
+
+
+def source_warnings(data):
+    """Non-fatal warnings about the source file itself, as printable lines:
+    a --scan file whose scan_meta.complete is False (an interrupted or
+    still-running scan, so the universe is partial), and a non-empty
+    top-level "failures" list (tickers that failed to fetch and so are not
+    in "stocks" at all). Returns [] for a complete, failure-free file, or
+    one carrying neither key (e.g. a snapshot)."""
+    warnings = []
+    meta = data.get("scan_meta")
+    if isinstance(meta, dict) and meta.get("complete") is False:
+        fetched = meta.get("fetched_so_far")
+        total = meta.get("total_constituents")
+        skipped = meta.get("already_held_skipped")
+        if isinstance(total, int) and isinstance(skipped, int):
+            total -= skipped  # held tickers are never fetched in a scan
+        progress = (f" ({fetched}/{total} constituents fetched so far)"
+                    if fetched is not None and total is not None else "")
+        index = f" of {meta['index']}" if meta.get("index") else ""
+        warnings.append(f"Warning: this scan{index} is incomplete{progress} -- "
+                        "results may be a partial universe.")
+    failures = data.get("failures")
+    if isinstance(failures, list) and failures:
+        names = [f.get("ticker") if isinstance(f, dict) else str(f) for f in failures]
+        names = [n for n in names if n]
+        warnings.append(f"Warning: {len(failures)} tickers failed to fetch and are excluded "
+                        f"from this screen: {', '.join(names)}")
+    return warnings
 
 
 def print_report(results):
@@ -306,7 +373,13 @@ def cmd_screen(args):
         data = json.load(fh)
     stocks = data.get("stocks", [])
 
-    results = run_screen(stocks, args.tickers, thresholds)
+    warnings = source_warnings(data)
+    for warning in warnings:
+        print(warning)
+    if warnings:
+        print()
+
+    results = screen_all(stocks, args.tickers, thresholds)
     print_report(results)
 
     shortlist = build_shortlist(results, source_file, thresholds)
