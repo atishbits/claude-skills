@@ -21,6 +21,10 @@ sbi-tt-rates.json
 
 !skills/*/*-template.*
 
+# Implementation plans written by the superpowers:writing-plans workflow —
+# working scratch for a session, not something this repo needs to track.
+docs/superpowers/plans/
+
 # Statements and spreadsheets: the file types personal records actually arrive
 # in. Belt to the pre-commit hook's braces. Deliberate exception: `git add -f`.
 #
