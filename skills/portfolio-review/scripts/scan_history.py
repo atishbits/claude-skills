@@ -2,7 +2,7 @@
 """Append-only ledger of scan-history entries from mechanical screen, judgment,
 and deep-dive reviews of candidates in the multibagger scan.
 
-Two jobs:
+Three jobs:
 
   1. Record a scan entry at the moment a ticker is screened or reviewed:
 
@@ -13,14 +13,25 @@ Two jobs:
      PASS, FAIL, or BORDERLINE. REASON is the justification for the outcome.
      NEXT_CHECKIN is an optional reminder date to re-check this ticker.
 
-  2. Review the scan history and overdue re-checks:
+  2. Record every stock in a multibagger_screen.py shortlist in one go:
+
+         python3 scripts/scan_history.py record-shortlist FILE
+             [--stage mechanical] [--date YYYY-MM-DD]
+
+     FILE is a multibagger-shortlist-*.json written by multibagger_screen.py.
+     Appends one entry per stock in its "stocks" list, using the stock's
+     quality_verdict as OUTCOME and its mechanical "reason" field as REASON.
+
+  3. Review the scan history and overdue re-checks:
 
          python3 scripts/scan_history.py report [TICKER ...] [--borderline]
 
      Prints every recorded entry per ticker, in order. With --borderline,
      restricts to entries whose outcome is BORDERLINE. Then always prints
-     a final section of overdue re-checks (tickets whose latest entry has
-     a next_checkin date in the past).
+     a final section of overdue re-checks: tickers whose most recent
+     reminder (the latest entry that carries a next_checkin) is due today
+     or earlier. A later entry without a next_checkin does not clear an
+     earlier reminder -- see overdue_checkins.
 
 The ledger is a fact log of every scan decision and its justification.
 """
@@ -79,9 +90,48 @@ def append_entry(ticker, stage, outcome, reason, asof=None, next_checkin=None, l
     return entry
 
 
+def record_shortlist(shortlist_path, stage="mechanical", asof=None, ledger_path=None):
+    """Append one entry per stock in a multibagger_screen.py shortlist file
+    (multibagger-shortlist-*.json): outcome is the stock's quality_verdict
+    (pass/fail/borderline), reason is its mechanical "reason" string.
+
+    Every stock is validated (ticker, stage, outcome and non-blank reason)
+    before anything is written, so a malformed file raises ValueError and
+    leaves the ledger untouched instead of recording half of it. A file
+    with an empty "stocks" list records nothing. Returns the appended
+    entries in file order."""
+    with open(shortlist_path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    stocks = data.get("stocks") if isinstance(data, dict) else None
+    if not isinstance(stocks, list):
+        raise ValueError(f"{shortlist_path}: no \"stocks\" list -- is this a multibagger-shortlist file?")
+
+    normalise_stage(stage)
+    rows = []
+    for i, s in enumerate(stocks):
+        if not isinstance(s, dict):
+            raise ValueError(f"{shortlist_path}: stocks[{i}] is not an object")
+        ticker, verdict, reason = s.get("ticker"), s.get("quality_verdict"), s.get("reason")
+        if not isinstance(ticker, str) or not ticker.strip():
+            raise ValueError(f"{shortlist_path}: stocks[{i}] has no ticker")
+        ticker = ticker.strip()
+        if not isinstance(verdict, str):
+            raise ValueError(f"{shortlist_path}: {ticker} has no quality_verdict")
+        reason = reason.strip() if isinstance(reason, str) else ""
+        if not reason:
+            raise ValueError(f"{shortlist_path}: {ticker} has no \"reason\" -- "
+                             "re-run multibagger_screen.py to regenerate the shortlist")
+        normalise_outcome(verdict)
+        rows.append((ticker, verdict, reason))
+
+    return [append_entry(t, stage, v, r, asof=asof, ledger_path=ledger_path) for t, v, r in rows]
+
+
 def load_history(ticker=None, ledger_path=None):
     """Load all entries from the ledger, optionally filtered to one ticker.
-    Sorted by (ticker, date)."""
+    Sorted by (ticker, date). The sort is stable, so entries sharing a
+    ticker and date keep their file (append) order -- overdue_checkins
+    relies on that to break same-day ties."""
     ledger_path = ledger_path or LEDGER_PATH
     if not os.path.exists(ledger_path):
         return []
@@ -106,23 +156,37 @@ def days_overdue(checkin_date, today=None):
 
 
 def overdue_checkins(entries, today=None):
-    """Find entries that are overdue for re-checking.
-    Only the chronologically latest entry per ticker counts -- an earlier
-    entry's next_checkin is superseded if the latest entry has one (or none).
-    Returns sorted list of overdue entries (by next_checkin date ascending)."""
-    today = today or date.today().isoformat()
-    # Group by ticker, keeping only the latest entry per ticker
-    latest_by_ticker = {}
-    for e in entries:
-        ticker = e["ticker"]
-        if ticker not in latest_by_ticker or e["date"] > latest_by_ticker[ticker]["date"]:
-            latest_by_ticker[ticker] = e
+    """Find tickers whose current reminder is due for re-checking.
 
-    # Filter to those with a next_checkin that is past
-    overdue = []
-    for e in latest_by_ticker.values():
-        if "next_checkin" in e and e["next_checkin"] <= today:
-            overdue.append(e)
+    Per ticker, only entries that carry a non-None next_checkin are
+    candidates; entries without one are ignored entirely, so a later
+    entry with no next_checkin never erases an earlier entry's reminder.
+    Among the candidates, the one with the latest (date, list position)
+    is that ticker's current reminder -- same-date ties go to the entry
+    that appears later in `entries` (for load_history's output, that is
+    the one appended later in the ledger file, since its sort is stable).
+    A later reminder therefore supersedes an earlier one, whether it moves
+    the date earlier or later. That reminder is overdue when its
+    next_checkin is on or before `today`. A ticker with no next_checkin on
+    any entry contributes nothing.
+
+    This is what lets the multibagger-scan funnel record mechanical,
+    judgment and deep-dive stages for one ticker on the same day while
+    only the deep-dive entry sets the reminder.
+
+    Returns the overdue reminder entries, sorted by next_checkin ascending."""
+    today = today or date.today().isoformat()
+    # Per ticker, the latest (date, position) entry that carries a reminder
+    current_by_ticker = {}
+    for pos, e in enumerate(entries):
+        if e.get("next_checkin") is None:
+            continue
+        key = (e["date"], pos)
+        best = current_by_ticker.get(e["ticker"])
+        if best is None or key > best[0]:
+            current_by_ticker[e["ticker"]] = (key, e)
+
+    overdue = [e for _, e in current_by_ticker.values() if e["next_checkin"] <= today]
 
     # Sort by next_checkin date ascending
     overdue.sort(key=lambda e: e["next_checkin"])
@@ -154,6 +218,16 @@ def cmd_record(args):
     entry = append_entry(args.ticker, args.stage, args.outcome, args.reason,
                         args.asof, args.next_checkin)
     print(f"Recorded: {entry['ticker']} {entry['stage']} {entry['outcome']} on {entry['date']}")
+
+
+def cmd_record_shortlist(args):
+    entries = record_shortlist(args.file, args.stage, args.asof)
+    counts = {}
+    for e in entries:
+        counts[e["outcome"]] = counts.get(e["outcome"], 0) + 1
+    summary = ", ".join(f"{counts[o]} {o}" for o in sorted(counts)) or "nothing to record"
+    stage = entries[0]["stage"] if entries else normalise_stage(args.stage)
+    print(f"Recorded {len(entries)} {stage} entries from {os.path.basename(args.file)} ({summary})")
 
 
 def cmd_report(args):
@@ -200,6 +274,13 @@ def main():
     rec.add_argument("--next-checkin", dest="next_checkin")
     rec.set_defaults(func=cmd_record)
 
+    rs = sub.add_parser("record-shortlist",
+                        help="append one entry per stock in a multibagger-shortlist-*.json file")
+    rs.add_argument("file")
+    rs.add_argument("--stage", default="mechanical")
+    rs.add_argument("--date", dest="asof")
+    rs.set_defaults(func=cmd_record_shortlist)
+
     rep = sub.add_parser("report", help="review the scan history and overdue re-checks")
     rep.add_argument("tickers", nargs="*")
     rep.add_argument("--borderline", action="store_true",
@@ -209,7 +290,7 @@ def main():
     args = p.parse_args()
     try:
         args.func(args)
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         sys.exit(str(exc))
 
 
