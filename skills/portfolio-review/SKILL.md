@@ -12,6 +12,8 @@ allowed-tools:
   - Bash(python3 *close_on.py*)
   - Bash(python3 *three_year_case.py*)
   - Bash(python3 *tax_lots.py*)
+  - Bash(python3 *rating_ledger.py*)
+  - Bash(python3 *calendar_notes.py*)
   - Bash(curl *)
   - Bash(pdftotext *)
   - Read
@@ -268,7 +270,11 @@ A confident conclusion built on a bad input is worse than no conclusion. Do thes
 - **Latest net debt**, where `leverage.applicable` is true and `trend` is not `low`. The snapshot's
   figure is gross, excludes cash, and comes from the last annual or half-year balance sheet, so the
   quarter's investor presentation is usually the better source. Date whichever you use.
-- Corporate actions, capacity changes, management changes, regulatory news.
+- **Corporate actions, capacity changes, management changes, regulatory news.** Search
+  `<company> news <month> <year>` alongside the concall and target searches above, not as an
+  afterthought — a chairman exit, a raid or SEBI order, a plant shutdown or a licence issue rarely
+  shows up in screener's ratios until the next quarter, but it is exactly the kind of thing that
+  makes a rating stale between reviews.
   - **Date a corporate action (OFS, buyback, block deal) from news coverage, not from the NSE
     `sast` filing date alone.** The filing date can lag the actual event by a week or more —
     LICI's `sast` block dated the government's OFS to 13 Aug 2026, but the OFS itself opened
@@ -277,13 +283,47 @@ A confident conclusion built on a bad input is worse than no conclusion. Do thes
     `<company> OFS/buyback <month> <year>` to confirm the actual date, and note if it was
     oversubscribed — that's a materially different read on whether the overhang has cleared than
     the bare fact that a sale happened.
+- **Auditor and governance red flags.** Search `<company> auditor resignation OR qualified opinion
+  OR SEBI order OR forensic`. An auditor resigning mid-year, a qualified or adverse audit opinion,
+  or an active SEBI/MCA order is a stronger and more specific red flag than anything the ratios can
+  show, and it is missed entirely by a review that only reads screener's numbers. Absence of a hit
+  is not the same as a clean record — say you searched and found nothing, dated, the same rule 3b.6
+  already applies to pledge and insider data.
+- **Government or PSU ownership, where the promoter is the state.** `shareholding`'s promoter figure
+  already shows this; read what it implies rather than treating a PSU like any other promoter-held
+  stock. Note the specific policy exposure by name (a disinvestment overhang, a subsidy or
+  price-control dependency, a directive the company doesn't control commercially) rather than a
+  generic "government-linked, so lower risk" or "government-linked, so higher risk" — either
+  direction stated without the specific mechanism is a guess dressed as analysis.
+- **Value migration, for a holding you already own, not only when sourcing a new one.**
+  `new-ideas.md` already uses secular themes (ICE to EV, renewables, AI-linked capex, the
+  public-to-private shift in defence/space/energy) as a sourcing hint for new candidates — ask the
+  same question of an existing holding: is value moving toward this business's segment, or away
+  from it toward a substitute or an adjacent business model further up or down the chain? A
+  company can look statistically fine on every ratio above while sitting in a segment the market is
+  structurally de-rating — that is a forward-looking, qualitative read, not something the ratios
+  will show until the migration has already shown up in falling growth.
 
 Prefer recent Indian market sources. If coverage is thin, which is common for smallcaps, say so
 rather than inventing a consensus.
 
 ### 3d. Decide a rating
 
-BUY, HOLD or SELL / trim. Weigh:
+BUY, HOLD or SELL / trim. Weigh the factors below by holistic judgment, not a formula — but three
+of them are named explicitly as carrying more weight than the rest, and one is named as
+subordinate, so when two factors disagree these are not equal votes:
+- **Price against the consensus target** is called out below as the single strongest argument for
+  trimming.
+- **Who is buying and selling the stock** — specifically promoters cutting a stake — is called out
+  below as the strongest single bear signal in the ownership data.
+- **The peak-earnings check** (part of the signal-row re-check below) must run before, and can
+  override, the growth-vs-price-paid read further down — a favourable PEG built on earnings the
+  business is losing is not a real signal, so that check does not get to run as if the peak-earnings
+  question were still open.
+- **Technicals are explicitly subordinate to all of the above**: they decide the re-look price,
+  never the rating itself.
+
+Everything else below is weighed together, not ranked against each other by a fixed order:
 
 - **The signal row**, checking it yourself when confidence is `low` or the row is printed with `?`.
   Also check it when confidence is `high`, if trailing earnings contain something that is
@@ -491,6 +531,21 @@ from one of those. A HOLD can wait for the next review; a BUY or SELL gets this 
 If a check fails, fix the note, and the rating if its argument no longer holds, before writing the
 summary. Say in the summary that the pass ran, and what it changed.
 
+**Then record the rating to the ledger**, for every note you wrote or rewrote in this step,
+whether or not it changed:
+
+```
+python3 ${CLAUDE_SKILL_DIR}/scripts/rating_ledger.py record TICKER RATING PRICE "deciding sentence"
+```
+
+`RATING` is `BUY`, `HOLD` or `SELL` (a trim is `SELL`). `PRICE` is the note's own snapshot price,
+not a web price. The deciding sentence is the same one 3g.3 just tested — the reason this is BUY
+rather than HOLD, or SELL rather than HOLD — quoted, so a later `report` run can read back exactly
+what would have to hold up for the call to still be right. This is the only way the skill's own
+record survives past the next rewrite: the note template's `(prev ...)` field keeps only one hop of
+history, so without this step there is no way to score a rating once two more rewrites have passed
+over it.
+
 ## Step 4 — re-run and summarise
 
 Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py` (no arguments, no `--refresh`)
@@ -510,5 +565,33 @@ as parallel, independent picks, the reader loses that they're two adds to the sa
 2026 SBIN and ICICIBANK (both Financial Services, already 24.3% of the book) and APOLLOTYRE and
 SWARAJENG (both auto-linked, ~12% of the book) were presented as four separate BUYs with no mention
 that they paired up — state the shared exposure explicitly when it's there.
+
+**Offer the calendar candidates for any ticker researched this run:**
+
+```
+python3 ${CLAUDE_SKILL_DIR}/scripts/calendar_notes.py TICKER ...
+```
+
+This writes `data/skill-data/calendar.md` with each ticker's estimated next-results window and its
+technical re-look levels (200/50 DMA, 60-day low) — a deterministic date/price computation, not a
+forecast. If a calendar connector is available in this session, offer to turn the rows into actual
+events; otherwise point the user at the file so they (or another Claude session with a calendar
+tool) can do it. Never treat the results window as a confirmed date — it is a reporting-lag
+estimate, and the note itself already says so.
+
+**On a portfolio-wide sweep, or when the user asks how past calls have done, score the ledger:**
+
+```
+python3 ${CLAUDE_SKILL_DIR}/scripts/rating_ledger.py report
+```
+
+This is a fact report only — the recorded price, today's price, the realised return and the
+deciding sentence recorded at the time, per rating. Reading whether that sentence actually held up
+is your job, the same judgment call as everything else in 3d: pull the news and the results since
+that date for anything the report flags as a large move or a long-held rating, and say plainly
+whether the original thesis was right, wrong, or still open. Where it was wrong, name what you'd
+change about how similar calls get made — that is the point of keeping the ledger at all, not just
+a scoreboard. The ledger only starts counting from the first `record` call onward, so a first run
+may show little or nothing; say that rather than treating an empty ledger as a clean track record.
 
 Close with: *Not investment advice — verify prices and figures before acting.*
