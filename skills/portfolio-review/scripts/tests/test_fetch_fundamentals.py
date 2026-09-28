@@ -296,6 +296,39 @@ class TestParseArgs(unittest.TestCase):
             ff.parse_args(["--scan", "NIFTY 500", "TICKER"])
 
 
+class TestRunScanEmptyConstituents(unittest.TestCase):
+    """A mistyped index name comes back from NSE as HTTP 200 with no rows.
+    run_scan must exit before writing anything, so an existing same-day
+    screen file survives."""
+
+    def setUp(self):
+        import tempfile
+        self.saved_root = ff.ROOT
+        self.saved_fetch = ff.nse_index.fetch_constituents
+        self.tmp = tempfile.TemporaryDirectory()
+        ff.set_root(self.tmp.name)
+
+    def tearDown(self):
+        ff.nse_index.fetch_constituents = self.saved_fetch
+        ff.set_root(self.saved_root)
+        self.tmp.cleanup()
+
+    def test_empty_list_exits_and_leaves_existing_screen_file_untouched(self):
+        from datetime import date
+        os.makedirs(ff.SKILL_DATA_DIR, exist_ok=True)
+        existing = os.path.join(ff.SKILL_DATA_DIR, f"screen-{date.today().isoformat()}.json")
+        with open(existing, "w", encoding="utf-8") as fh:
+            fh.write('{"stocks": [{"ticker": "ZENTRO"}]}')
+        ff.nse_index.fetch_constituents = lambda index_name: []
+        with self.assertRaises(SystemExit) as ctx:
+            ff.run_scan("NIFTY TYPO 999", held=[], force=False, use_nse=False)
+        self.assertIn("NIFTY TYPO 999", str(ctx.exception.code))
+        self.assertIn("--screen", str(ctx.exception.code))
+        with open(existing, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), '{"stocks": [{"ticker": "ZENTRO"}]}')
+        self.assertEqual(os.listdir(ff.SKILL_DATA_DIR), [os.path.basename(existing)])
+
+
 class TestLatestHoldingsFile(unittest.TestCase):
     """A freshly-downloaded export can land with an older mtime than a stale
     file still sitting in the folder (a cloud-synced copy, a moved file).

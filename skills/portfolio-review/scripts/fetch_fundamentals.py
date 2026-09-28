@@ -1714,12 +1714,20 @@ def run_scan(index_name, held, force, use_nse, batch_size=50):
     If nse_index.fetch_constituents raises RuntimeError, catch it and
     sys.exit with a message that includes the original error and suggests
     `--screen TICKER ...` with a manually supplied list as the fallback --
-    never let the raw traceback reach the user."""
+    never let the raw traceback reach the user.
+
+    If it returns an empty list (NSE answers a mistyped index name with an
+    HTTP 200 and no rows), sys.exit the same way BEFORE any file is written,
+    so an empty result never overwrites that day's screen-<today>.json."""
     try:
         constituents = nse_index.fetch_constituents(index_name)
     except RuntimeError as exc:
         sys.exit(f"Could not fetch the constituents of \"{index_name}\": {exc}\n"
                  "Try again, or supply the tickers by hand with --screen TICKER ...")
+    if not constituents:
+        sys.exit(f"NSE returned no constituents for \"{index_name}\" -- double-check the exact "
+                 "NSE index name (e.g. \"NIFTY MIDCAP 150\"), or supply the tickers by hand "
+                 "with --screen TICKER ...\nNothing was written.")
 
     held_set = {h["ticker"] for h in held}
     skipped = [t for t in constituents if t in held_set]
