@@ -30,6 +30,7 @@ from datetime import date, datetime
 import requests
 
 import nse_disclosures
+import nse_index
 
 # The project root is where the *data* lives. Two tiers under it, both
 # gitignored wholesale by the repo's `data/` rule regardless of which root is
@@ -1582,13 +1583,17 @@ def prune_cache():
 
 
 def parse_args(argv):
-    """`fetch_fundamentals.py [--root PATH] [--refresh] [--screen] [--no-nse] [TICKER ...]`
+    """`fetch_fundamentals.py [--root PATH] [--refresh] [--screen] [--scan "INDEX NAME"] [--no-nse] [TICKER ...]`
 
     No tickers  -> full refresh of every holding, rebuilds the day's snapshot.
     Tickers     -> refresh just those and merge them into the day's snapshot.
     --screen    -> the tickers are candidates you don't hold: fetch and classify
                    them into data/skill-data/screen-<today>.json, leaving the
                    snapshot and PORTFOLIO.md untouched.
+    --scan NAME -> screen every constituent of the named NSE index (e.g.
+                   "NIFTY MIDCAP 150") instead of a hand-picked ticker list.
+                   Mutually exclusive with --screen and with any bare ticker
+                   argument -- combining them exits with a usage message.
     --refresh   -> ignore the per-day cache and re-fetch live, for when a price
                    has moved since the last run today.
     --no-nse    -> skip the NSE pledge/insider/SAST calls. They are cached for a
@@ -1596,7 +1601,7 @@ def parse_args(argv):
                    cold full run is three extra calls per holding.
     --root PATH -> the folder holding the portfolio data. Defaults to
                    $PORTFOLIO_ROOT, then the working directory."""
-    force, screen, only, nse, root = False, False, [], True, None
+    force, screen, only, nse, root, scan_index = False, False, [], True, None, None
     args = list(argv)
     while args:
         a = args.pop(0)
@@ -1604,6 +1609,10 @@ def parse_args(argv):
             force = True
         elif a == "--screen":
             screen = True
+        elif a == "--scan":
+            if not args:
+                sys.exit("--scan needs an index name")
+            scan_index = args.pop(0)
         elif a == "--no-nse":
             nse = False
         elif a == "--root":
@@ -1614,34 +1623,33 @@ def parse_args(argv):
             root = a.split("=", 1)[1]
         elif a.startswith("-"):
             sys.exit(f"Unknown option: {a}\nUsage: fetch_fundamentals.py [--root PATH] "
-                     "[--refresh] [--screen] [--no-nse] [TICKER ...]")
+                     "[--refresh] [--screen] [--scan \"INDEX NAME\"] [--no-nse] [TICKER ...]")
         else:
             only.append(a.upper())
     set_root(root)
     if screen and not only:
         sys.exit("--screen needs the candidate tickers to fetch.")
-    return force, screen, only, nse
+    if scan_index and (screen or only):
+        sys.exit("--scan cannot be combined with --screen or a ticker list -- "
+                 "run one or the other.")
+    return force, screen, only, nse, scan_index
 
 
-def run_screen(tickers, held, force, use_nse=True):
-    """Classify stocks you don't own with the same rows and technicals as the
-    holdings, so a "what else is worth buying" answer starts from the same
-    evidence. Held tickers are skipped: they belong in the normal run."""
-    held_set = {h["ticker"] for h in held}
-    skipped = [t for t in tickers if t in held_set]
-    if skipped:
-        print(f"Already held, skipping (use the normal run): {', '.join(skipped)}\n")
-    session = requests.Session()
-    session.headers.update({"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
-    prune_cache()
-    stats = {"fetched": 0, "cached": 0, "chart_fetched": 0, "chart_cached": 0,
-             "nse_fetched": 0, "nse_cached": 0}
-    bench = fetch_benchmark(session, stats, force)
-    nse_session = nse_disclosures._session() if use_nse else None
+def screen_batch(tickers, session, nse_session, bench, stats, force, use_nse,
+                 start_index=1, total=None):
+    """Fetches, classifies and builds a record for each ticker in `tickers`
+    (already excludes anything held), printing the same
+    "[i/total] TICKER ... -> row N ..." progress line run_screen prints today.
+    `start_index`/`total` let a caller numbering across multiple batches print
+    continuous [12/487] style progress instead of restarting at 1 for each
+    batch. Returns (results, failures), same shapes run_screen builds today.
+    Does not write any file -- callers own that."""
+    if total is None:
+        total = len(tickers)
     results, failures = [], []
-    todo = [t for t in tickers if t not in held_set]
-    for i, t in enumerate(todo, 1):
-        print(f"[{i:2}/{len(todo)}] {t:<12}", end=" ", flush=True)
+    for offset, t in enumerate(tickers):
+        i = start_index + offset
+        print(f"[{i:2}/{total}] {t:<12}", end=" ", flush=True)
         try:
             doc = fetch(t, session, stats, force)
             chart = fetch_chart(t, parse_company_id(doc), session, stats, force)
@@ -1659,6 +1667,27 @@ def run_screen(tickers, held, force, use_nse=True):
         except Exception as exc:
             failures.append({"ticker": t, "error": str(exc)})
             print(f"FAILED: {exc}")
+    return results, failures
+
+
+def run_screen(tickers, held, force, use_nse=True):
+    """Classify stocks you don't own with the same rows and technicals as the
+    holdings, so a "what else is worth buying" answer starts from the same
+    evidence. Held tickers are skipped: they belong in the normal run."""
+    held_set = {h["ticker"] for h in held}
+    skipped = [t for t in tickers if t in held_set]
+    if skipped:
+        print(f"Already held, skipping (use the normal run): {', '.join(skipped)}\n")
+    session = requests.Session()
+    session.headers.update({"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
+    prune_cache()
+    stats = {"fetched": 0, "cached": 0, "chart_fetched": 0, "chart_cached": 0,
+             "nse_fetched": 0, "nse_cached": 0}
+    bench = fetch_benchmark(session, stats, force)
+    nse_session = nse_disclosures._session() if use_nse else None
+    todo = [t for t in tickers if t not in held_set]
+    results, failures = screen_batch(todo, session, nse_session, bench, stats, force, use_nse,
+                                     start_index=1, total=len(todo))
     os.makedirs(SKILL_DATA_DIR, exist_ok=True)
     out = os.path.join(SKILL_DATA_DIR, f"screen-{date.today().isoformat()}.json")
     with open(out, "w", encoding="utf-8") as fh:
@@ -1667,6 +1696,77 @@ def run_screen(tickers, held, force, use_nse=True):
                   fh, indent=2, ensure_ascii=False)
     print(f"\nFetched {stats['fetched']}, from cache {stats['cached']}, failed {len(failures)}")
     print(f"Screen -> {os.path.relpath(out, ROOT)}  (snapshot and PORTFOLIO.md untouched)")
+
+
+def run_scan(index_name, held, force, use_nse, batch_size=50):
+    """The --scan entry point. Fetches the index's constituent list via
+    nse_index.fetch_constituents, drops anything already held (same "Already
+    held, skipping" message style run_screen prints today), then processes
+    the remainder in batches of `batch_size` using screen_batch, writing
+    data/skill-data/screen-<today>.json after EVERY batch (not just at the
+    end) so a stopped run keeps whatever it already fetched. Each write
+    includes everything accumulated across all batches so far, not just the
+    latest batch, plus a "scan_meta" key: {"index": index_name,
+    "total_constituents": N, "already_held_skipped": M, "fetched_so_far": K,
+    "failed_so_far": F, "complete": bool} -- complete is False on every
+    intermediate write and True only on the final one.
+
+    If nse_index.fetch_constituents raises RuntimeError, catch it and
+    sys.exit with a message that includes the original error and suggests
+    `--screen TICKER ...` with a manually supplied list as the fallback --
+    never let the raw traceback reach the user."""
+    try:
+        constituents = nse_index.fetch_constituents(index_name)
+    except RuntimeError as exc:
+        sys.exit(f"Could not fetch the constituents of \"{index_name}\": {exc}\n"
+                 "Try again, or supply the tickers by hand with --screen TICKER ...")
+
+    held_set = {h["ticker"] for h in held}
+    skipped = [t for t in constituents if t in held_set]
+    if skipped:
+        print(f"Already held, skipping (use the normal run): {', '.join(skipped)}\n")
+    todo = [t for t in constituents if t not in held_set]
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
+    prune_cache()
+    stats = {"fetched": 0, "cached": 0, "chart_fetched": 0, "chart_cached": 0,
+             "nse_fetched": 0, "nse_cached": 0}
+    bench = fetch_benchmark(session, stats, force)
+    nse_session = nse_disclosures._session() if use_nse else None
+
+    os.makedirs(SKILL_DATA_DIR, exist_ok=True)
+    out = os.path.join(SKILL_DATA_DIR, f"screen-{date.today().isoformat()}.json")
+
+    total = len(todo)
+    batches = [todo[i:i + batch_size] for i in range(0, total, batch_size)] or [[]]
+    n_batches = len(batches)
+    all_results, all_failures = [], []
+    start_index = 1
+    for b, batch in enumerate(batches, 1):
+        results, failures = screen_batch(batch, session, nse_session, bench, stats, force,
+                                         use_nse, start_index=start_index, total=total)
+        all_results.extend(results)
+        all_failures.extend(failures)
+        start_index += len(batch)
+        complete = b == n_batches
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump({"generated_at": datetime.now().isoformat(timespec="seconds"),
+                       "row_definitions": ROW_TEXT, "stocks": all_results,
+                       "failures": all_failures,
+                       "scan_meta": {"index": index_name,
+                                     "total_constituents": len(constituents),
+                                     "already_held_skipped": len(skipped),
+                                     "fetched_so_far": len(all_results),
+                                     "failed_so_far": len(all_failures),
+                                     "complete": complete}},
+                      fh, indent=2, ensure_ascii=False)
+        print(f"Batch {b}/{n_batches} done -> {len(all_results)}/{total} fetched so far, "
+              f"screen-{date.today().isoformat()}.json updated")
+
+    print(f"\nFetched {stats['fetched']}, from cache {stats['cached']}, "
+          f"failed {len(all_failures)}")
+    print(f"Scan -> {os.path.relpath(out, ROOT)}  (snapshot and PORTFOLIO.md untouched)")
 
 
 def fetch_benchmark(session, stats, force=False):
@@ -1731,11 +1831,14 @@ def merge_stocks(base, fresh, held):
 
 
 def main():
-    force, screen, only, use_nse = parse_args(sys.argv[1:])
-    csv_path = latest_holdings_file(required=not screen)
+    force, screen, only, use_nse, scan_index = parse_args(sys.argv[1:])
+    csv_path = latest_holdings_file(required=not (screen or scan_index))
     held = read_holdings(csv_path) if csv_path else []
     if screen:
         run_screen(only, held, force, use_nse)
+        return
+    if scan_index:
+        run_scan(scan_index, held, force, use_nse)
         return
     csv_date = holdings_date(csv_path)
     today = date.today().isoformat()

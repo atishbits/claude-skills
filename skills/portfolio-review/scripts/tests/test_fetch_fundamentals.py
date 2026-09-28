@@ -269,6 +269,33 @@ class TestReadHoldingsMd(unittest.TestCase):
             self.assertEqual([h["ticker"] for h in holdings], ["INFY"])
 
 
+class TestParseArgs(unittest.TestCase):
+    """A pure-function test of the CLI parsing -- no network involved. `--root`
+    resets `ff.ROOT` as a side effect, so each test restores it."""
+
+    def setUp(self):
+        self.saved_root = ff.ROOT
+
+    def tearDown(self):
+        ff.set_root(self.saved_root)
+
+    def test_scan_parses_index_name(self):
+        force, screen, only, nse, scan_index = ff.parse_args(["--scan", "NIFTY MIDCAP 150"])
+        self.assertEqual(scan_index, "NIFTY MIDCAP 150")
+        self.assertFalse(force)
+        self.assertFalse(screen)
+        self.assertEqual(only, [])
+        self.assertTrue(nse)
+
+    def test_scan_with_screen_exits(self):
+        with self.assertRaises(SystemExit):
+            ff.parse_args(["--scan", "NIFTY 500", "--screen", "TICKER"])
+
+    def test_scan_with_bare_ticker_exits(self):
+        with self.assertRaises(SystemExit):
+            ff.parse_args(["--scan", "NIFTY 500", "TICKER"])
+
+
 class TestLatestHoldingsFile(unittest.TestCase):
     """A freshly-downloaded export can land with an older mtime than a stale
     file still sitting in the folder (a cloud-synced copy, a moved file).
