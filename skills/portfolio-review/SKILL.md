@@ -48,6 +48,12 @@ checkout is ever shared or backed up somewhere public — pass `--root /path/to/
 - **Nothing named** → Steps 1 and 2 only; do not research.
 - **A filter** ("not analysed in 30 days", "all row-1 names") → the triage rule at the end of
   Step 2, then Step 3 for the shortlist only.
+- **A broad, market-wide search with no tickers named** — asking to scan
+  the market, an index, or a sector for strong candidates against a
+  strict bar, wanting the search itself narrowed down rather than naming
+  candidates to check → read `${CLAUDE_SKILL_DIR}/multibagger-scan.md`
+  and follow it. Distinct from the next bullet: that one is for a
+  narrower or already-named-candidate "what else is worth buying" ask.
 - **Stocks they don't hold, or "what else is worth buying"** → read
   `${CLAUDE_SKILL_DIR}/new-ideas.md` and follow it. It reuses Steps 3b–3d and 3g.
 - **Invoked from a plain question rather than `/portfolio-review`:** take the tickers from the
