@@ -29,6 +29,10 @@ promoter holding as of <date> | no pledge on file as of <date> | pledge data una
 3m/6m return, 60-day range ₹low–high, beta N. Only the readings that matter for this call.>
 **Portfolio context:** <N% of book; <sector> N% incl. <largest peers>, and the economically-linked
 weight if the CSV tag understates it. What the Action does to that.>
+<**3-Year case:** base N%/yr, bear N%/yr, vs Nifty hurdle N%/yr (clears/does not clear by Npp) —
+BUY/SELL only, from `three_year_case.py`.>
+<**Tax:** which lot(s) a SELL/trim uses, LT/ST and days to LT if close, from `tax_lots.py` — SELL/trim
+only.>
 
 **What changed since last analysis:**
 - <**Correction:** what the previous note got wrong, if anything>
@@ -60,4 +64,7 @@ the consensus low estimate, not a round number picked by feel.>
 - **Cash & ownership** was added on 12 Sep 2026 and is not in the required-field check, so notes
   written before it are not flagged as being on an old template. Add the line whenever you rewrite
   one.
+- **3-Year case** and **Tax** were added on 27 Sep 2026, are conditional (BUY/SELL and SELL/trim
+  respectively, not every rating), and are not in the required-field check for that reason. Omit
+  the line entirely for a rating it doesn't apply to, rather than writing "not applicable."
 - The disclaimer footer is part of the template, not optional.

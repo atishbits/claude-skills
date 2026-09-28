@@ -103,5 +103,36 @@ MSG
   exit 1
 fi
 
+# Every skill's scripts should be deterministic enough to unit test (see
+# CLAUDE.md). If any .py file is staged, run every skill's own test suite --
+# not just the one touched, since a shared helper (fetch_fundamentals.py is
+# imported by three_year_case.py and tax_lots.py) can break a sibling script
+# without a change appearing in that script's own diff.
+if printf '%s\n' "$staged" | grep -q '\.py$'; then
+  echo "pre-commit: running unit tests"
+  test_fail=0
+  while IFS= read -r tests_dir; do
+    skill_scripts=$(dirname "$tests_dir")
+    if ! (cd "$skill_scripts" && python3 -m unittest discover -s tests -p 'test_*.py' >/tmp/pretest.$$ 2>&1); then
+      echo "  ✗ $skill_scripts: tests failed"
+      sed 's/^/      /' /tmp/pretest.$$
+      test_fail=1
+    fi
+    rm -f /tmp/pretest.$$
+  done < <(find skills -type d -name tests -path '*/scripts/tests')
+
+  if [ "$test_fail" -ne 0 ]; then
+    cat <<'MSG'
+
+Commit blocked: a skill's unit tests are failing.
+
+Fix the test or the code it covers, then re-stage and commit.
+Deliberate override:       git commit --no-verify
+MSG
+    exit 1
+  fi
+  echo "pre-commit: tests pass"
+fi
+
 echo "pre-commit: clean"
 exit 0

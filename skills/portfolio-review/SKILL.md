@@ -10,6 +10,10 @@ argument-hint: "[TICKER ...] | [filter, e.g. \"not analysed in 30 days\"]"
 allowed-tools:
   - Bash(python3 *fetch_fundamentals.py*)
   - Bash(python3 *close_on.py*)
+  - Bash(python3 *three_year_case.py*)
+  - Bash(python3 *tax_lots.py*)
+  - Bash(curl *)
+  - Bash(pdftotext *)
   - Read
   - Write
   - Edit
@@ -294,10 +298,14 @@ BUY, HOLD or SELL / trim. Weigh:
   margin. ITC's cigarette volume fell only 5% because ITC absorbed tax, and cigarette EBIT fell 31%.
 - **The balance sheet.** Leverage and its direction. Rising debt during a margin squeeze is how a
   cyclical problem becomes a structural one.
-- **Related-party transactions**, from the latest annual report or Secretarial Compliance Report's
-  notes to accounts — the snapshot carries neither, and this is easy to skip for lack of a concrete
-  method, so use one: fetch the annual report PDF from the company's investor page or BSE/NSE
-  filings, then `pdftotext -layout <file>.pdf -` (the `-layout` flag matters — plain `pdftotext` on
+- **Related-party transactions**, gated to when it's worth the cost — every BUY/SELL (3g already
+  scopes deep verification to these), any ticker with a pledge or promoter-selling flag already
+  fired, or a small/thin-coverage name where less else is checking the promoter. Skip it for an
+  ordinary HOLD in a broad sweep and say so, rather than pulling an annual report for every ticker.
+  When you do run it: from the latest annual report or Secretarial Compliance Report's notes to
+  accounts — the snapshot carries neither, and this is easy to skip for lack of a concrete method,
+  so use one: fetch the annual report PDF from the company's investor page or BSE/NSE filings, then
+  `pdftotext -layout <file>.pdf -` (the `-layout` flag matters — plain `pdftotext` on
   a multi-column financial table silently scrambles which number belongs to which line, and
   misattributed a dividend-to-parent line as a fee payment on one run, with no error to catch it),
   then read the RPT schedule itself. **Don't grep for the section title alone** — "related party"
@@ -324,15 +332,42 @@ BUY, HOLD or SELL / trim. Weigh:
   PEG ≈ 0.5 on a +28% five-year CAGR that was entirely the Revlimid exclusivity window, while
   forward guidance implied a profit *decline* — use the guided figure, not the trailing CAGR, once
   3d's exclusivity check has already fired.
-- **Reinvestment**, as a qualitative read, not a computed ratio — for manufacturing, mining and
-  pharma only; the concept doesn't fit IT, banks or NBFCs. The snapshot has no fixed-assets/CWIP
-  field, so a fixed-assets-plus-working-capital-against-cash-flow number means scraping screener's
-  balance sheet by hand for a figure that is often not informative anyway: it misses M&A-funded
-  growth entirely (Natco's actual reinvestment was the Adcock stake increase, invisible to this
-  formula) and says nothing a bank/IT exclusion doesn't already say for those sectors. Use it only
-  as a qualitative sense-check — is the company visibly plowing cash into capex while `roce_fading`
-  is true, or is growth coming from M&A/stake buys the ratio can't see — and skip computing it
-  rather than reporting a number with no real insight behind it.
+- **The 3-year case, for every BUY/SELL — this is the actual question (2-3 year upside, not the next
+  12 months) and the arithmetic is deterministic, so let the script do it rather than eyeballing a
+  chart:**
+
+  ```
+  python3 ${CLAUDE_SKILL_DIR}/scripts/three_year_case.py TICKER \
+    --fwd-eps-base N --fwd-eps-bear N [--div-yield-pct N]
+  ```
+
+  It builds the stock's own 5-10yr trailing P/E band from data already fetched (screener's annual
+  EPS row against year-end closes, one extra long-history chart fetch), and a Nifty hurdle CAGR
+  computed from NIFTYBEES's own realised price history — not a web search, so it can't go stale or
+  get misquoted. Source `--fwd-eps-base`/`--fwd-eps-bear` yourself first (guided or dated consensus
+  EPS for the base case, a trend/normalised figure for the bear case — the same sourcing discipline
+  as a consensus target); the script multiplies each against an exit P/E (the band's median for
+  base, its low for bear, by default) to give a 3-year CAGR, and states plainly whether it clears
+  the Nifty hurdle. A stock whose base case doesn't beat the index-fund hurdle by a real margin has
+  a weak case for new money regardless of how the signal row reads. Run it without `--fwd-eps-*` to
+  get the band alone — useful on its own for the peak-SELL read below.
+  **A dated, named EPS estimate is rarer than a price target — don't block on one.** If nothing
+  turns up (common: analysts publish price targets far more often than explicit EPS numbers),
+  extrapolate from TTM EPS at management's own guided growth rate (credit growth, volume guidance,
+  margin corridor — whatever the concall gave) instead. Label it plainly as your own extrapolation
+  from guidance, not a consensus figure, in the note — the same distinction 3c already draws between
+  a sourced target and an invented one.
+- **A SELL "because it's at its peak" needs the same test, not a feeling.** Read the P/E band
+  output above: is today's P/E at or above the top of the stock's own historical range (the script's
+  percentile line), is `earnings_above_trend` true, and is price already above the consensus
+  average? Two of three together is a real peak case; one alone (a high percentile with earnings
+  still on trend) is a re-rating, not a peak, and argues for HOLD, not SELL.
+- **Reinvestment**, as a qualitative read, not a computed ratio — manufacturing, mining and pharma
+  only. Is the company visibly plowing cash into capex while `roce_fading` is true (`leverage.trend`
+  rising alongside falling FCF is the tell), or is growth coming from M&A/stake buys a fixed-assets
+  ratio can't see anyway (Natco's real reinvestment was the Adcock stake, invisible to that math)?
+  Don't compute the ratio by hand — the snapshot has no fixed-assets field, and the number is rarely
+  worth the scrape.
 - **Whether profit becomes cash.** `cash_flow.cfo_to_pat` below ~0.6 over five years says reported
   profit is not arriving as cash, which is the value-trap tell the ratios miss. Read it with
   `ratio_history.debtor_days`: profit that stays in receivables is the usual reason. Both are
@@ -383,6 +418,18 @@ BUY, HOLD or SELL / trim. Weigh:
   vanish with a different average cost, delete it. "Adding lowers my average" and "adding would
   worsen an already-good position" both fail. The purchase price is sunk. The only legitimate use
   is tax (the 12-month long-term holding period, harvesting a loss), and it must be labelled as tax.
+- **A SELL or trim names which lots, using the script rather than eyeballing purchase dates:**
+
+  ```
+  python3 ${CLAUDE_SKILL_DIR}/scripts/tax_lots.py TICKER
+  ```
+
+  It reads today's snapshot's per-lot data and prints each lot's LT/ST status, days held, unrealized
+  gain, and flags any short-term lot within ~60 days of turning long-term (20% → 12.5%, and
+  exemption-eligible) — a real choice between selling now and waiting worth naming explicitly, not
+  leaving implicit. It cannot see gains realized elsewhere this FY, so it cannot say how much of the
+  ₹1.25L/FY LTCG exemption is already used; ask the user or check their broker Console for that
+  before sizing a loss-harvest or a tax-free gain-booking sale, rather than assuming full headroom.
 - **The rating and the Action must agree.** BUY means buying at today's price is right. If the
   level you would add at is more than ~5% below the current price, either rate it HOLD with "add at
   ₹X", or keep BUY and state the split: how much now, how much at the level.

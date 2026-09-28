@@ -256,10 +256,10 @@ def read_holdings_md(path):
             continue
         (sym, qty, avg, ltp, value, pnl, pnl_pct, lt_qty, st_qty,
          next_lt, unreal_lt_st, sector, lots) = cells[:13]
-        lt_gain, lt_loss = None, None
+        unreal_lt, unreal_st = None, None
         lt_st = [p.strip() for p in unreal_lt_st.split("/")]
         if len(lt_st) == 2:
-            lt_gain, lt_loss = num(lt_st[0]), num(lt_st[1])
+            unreal_lt, unreal_st = num(lt_st[0]), num(lt_st[1])
         holdings.append({
             "ticker": sym,
             "qty": num(qty),
@@ -272,8 +272,8 @@ def read_holdings_md(path):
             "lt_qty": None if lt_qty == "-" else num(lt_qty),
             "st_qty": None if st_qty == "-" else num(st_qty),
             "next_lot_turns_lt": None if next_lt == "-" else next_lt,
-            "unrealized_lt_pnl": lt_gain,
-            "unrealized_st_pnl": lt_loss,
+            "unrealized_lt_pnl": unreal_lt,
+            "unrealized_st_pnl": unreal_st,
             "broker_sector": sector or None,
             "lots": parse_lots(lots),
         })
@@ -954,19 +954,28 @@ def is_financial(sector_info, ticker):
     return any(w in haystack for w in FINANCIAL_SECTOR_WORDS)
 
 
-LENDER_INDUSTRY_WORDS = ("bank", "non banking financial", "nbfc", "insurance")
+LENDER_INDUSTRY_WORDS = ("bank", "non banking financial", "nbfc", "insurance",
+                          "housing finance", "financial institution", "microfinance")
 
 
-def is_lender(sector_info):
+def is_lender(sector_info, ticker=None):
     """Businesses whose operating cash flow is really deposit/loan/premium
     movement rather than a quality signal -- not every 'Financial Services'
-    company `is_financial` catches. A bank or NBFC's cash flow is deposit and
-    loan movement, and an insurer's is premium collected against claims paid
-    and investment purchases; neither is comparable to ordinary CFO. An AMC
-    or exchange has ordinary operating cash flow and real borrowings that are
-    just as meaningful a signal as any non-financial's. HDFCAMC was wrongly
-    getting cash_flow and leverage suppressed as "lender: n/a" under the
-    broader check."""
+    company `is_financial` catches. A bank, NBFC, housing finance company,
+    financial institution (PFC/REC/IRFC-style) or microfinance lender's cash
+    flow is deposit and loan movement, and an insurer's is premium collected
+    against claims paid and investment purchases; none of these are
+    comparable to ordinary CFO. An AMC or exchange has ordinary operating
+    cash flow and real borrowings that are just as meaningful a signal as
+    any non-financial's -- HDFCAMC was wrongly getting cash_flow and leverage
+    suppressed as "lender: n/a" under the broader check.
+    `ticker` consults FINANCIAL_TICKERS the same way `is_financial` does:
+    BAJAJFINSV (a holding company consolidating an NBFC and insurers) and
+    JIOFIN ("Investment Company") both report consolidated cash flow that is
+    really lending/insurance flow underneath, but neither industry label
+    contains a word this function would otherwise catch."""
+    if ticker in FINANCIAL_TICKERS:
+        return True
     industry = (sector_info.get("industry") or "").lower()
     return any(w in industry for w in LENDER_INDUSTRY_WORDS)
 
@@ -1160,7 +1169,7 @@ def build(holding, doc, chart=None, csv_date=None, bench=None, nse=None):
         "pe_runrate_diverges": bool(pe and pe_rr and max(pe, pe_rr) / min(pe, pe_rr) > 2),
         "roe": roe,
         "roce": roce,
-        "leverage": leverage(doc, is_lender(sector_info)),
+        "leverage": leverage(doc, is_lender(sector_info, holding["ticker"])),
         "market_cap_cr": mcap,
         "book_value": to_float(ratios.get("Book Value", "")),
         "dividend_yield": to_float(ratios.get("Dividend Yield", "")),
@@ -1176,7 +1185,7 @@ def build(holding, doc, chart=None, csv_date=None, bench=None, nse=None):
         "sales_yoy_pct": pct_change(quarters.get("sales")),
         "profit_yoy_pct": pct_change(quarters.get("net_profit")),
         "one_offs": one_off_check(quarters, mcap),
-        "cash_flow": parse_cash_flow(doc, is_lender(sector_info)),
+        "cash_flow": parse_cash_flow(doc, is_lender(sector_info, holding["ticker"])),
         "ratio_history": parse_ratio_history(doc),
         "growth_ranges": parse_growth_ranges(doc),
         "shareholding": parse_shareholding(doc),
