@@ -6,6 +6,12 @@ for a sector.
 0. **If there is no `PORTFOLIO.md` yet** — no holdings CSV in the project — skip straight to step
    2 with the tickers the user named. `--screen` works without a portfolio; the sector and swap
    reasoning below simply does not apply, and you should say so rather than inventing a book.
+
+For an open-ended "scan the market/an index for strong candidates" request
+with no tickers named, use `multibagger-scan.md` instead — it runs a
+wider, mechanically-narrowed funnel before anything reaches this file's
+research steps.
+
 1. **Pick candidates from sectors where the book is thin.** Read the sector list in
    the portfolio folder's `PORTFOLIO.md` and avoid adding to the top of it. Remember that the CSV's tags understate some
    themes, e.g. auto-cycle names tagged as Capital Goods.
