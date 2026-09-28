@@ -185,5 +185,121 @@ class TestParseLots(unittest.TestCase):
         self.assertEqual(ff.parse_lots(""), [])
 
 
+class TestRupees(unittest.TestCase):
+    def test_plain(self):
+        self.assertEqual(ff._rupees("₹1,500"), 1500.0)
+
+    def test_negative(self):
+        self.assertEqual(ff._rupees("-60,000"), -60000.0)
+
+    def test_k_suffix(self):
+        self.assertEqual(ff._rupees("12.5k"), 12500.0)
+
+    def test_none(self):
+        self.assertIsNone(ff._rupees(None))
+
+
+class TestParseTaxPosition(unittest.TestCase):
+    SAMPLE = """\
+## Tax position FY 2026-27 (broker tax P&L, Q1-Q2)
+
+- Realised STCG: ₹0 · Realised LTCG: ₹1,500 · Charges ₹100
+- the broker tax-loss harvesting page: unrealised STCL ₹12.5k, unrealised LTCL ₹7.5k (includes MFs); 'save up to' ₹200
+- Stocks only (lot-level, this file): unrealised LT gains ₹40,000 · LT losses ₹-60,000 · ST gains ₹10,000 · ST losses ₹-20,000
+- Rates: STCG 20%, LTCG 12.5% above ₹1.25L/yr exemption.
+
+## Holdings with lots
+"""
+
+    def test_parses_real_shaped_section(self):
+        out = ff.parse_tax_position(self.SAMPLE)
+        self.assertEqual(out["fy"], "FY 2026-27")
+        self.assertEqual(out["realised_stcg"], 0.0)
+        self.assertEqual(out["realised_ltcg"], 1500.0)
+        self.assertEqual(out["broker_harvest_savings"], 200.0)
+        self.assertEqual(out["stocks_only"], {
+            "lt_gains": 40000.0, "lt_losses": -60000.0,
+            "st_gains": 10000.0, "st_losses": -20000.0,
+        })
+
+    def test_absent_section_returns_none(self):
+        self.assertIsNone(ff.parse_tax_position("## Holdings with lots\n"))
+
+    def test_empty_text_returns_none(self):
+        self.assertIsNone(ff.parse_tax_position(""))
+
+
+class TestReadHoldingsMd(unittest.TestCase):
+    """A row with fewer cells than the template's 13 columns must be skipped,
+    not crash the whole parse -- an earlier version's `len(cells) < 12`
+    guard let a 12-cell row through into a 13-name unpack."""
+
+    HEADER = ("## Holdings with lots\n\n"
+              "| Symbol | Qty | Avg ₹ | LTP ₹ | Value ₹ | P&L ₹ | P&L % | LT qty | ST qty | "
+              "Next lot turns LT | Unrealised LT / ST ₹ | Sector | Lots (date qty@cost) |\n"
+              "|---|--:|--:|--:|--:|--:|--:|--:|--:|---|---|---|---|\n")
+
+    def write(self, tmp_path, body):
+        path = os.path.join(tmp_path, "broker-portfolio-2026-09-27.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(self.HEADER + body)
+        return path
+
+    def test_full_row_parses(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            row = ("| EXAMPLEA | 10 | 100.00 | 120.00 | 1200 | 200 | 20.0% | 10 | 0 | - | "
+                   "+0 / +0 | IT | 2024-01-01 10@100.00 |\n")
+            path = self.write(tmp, row)
+            holdings = ff.read_holdings_md(path)
+            self.assertEqual(len(holdings), 1)
+            self.assertEqual(holdings[0]["ticker"], "EXAMPLEA")
+
+    def test_short_row_is_skipped_not_a_crash(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            # 12 cells -- one short of the required 13 (missing Lots column
+            # and its separating pipe).
+            short_row = ("| EXAMPLEA | 10 | 100.00 | 120.00 | 1200 | 200 | 20.0% | 10 | 0 | - | "
+                         "+0 / +0 | IT |\n")
+            good_row = ("| EXAMPLEB | 5 | 500.00 | 450.00 | 2250 | -250 | -10.0% | 5 | 0 | - | "
+                        "+0 / +0 | IT | 2024-01-01 5@500.00 |\n")
+            path = self.write(tmp, short_row + good_row)
+            holdings = ff.read_holdings_md(path)  # must not raise
+            self.assertEqual([h["ticker"] for h in holdings], ["EXAMPLEB"])
+
+
+class TestLatestHoldingsFile(unittest.TestCase):
+    """A freshly-downloaded export can land with an older mtime than a stale
+    file still sitting in the folder (a cloud-synced copy, a moved file).
+    Selection must go by the date in the filename, not mtime."""
+
+    def test_prefers_filename_date_over_mtime(self):
+        import tempfile
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_root = ff.ROOT
+            try:
+                ff.set_root(tmp)
+                os.makedirs(ff.DATA_DIR, exist_ok=True)
+                old = os.path.join(ff.DATA_DIR, "broker_holdings_2025-01-01.csv")
+                new = os.path.join(ff.DATA_DIR, "broker_holdings_2026-09-27.csv")
+                # Write the "new" (by filename date) file first so its mtime is
+                # OLDER than the "old" file's -- the failure mode this guards.
+                # Selection is by filename/mtime only, so the content just
+                # needs to exist -- not a real (or even realistic) export.
+                with open(new, "w") as fh:
+                    fh.write("placeholder\n")
+                time.sleep(0.01)
+                with open(old, "w") as fh:
+                    fh.write("placeholder\n")
+                self.assertGreater(os.path.getmtime(old), os.path.getmtime(new))
+
+                picked = ff.latest_holdings_file()
+                self.assertEqual(os.path.basename(picked), "broker_holdings_2026-09-27.csv")
+            finally:
+                ff.set_root(saved_root)
+
+
 if __name__ == "__main__":
     unittest.main()
