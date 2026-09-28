@@ -554,10 +554,27 @@ once more so
 ticker is already cached from Step 1, so this is a sub-second rebuild with no network calls — run
 the full form here even when Step 1 was scoped, so the whole table is rebuilt.
 
-Then give the user a short summary: the rating and Action for each researched ticker, what changed
-versus the previous note (corrections first), and any rotation worth considering: where to trim
-and where that money could go, given the rest of the book and its sector weights. Keep it to a few
-sentences per stock.
+**Lead with a scorecard, one per researched ticker, before any prose.** This is the chat-facing
+summary's required opening, not optional formatting — the detailed reasoning (what changed, the
+rotation discussion, everything else below) comes after it, not instead of it:
+
+```
+TICKER — Rating: BUY/HOLD/SELL  |  Row N (row's plain-English description)
+As of: <data fetch date/time> | Purchase (if one happened this run): <date/time, or "not logged" if not given>
+P/E N<x> (run-rate N<x> if it diverges), ROE N%, ROCE N%
+Consensus <rating>, avg TP ₹N = N% <upside|downside> (<date>, <M> of <N> post-result — or "unavailable" per 3c)
+3-Year case: base N% vs bear N% vs Nifty hurdle N%/yr — <clears|doesn't clear>    [BUY/SELL only, from three_year_case.py]
+Action: <what was done or should be done, per 3e>
+Next check-in: <date/time, if a calendar reminder exists or was just set>
+```
+
+Never fabricate a timestamp: if the user didn't give an exact purchase time, write "not logged"
+rather than guessing, and offer to correct the line if they supply it. Omit the 3-Year case line
+entirely for a HOLD, the same conditional rule note-template.md already uses.
+
+After the scorecard(s), give the user the fuller summary: what changed versus the previous note
+(corrections first), and any rotation worth considering: where to trim and where that money could
+go, given the rest of the book and its sector weights. Keep it to a few sentences per stock.
 
 **When multiple BUYs share a sector or theme, say so in the summary, not just in each note.** Each
 note's own Portfolio context line can carry a concentration caveat, but if the summary lists them

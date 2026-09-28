@@ -42,5 +42,10 @@ for a sector.
 6. **Don't write `stocks/<TICKER>.md`** for a stock the user doesn't hold unless asked.
    `PORTFOLIO.md` only picks notes up for holdings, so a note is only useful once the stock shows
    up in the holdings CSV.
+7. **Lead the summary with the SKILL.md Step 4 scorecard**, the same format used for a holding —
+   rating, row, timestamps, ratios, consensus, 3-year case, action, next check-in — before any
+   prose. This applies here just as much as to a holding: on 28 Sep 2026 a VGUARD new-idea summary
+   was given as prose only, without the row category or the scorecard, and the user had to ask for
+   both separately.
 
 Close with: *Not investment advice — verify prices and figures before acting.*
