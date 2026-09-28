@@ -31,6 +31,12 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
    python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py --scan "NIFTY 500"
    ```
 
+   A full-index scan can take 30+ minutes on tickers not already cached (each one costs a
+   fundamentals fetch, a chart fetch and the NSE calls), so run it as a background/long-running
+   command rather than a blocking foreground call. It rewrites `screen-<today>.json` after every
+   batch of 50, and a same-day re-run resumes quickly from that day's per-ticker cache. If
+   `multibagger_screen.py` later warns the scan is incomplete, finish or re-run the scan first.
+
    For a request scoped to a sector or theme with no clean index match, fall back to a named
    ticker list the same way `new-ideas.md` step 1 sources one, and run `--screen` instead of
    `--scan`. For a request about the user's *own* portfolio, skip sourcing entirely and point
@@ -44,15 +50,19 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
 
    The defaults (`--roce-min 18.0 --profit-growth-min 15.0 --pe-growth-multiple 2.5
    --cfo-to-pat-min 0.6 --pct52-max 20.0 --pct200dma-max 0.0`) are the standing bar; only override
-   them if the user explicitly asks for a stricter or looser one. Then, for **every** ticker in its
-   output JSON (`data/skill-data/multibagger-shortlist-<today>.json`) — not just survivors —
-   record it:
+   them if the user explicitly asks for a stricter or looser one. If it prints a warning that the
+   scan is incomplete or that tickers failed to fetch, say so plainly in the summary — the screen
+   covered only a partial universe. Then record **every** screened ticker — not just survivors —
+   in one call, pointing at the shortlist file it just wrote (the path on its final `Wrote ...`
+   line):
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py record TICKER mechanical <pass|fail|borderline> "<one-line reason from the script's own output>"
+   python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py record-shortlist data/skill-data/multibagger-shortlist-<today>.json --stage mechanical
    ```
 
-   This is what makes coverage build up automatically run over run.
+   Each stock is logged with its `quality_verdict` (pass/fail/borderline) as the outcome and the
+   script's own mechanical `reason` (e.g. `roce short 8.9%; not near a local low`) — don't record
+   Stage 2 ticker by ticker. This is what makes coverage build up automatically run over run.
 
 3. **Stage 3 — judgment narrowing (prose, not scriptable).** For each survivor (pass + near a
    local low) and each borderline ticker worth a second look, apply the same real-sourcing
@@ -78,6 +88,9 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
    python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py record TICKER deep-dive <pass|fail> "rated BUY/HOLD/SELL, see rating_ledger" [--next-checkin YYYY-MM-DD]
    ```
 
-   (`--next-checkin` only when a calendar reminder was actually set that run.)
+   Outcome is `pass` for BUY or HOLD (still worth tracking) and `fail` for SELL (done with it for
+   now). `--next-checkin` only when a calendar reminder was actually set that run; it is what
+   step 0's "Overdue re-checks" surfaces later, and a later entry without one (same day or not)
+   does not clear it.
 
 Close with: *Not investment advice — verify prices and figures before acting.*

@@ -14,6 +14,8 @@ allowed-tools:
   - Bash(python3 *tax_lots.py*)
   - Bash(python3 *rating_ledger.py*)
   - Bash(python3 *calendar_notes.py*)
+  - Bash(python3 *multibagger_screen.py*)
+  - Bash(python3 *scan_history.py*)
   - Bash(curl *)
   - Bash(pdftotext *)
   - Read
