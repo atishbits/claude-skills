@@ -220,5 +220,122 @@ class TestBuildReport(unittest.TestCase):
         self.assertEqual(ticker_lines, ["AAA", "MMM", "ZZZ"])
 
 
+class TestCmdReport(unittest.TestCase):
+    """CLI-level tests for cmd_report function."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.ledger_path = os.path.join(self.tmpdir.name, "scan-history.jsonl")
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_overdue_section_prints_even_when_filtered_entries_empty(self):
+        """Finding 1: Overdue re-checks section must always print, even when
+        filtered entries are empty (e.g., --borderline with no BORDERLINE entries,
+        or a ticker with no entries). This ensures a due reminder for a ticker
+        the user didn't ask about still surfaces."""
+        # Create two entries: one PASS with past next_checkin, one BORDERLINE with future
+        scan_history.append_entry("TCS", "MECHANICAL", "PASS", "cheap",
+                                 asof="2026-09-01", next_checkin="2026-09-10",
+                                 ledger_path=self.ledger_path)
+        scan_history.append_entry("ITC", "MECHANICAL", "BORDERLINE", "review",
+                                 asof="2026-09-05", next_checkin="2026-10-15",
+                                 ledger_path=self.ledger_path)
+
+        # Mock args for report with --borderline (filters out TCS)
+        class Args:
+            tickers = []
+            borderline = True
+
+        # Monkey-patch load_history to use our test ledger
+        original_load = scan_history.load_history
+        scan_history.load_history = lambda ticker=None, ledger_path=None: original_load(ledger_path=self.ledger_path)
+
+        try:
+            # Capture output
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                scan_history.cmd_report(Args())
+            output = f.getvalue()
+
+            # Verify ITC BORDERLINE entry is shown (filtered result)
+            self.assertIn("ITC", output)
+            self.assertIn("BORDERLINE", output)
+
+            # Verify TCS is NOT in the filtered entries section (because it's PASS, not BORDERLINE)
+            # but we should still see the overdue section
+            self.assertIn("Overdue re-checks:", output)
+            self.assertIn("TCS", output)  # TCS should appear in overdue section
+            self.assertIn("cheap", output)  # TCS's reason should appear
+        finally:
+            scan_history.load_history = original_load
+
+    def test_overdue_section_prints_none_when_no_ticker_filters_and_empty(self):
+        """When the ledger is completely empty, "No scan history entries yet."
+        prints, but we still get "Overdue re-checks: none." """
+        class Args:
+            tickers = []
+            borderline = False
+
+        # Monkey-patch load_history to use empty ledger
+        original_load = scan_history.load_history
+        scan_history.load_history = lambda ticker=None, ledger_path=None: []
+
+        try:
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                scan_history.cmd_report(Args())
+            output = f.getvalue()
+
+            self.assertIn("No scan history entries yet.", output)
+            self.assertIn("Overdue re-checks:", output)
+            self.assertIn("none.", output)
+        finally:
+            scan_history.load_history = original_load
+
+    def test_report_calls_build_report_not_inline_formatting(self):
+        """Verify cmd_report uses build_report for formatting (not reimplemented)."""
+        scan_history.append_entry("TCS", "MECHANICAL", "PASS", "cheap",
+                                 asof="2026-09-01", ledger_path=self.ledger_path)
+
+        class Args:
+            tickers = []
+            borderline = False
+
+        # Monkey-patch load_history and build_report to verify build_report is called
+        original_load = scan_history.load_history
+        original_build = scan_history.build_report
+
+        build_report_called = []
+
+        def mock_build_report(entries, today=None):
+            build_report_called.append(True)
+            return original_build(entries, today)
+
+        scan_history.load_history = lambda ticker=None, ledger_path=None: original_load(ledger_path=self.ledger_path)
+        scan_history.build_report = mock_build_report
+
+        try:
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                scan_history.cmd_report(Args())
+
+            # Verify build_report was called
+            self.assertTrue(build_report_called, "build_report should be called by cmd_report")
+        finally:
+            scan_history.load_history = original_load
+            scan_history.build_report = original_build
+
+
 if __name__ == "__main__":
     unittest.main()
