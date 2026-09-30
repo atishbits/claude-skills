@@ -297,6 +297,25 @@ A confident conclusion built on a bad input is worse than no conclusion. Do thes
   show, and it is missed entirely by a review that only reads screener's numbers. Absence of a hit
   is not the same as a clean record — say you searched and found nothing, dated, the same rule 3b.6
   already applies to pledge and insider data.
+  - **Board-structure changes** belong in the same search: an owner-promoter taking on both
+    Chairperson and MD, an independent chairperson's term ending without a named successor, or a
+    board seat count dropping below what listing norms require. None of this is inherently bad —
+    say what changed and since when, not a verdict — but it changes how much weight the
+    related-party-transaction check (3d) and the ownership data (3b.6) should carry going forward,
+    so it belongs in the note, not just in memory for one review.
+- **Named peer valuation, for a BUY or SELL where the signal row's P/E classification is the load-
+  bearing argument.** The signal row already places a stock against its own sector's P/E band
+  (`classification.pe_band`), but that's a fixed range, not what the market is actually paying for
+  comparable businesses today. Identify 2-3 named listed comparables (from `sector_peers` if they're
+  held, otherwise from a WebSearch or your own knowledge of the sector), then:
+  ```
+  python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py --screen PEER1 PEER2 ...
+  ```
+  reads their P/E, ROE and ROCE off the same `screen-<today>.json` a "what else is worth buying"
+  scan already writes — no new fetch logic, and it never touches the portfolio snapshot. State the
+  comparison plainly: this stock trades at a premium/discount to named peers, and whether its own
+  ROE/ROCE justifies that gap or not. A richer multiple backed by materially better capital returns
+  is a different case from the same premium on similar or worse returns.
 - **Government or PSU ownership, where the promoter is the state.** `shareholding`'s promoter figure
   already shows this; read what it implies rather than treating a PSU like any other promoter-held
   stock. Note the specific policy exposure by name (a disinvestment overhang, a subsidy or
@@ -417,6 +436,19 @@ Everything else below is weighed together, not ranked against each other by a fi
   margin corridor — whatever the concall gave) instead. Label it plainly as your own extrapolation
   from guidance, not a consensus figure, in the note — the same distinction 3c already draws between
   a sourced target and an invented one.
+  **If the user (or a source you're weighing, e.g. a third-party research note) names a target
+  multiple instead of a forward EPS** — "can this double in 3 years", "is this a multibagger from
+  here" — answer it with the same script rather than guessing at a growth rate by feel:
+  ```
+  python3 ${CLAUDE_SKILL_DIR}/scripts/three_year_case.py TICKER \
+    --target-multiple 2.0 --eps-asof YYYY-MM-DD [--exit-pe-base N]
+  ```
+  This solves the reverse direction: given the target multiple and an exit P/E (the band's median by
+  default), what EPS CAGR would the business need to sustain to get there. Weigh the printed CAGR
+  against the company's own guided or trend growth rate — a target that implies materially faster
+  growth than guidance or the trailing CAGR is the multibagger claim wearing an optimistic exit
+  multiple, not a supported case, the same distinction 3d already draws for a backward PEG built on
+  peak earnings.
 - **A SELL "because it's at its peak" needs the same test, not a feeling.** Read the P/E band
   output above: is today's P/E at or above the top of the stock's own historical range (the script's
   percentile line), is `earnings_above_trend` true, and is price already above the consensus
