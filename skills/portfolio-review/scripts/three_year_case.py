@@ -7,13 +7,21 @@ skimming a chart, never happens by hand.
 
     python3 scripts/three_year_case.py TICKER
         [--fwd-eps-base N] [--fwd-eps-bear N] --eps-asof YYYY-MM-DD [--div-yield-pct N]
-        [--exit-pe-base N] [--exit-pe-bear N] [--years N]
+        [--exit-pe-base N] [--exit-pe-bear N] [--target-multiple N] [--years N]
 
 Forward EPS is not something this script can know: source it yourself
 (management guidance or a dated consensus estimate) and pass it in. Without
 --fwd-eps-base/--fwd-eps-bear it only prints the P/E band and the Nifty
 hurdle -- useful on its own for the peak-SELL read (where today's P/E sits
-in the stock's own range).
+in the stock's own range). The band's low/median/high are also converted to
+implied prices at today's TTM EPS, giving the stock's own historical
+"quality on sale" levels rather than a round-number guess.
+
+--target-multiple N answers the reverse question to --fwd-eps-base: not
+"what does this EPS estimate imply for returns" but "what EPS CAGR would a
+given target multiple (2.0 for a double) actually require", at an assumed
+exit P/E and by --eps-asof. Useful for testing whether a "multibagger in
+N years" claim implies a growth rate the business can plausibly sustain.
 
 --eps-asof is the fiscal year-end the forward EPS is FOR (e.g. 2029-03-31 for
 "FY29E"), required whenever --fwd-eps-base is given: a fixed "3 years" is
@@ -203,6 +211,28 @@ def clears_hurdle(total_cagr_pct, hurdle_cagr_pct):
     return margin > 0, margin
 
 
+def required_eps_cagr(current_price, target_multiple, exit_pe, ttm_eps, years):
+    """The reverse of three_year_cagr: given a target multiple on today's
+    price (2.0 for a double), an assumed exit P/E, and today's TTM EPS, what
+    EPS CAGR would the business need to sustain to get there by `years` out?
+    This is the "what would have to happen" question -- useful for testing
+    whether a target multiple implies a plausible growth rate rather than
+    just an optimistic exit multiple. Raises ValueError on a non-positive
+    input, same discipline as three_year_cagr."""
+    if current_price <= 0 or target_multiple <= 0 or exit_pe <= 0 or ttm_eps is None \
+            or ttm_eps <= 0 or years <= 0:
+        raise ValueError("current_price, target_multiple, exit_pe, ttm_eps and years "
+                          "must all be positive")
+    target_price = current_price * target_multiple
+    required_eps = target_price / exit_pe
+    required_cagr_pct = ((required_eps / ttm_eps) ** (1 / years) - 1) * 100
+    return {
+        "target_price": target_price,
+        "required_eps": required_eps,
+        "required_cagr_pct": required_cagr_pct,
+    }
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("ticker")
@@ -214,12 +244,21 @@ def main():
     p.add_argument("--div-yield-pct", type=float, default=0.0)
     p.add_argument("--exit-pe-base", type=float)
     p.add_argument("--exit-pe-bear", type=float)
+    p.add_argument("--target-multiple", type=float,
+                    help="solve for the EPS CAGR required to reach this multiple of today's "
+                         "price (e.g. 2.0 for a double) by --eps-asof, at --exit-pe-base "
+                         "(or the band's own median if that's not given) -- the reverse "
+                         "question to --fwd-eps-base/--fwd-eps-bear: not 'what does this EPS "
+                         "estimate imply', but 'what EPS growth would the target actually need'")
     p.add_argument("--years", type=int, default=LONG_CHART_YEARS_DEFAULT,
                     help="years of history for the P/E band (not the forward horizon -- see --eps-asof)")
     args = p.parse_args()
     if args.fwd_eps_base is not None and args.eps_asof is None:
         sys.exit("--eps-asof is required with --fwd-eps-base: a fixed horizon is meaningless "
                   "without knowing which fiscal year the forward EPS is for.")
+    if args.target_multiple is not None and args.eps_asof is None:
+        sys.exit("--eps-asof is required with --target-multiple: the required CAGR depends on "
+                  "the horizon you're solving over.")
     ticker = args.ticker.upper()
 
     doc_path = os.path.join(ff.CACHE_DIR, f"{ticker}-{date.today().isoformat()}.html")
@@ -264,6 +303,11 @@ def main():
                   f"point wearing a band's clothes, not a real range. Don't quote low/median/high as "
                   f"if they carry the weight of a 5-10yr band; say so in the note. ***")
         print(f"  Band: low {low:.1f}x / median {median:.1f}x / high {high:.1f}x")
+        if latest_eps and latest_eps > 0:
+            print(f"  At today's TTM EPS ({latest_eps:.2f}): band low -> price ~{low * latest_eps:.0f}, "
+                  f"median -> ~{median * latest_eps:.0f}, high -> ~{high * latest_eps:.0f} -- "
+                  f"read low/median as the stock's own historical 'quality on sale' levels, not a "
+                  f"forecast (TTM EPS will move; this reprices as the next result lands)")
         # Match the headline trailing P/E's own EPS basis (screener's ratios page,
         # already quoted elsewhere in the note) rather than recomputing from the
         # profit-loss table's TTM row -- the two can disagree (PAYTM: 132 vs 165,
@@ -333,6 +377,26 @@ def main():
                   f"by {bear_margin:+.1f}pp")
     elif args.fwd_eps_base is not None or args.fwd_eps_bear is not None:
         sys.exit("Pass both --fwd-eps-base and --fwd-eps-bear, or neither.")
+
+    if args.target_multiple is not None:
+        if not valid:
+            sys.exit("--target-multiple needs a usable P/E band (or pass --exit-pe-base "
+                      "yourself) to pick an exit multiple.")
+        pes = [v for _, v in valid]
+        exit_pe = args.exit_pe_base or median_of(pes)
+        try:
+            horizon = exit_horizon_years(args.eps_asof)
+        except ValueError as exc:
+            sys.exit(str(exc))
+        if not latest_eps or latest_eps <= 0:
+            sys.exit(f"No usable TTM EPS for {ticker} -- can't compute a required growth rate.")
+        req = required_eps_cagr(current_price, args.target_multiple, exit_pe, latest_eps, horizon)
+        print(f"\nWhat a {args.target_multiple:g}x by {args.eps_asof.isoformat()} "
+              f"({horizon:.1f}y out) would require, at a {exit_pe:.1f}x exit multiple:")
+        print(f"  Target price ~{req['target_price']:.0f} needs EPS of ~{req['required_eps']:.2f} "
+              f"(TTM EPS is {latest_eps:.2f} today) -- that's a {req['required_cagr_pct']:+.1f}%/yr "
+              f"EPS CAGR for {horizon:.1f} years. Weigh this against the company's own guided or "
+              f"trend growth rate before treating the multiple as plausible.")
 
 
 if __name__ == "__main__":

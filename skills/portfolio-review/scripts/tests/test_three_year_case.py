@@ -169,6 +169,44 @@ class TestClearsHurdle(unittest.TestCase):
         self.assertAlmostEqual(margin, 0.0)
 
 
+class TestRequiredEpsCagr(unittest.TestCase):
+    def test_doubling_at_flat_multiple_needs_doubling_eps(self):
+        # Exit P/E == today's implied P/E (price/ttm_eps), so the target
+        # price move must come entirely from EPS growth -> required EPS
+        # exactly doubles too.
+        out = tyc.required_eps_cagr(current_price=100, target_multiple=2.0, exit_pe=10,
+                                     ttm_eps=10, years=3)
+        self.assertAlmostEqual(out["target_price"], 200)
+        self.assertAlmostEqual(out["required_eps"], 20)
+        self.assertAlmostEqual(out["required_cagr_pct"], (2 ** (1 / 3) - 1) * 100, places=4)
+
+    def test_higher_exit_pe_lowers_required_cagr(self):
+        low_exit = tyc.required_eps_cagr(current_price=100, target_multiple=2.0, exit_pe=10,
+                                           ttm_eps=10, years=3)
+        high_exit = tyc.required_eps_cagr(current_price=100, target_multiple=2.0, exit_pe=20,
+                                            ttm_eps=10, years=3)
+        self.assertLess(high_exit["required_cagr_pct"], low_exit["required_cagr_pct"])
+
+    def test_multiple_of_one_needs_no_growth_at_flat_multiple(self):
+        out = tyc.required_eps_cagr(current_price=100, target_multiple=1.0, exit_pe=10,
+                                     ttm_eps=10, years=3)
+        self.assertAlmostEqual(out["required_cagr_pct"], 0.0, places=6)
+
+    def test_rejects_non_positive_inputs(self):
+        with self.assertRaises(ValueError):
+            tyc.required_eps_cagr(current_price=0, target_multiple=2.0, exit_pe=10, ttm_eps=10, years=3)
+        with self.assertRaises(ValueError):
+            tyc.required_eps_cagr(current_price=100, target_multiple=0, exit_pe=10, ttm_eps=10, years=3)
+        with self.assertRaises(ValueError):
+            tyc.required_eps_cagr(current_price=100, target_multiple=2.0, exit_pe=0, ttm_eps=10, years=3)
+        with self.assertRaises(ValueError):
+            tyc.required_eps_cagr(current_price=100, target_multiple=2.0, exit_pe=10, ttm_eps=None, years=3)
+        with self.assertRaises(ValueError):
+            tyc.required_eps_cagr(current_price=100, target_multiple=2.0, exit_pe=10, ttm_eps=-5, years=3)
+        with self.assertRaises(ValueError):
+            tyc.required_eps_cagr(current_price=100, target_multiple=2.0, exit_pe=10, ttm_eps=10, years=0)
+
+
 class TestPriceSeries(unittest.TestCase):
     def test_extracts_price_dataset(self):
         chart = {"datasets": [
