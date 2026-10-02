@@ -11,10 +11,14 @@ checks its SHA-256 against the rows, and writes data/skill-data/listings-<time>.
 `reports` reads the Master Report workbook (Reports and documents -> Master
 Report on the portal) and writes data/skill-data/snapshot-<date>.json.
 
+Both commands read what the user put in data/ (the newest *.xlsx, the newest
+wint-listings-*.json) unless --file says otherwise. Save the report there as
+wint-master-report-<date>.xlsx: the name Wint gives it carries a phone number.
+
 Columns are found by the header names in config.json's `report_columns`, never
 by position. A missing or renamed header stops the run and says which one; an
 unknown extra column is a warning. The identity rows at the top of each sheet
-and the workbook's file name (it carries a phone number) are never copied.
+are never copied into a snapshot.
 """
 import argparse
 import datetime as dt
@@ -257,18 +261,17 @@ def build_listings(capture, check_sum=True):
             "stated_live_count": stated, "warnings": warnings, "listings": listings}
 
 
-def _find_capture():
-    found = sorted(glob.glob(os.path.expanduser("~/Downloads/wint-listings-*.json")),
-                   key=os.path.getmtime)
+def _find_capture(root):
+    found = glob.glob(os.path.join(root, "data", "wint-listings-*.json"))
     if not found:
-        raise IngestError("No wint-listings-*.json in ~/Downloads. Run capture-listings.js on "
-                          "the listings page first, or pass --file.")
-    return found[-1]
+        raise IngestError("No wint-listings-*.json in data/. Run capture-listings.js on the "
+                          "listings page, move the file it saves into data/, or pass --file.")
+    return max(found, key=os.path.getmtime)
 
 
 def cmd_listings(args):
     root = common.resolve_root(args.root)
-    path = args.file or _find_capture()
+    path = args.file or _find_capture(root)
     doc = build_listings(common.load_json(path), check_sum=not args.no_checksum)
     stamp = doc["captured_at"][:16].replace("-", "").replace(":", "")
     out = os.path.join(common.skill_data_dir(root), f"listings-{stamp}.json")
@@ -281,17 +284,14 @@ def cmd_listings(args):
     return 0
 
 
-def _find_report(root, downloads=None):
-    """The most recently modified Master Report in data/reports/ or Downloads,
-    whichever is newer, so an old copy in one never shadows a new one."""
-    downloads = downloads or os.path.expanduser("~/Downloads")
-    found = (glob.glob(os.path.join(root, "data", "reports", "*.xlsx"))
-             + glob.glob(os.path.join(downloads, "WintWealth_Master_Report_*.xlsx")))
-    if found:
-        return max(found, key=os.path.getmtime)
-    raise IngestError(
-        "No Master Report found in data/reports/ or ~/Downloads. Download it from "
-        "Reports and documents -> Master Report, or pass --file.")
+def _find_report(root):
+    """The most recently modified workbook in data/."""
+    found = glob.glob(os.path.join(root, "data", "*.xlsx"))
+    if not found:
+        raise IngestError(
+            "No Master Report in data/. Download it from Reports and documents -> Master "
+            "Report, move it to data/wint-master-report-<date>.xlsx, or pass --file.")
+    return max(found, key=os.path.getmtime)
 
 
 def cmd_reports(args):
@@ -303,8 +303,7 @@ def cmd_reports(args):
     except ValueError:
         raise IngestError(f"--date must be YYYY-MM-DD, got {as_of!r}") from None
     modified = dt.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
-    print(f"report: a workbook in {os.path.dirname(os.path.abspath(path))}, "
-          f"last modified {modified}")
+    print(f"report: {os.path.basename(path)}, last modified {modified}")
     snapshot = build_snapshot(xlsx_reader.read_workbook(path), common.load_config(), as_of,
                               common.sha256_file(path))
     out = os.path.join(common.skill_data_dir(root), f"snapshot-{as_of}.json")

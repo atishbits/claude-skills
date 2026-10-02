@@ -150,17 +150,34 @@ class TestCli(unittest.TestCase):
 
 
 class TestFindingAndFailing(unittest.TestCase):
-    def test_newest_report_wins_wherever_it_is(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as downloads:
-            os.makedirs(os.path.join(root, "data", "reports"))
-            old = os.path.join(root, "data", "reports", "old.xlsx")
-            new = os.path.join(downloads, "WintWealth_Master_Report_new.xlsx")
+    def test_newest_report_in_data_wins(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "data"))
+            old = os.path.join(root, "data", "wint-master-report-2026-09-01.xlsx")
+            new = os.path.join(root, "data", "wint-master-report-2026-10-02.xlsx")
             for path, stamp in ((old, 1_000_000), (new, 2_000_000)):
                 open(path, "w").close()
                 os.utime(path, (stamp, stamp))
-            self.assertEqual(ingest._find_report(root, downloads), new)
+            self.assertEqual(ingest._find_report(root), new)
             os.utime(old, (3_000_000, 3_000_000))
-            self.assertEqual(ingest._find_report(root, downloads), old)
+            self.assertEqual(ingest._find_report(root), old)
+
+    def test_nothing_in_data_says_where_to_put_it(self):
+        with tempfile.TemporaryDirectory() as root:
+            for find in (ingest._find_report, ingest._find_capture):
+                with self.assertRaises(ingest.IngestError) as ctx:
+                    find(root)
+                self.assertIn("data/", str(ctx.exception))
+
+    def test_newest_capture_in_data_wins(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "data"))
+            old = os.path.join(root, "data", "wint-listings-2026-10-01T05-00-00-000Z.json")
+            new = os.path.join(root, "data", "wint-listings-2026-10-02T05-00-00-000Z.json")
+            for path, stamp in ((old, 1_000_000), (new, 2_000_000)):
+                open(path, "w").close()
+                os.utime(path, (stamp, stamp))
+            self.assertEqual(ingest._find_capture(root), new)
 
     def test_missing_or_corrupt_file_is_an_error_not_a_traceback(self):
         with tempfile.TemporaryDirectory() as root:

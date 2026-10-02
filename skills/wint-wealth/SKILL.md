@@ -34,7 +34,8 @@ read pages and run the capture snippet below.
 
 **Where things live.** Run every command from `${CLAUDE_SKILL_DIR}`. Everything personal sits under
 `${CLAUDE_SKILL_DIR}/data/`, which is gitignored: `data/profile.json` (the user's limits),
-`data/reports/` (Master Reports) and `data/skill-data/` (everything the scripts write). If the
+the Master Report and listings captures the user brings, directly in `data/`, and
+`data/skill-data/` (everything the scripts write). If the
 user keeps data elsewhere, pass `--root /that/folder` to every script or set `$WINT_ROOT`.
 
 **Numbers come from scripts.** Every figure in a verdict or note is read from a script's output.
@@ -52,7 +53,13 @@ Do not recompute a share, a YTM, a tax amount or a date difference yourself.
 ## Step 1: get the data in
 
 **Holdings.** Ask the user to download the Master Report (account menu -> Reports and documents ->
-Master Report). It may stay in `~/Downloads` or go in `data/reports/`. Then:
+Master Report), then move it into `data/` under a name without the phone number Wint puts in it:
+
+```
+mv ~/Downloads/WintWealth_Master_Report_*.xlsx data/wint-master-report-$(date +%F).xlsx
+```
+
+Then:
 
 ```
 python3 scripts/ingest.py reports
@@ -67,7 +74,8 @@ password is the user's PAN.
 1. Open `https://www.wintwealth.com/bonds/listing/` in a new tab and wait for the cards to load.
 2. Run the contents of `${CLAUDE_SKILL_DIR}/capture-listings.js` in that tab, once. It reads the
    cards already on the page and saves `wint-listings-<time>.json` to Downloads.
-3. `python3 scripts/ingest.py listings`
+3. `mv ~/Downloads/wint-listings-*.json data/`
+4. `python3 scripts/ingest.py listings`
 
 Limits on what you do in the browser, with no exceptions: read-only; one capture per review; no
 loops, polling or scheduling; no calls to Wint's API; never read, print or store a token, cookie

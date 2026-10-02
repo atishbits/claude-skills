@@ -6,13 +6,13 @@ and HOLD / REVIEW / EXIT on what you hold. It never places an order.
 
 ## What you provide
 
-1. **The Master Report**: on Wint, account menu -> Reports and documents -> Master Report. Leave
-   it in `~/Downloads` or put it in `data/reports/`.
+1. **The Master Report**: on Wint, account menu -> Reports and documents -> Master Report. Save
+   it as `data/wint-master-report-<date>.xlsx`.
 2. **Your limits**: copy `profile-template.json` to `data/profile.json` and edit it (tax slab,
    rating floor, tenure ceiling, issuer and rating-bucket caps, and so on).
 3. **A listings capture**, when you want new bonds screened: Claude runs `capture-listings.js` on
    the listings page in your logged-in Chrome. It reads the bond cards on the page and saves one
-   JSON file to Downloads. It makes no network request and reads no token or account detail.
+   JSON file to Downloads, which then moves into `data/`. It makes no network request and reads no token or account detail.
 
 ## Layout
 
@@ -21,7 +21,8 @@ and HOLD / REVIEW / EXIT on what you hold. It never places an order.
 
 data/                        gitignored: yours
   profile.json                 your limits
-  reports/                     Master Report workbooks (optional location)
+  wint-master-report-<date>.xlsx   the Master Report you downloaded
+  wint-listings-<time>.json        listings captures
   skill-data/                  everything the scripts write
     snapshot-<date>.json         normalised holdings and cash flows
     listings-<time>.json         normalised listings capture
