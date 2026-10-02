@@ -65,6 +65,38 @@ class TestCheck(unittest.TestCase):
         self.assertIn("no baseline", result["note"])
 
 
+class TestOverdue(unittest.TestCase):
+    """A payment the report still lists as upcoming although its date has
+    passed, with no receipt recorded: detectable from one snapshot."""
+
+    def snap(self, received, as_of="2026-10-02"):
+        return {"as_of": as_of, "received_cashflows": received, "expected_cashflows": [
+            {"issuer": "Alpha Finance", "isin": ALPHA, "date": "2026-09-21", "principal": 3000.0,
+             "interest_gross": 400.0},
+            {"issuer": "Alpha Finance", "isin": ALPHA, "date": "2026-10-01", "principal": None,
+             "interest_gross": 80.0},
+            {"issuer": "Alpha Finance", "isin": ALPHA, "date": "2026-10-21", "principal": None,
+             "interest_gross": 80.0}]}
+
+    def test_past_due_with_no_receipt_is_flagged_with_days_late(self):
+        flags = repayment_check.overdue(self.snap([]))
+        self.assertEqual(flags, [{"issuer": "Alpha Finance", "isin": ALPHA, "date": "2026-09-21",
+                                  "expected": 3400.0, "received": 0.0, "days_late": 11,
+                                  "kind": "overdue"}])
+
+    def test_within_grace_or_in_future_is_not_flagged(self):
+        dates = [f["date"] for f in repayment_check.overdue(self.snap([]))]
+        self.assertNotIn("2026-10-01", dates)
+        self.assertNotIn("2026-10-21", dates)
+
+    def test_receipt_near_the_due_date_clears_it(self):
+        self.assertEqual(repayment_check.overdue(self.snap([paid("2026-09-22", 400.0, 3000.0)])), [])
+
+    def test_part_payment_is_still_flagged(self):
+        flags = repayment_check.overdue(self.snap([paid("2026-09-21", 400.0)]))
+        self.assertEqual(flags[0]["received"], 400.0)
+
+
 class TestPickBaseline(unittest.TestCase):
     def test_baseline_is_strictly_earlier(self):
         older = {"as_of": "2026-09-01"}

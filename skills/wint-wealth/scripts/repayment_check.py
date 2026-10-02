@@ -12,6 +12,11 @@ shows up here before any rating agency acts.
 The first run has no earlier snapshot. It reports "no baseline yet" and flags
 nothing: that is not a clean result, only an absent one.
 
+Separately, `overdue` lists payments the newest report still shows as upcoming
+although their date has passed with no receipt recorded. That needs only one
+snapshot. It may be a late payment or a report that lags the bank; either way
+the holding goes to REVIEW until the bank statement settles it.
+
 Amounts are compared gross (principal plus interest before TDS), so a change
 in TDS is not mistaken for a short payment."""
 import argparse
@@ -57,6 +62,32 @@ def check(baseline, current, grace_days=5, tolerance=1.0):
             "note": f"compared against the schedule recorded on {baseline['as_of']}"}
 
 
+def overdue(current, grace_days=5, tolerance=1.0):
+    """Payments the report still lists as upcoming although their date passed
+    more than `grace_days` ago and no matching receipt is recorded. Needs only
+    one snapshot, so it works on the first run. It can also mean the report
+    lags the bank: check the bank statement before drawing a conclusion."""
+    grace = dt.timedelta(days=grace_days)
+    as_of = dt.date.fromisoformat(current["as_of"])
+    flags = []
+    for due in current["expected_cashflows"]:
+        if not due["date"]:
+            continue
+        due_date = dt.date.fromisoformat(due["date"])
+        if due_date >= as_of - grace:
+            continue
+        received = round(sum(
+            _gross(r) for r in current["received_cashflows"]
+            if r["isin"] == due["isin"] and r["date"]
+            and abs(dt.date.fromisoformat(r["date"]) - due_date) <= grace), 2)
+        expected = _gross(due)
+        if received + tolerance < expected:
+            flags.append({"issuer": due["issuer"], "isin": due["isin"], "date": due["date"],
+                          "expected": expected, "received": received,
+                          "days_late": (as_of - due_date).days, "kind": "overdue"})
+    return flags
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--root")
@@ -67,8 +98,9 @@ def main(argv=None):
         return 1
     snapshots = [common.load_json(p) for p in paths]
     current = snapshots[-1]
-    print(json.dumps(check(pick_baseline(snapshots, current), current), indent=2,
-                     ensure_ascii=False))
+    result = check(pick_baseline(snapshots, current), current)
+    result["overdue"] = overdue(current)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 
 

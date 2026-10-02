@@ -88,7 +88,9 @@ Report, briefly: totals and weighted YTM; any limit breach; what is due in the l
 and how much principal comes back; unrated holdings; anything `diff_snapshots.py` flags.
 
 - **`repayment_check.py` says "no baseline yet"**: say exactly that. It is not a clean result.
-- **Any repayment flag** (missing or short) -> that holding is REVIEW now. Go to Step 5 for it.
+- **Any repayment flag** (missing or short) or **any `overdue` entry** -> that holding is REVIEW
+  now. Go to Step 5 for it. An overdue entry can be a late payment or a report that lags the
+  bank, so ask the user to check their bank statement for that credit before you conclude.
 - **Any `held_issuer_signals` entry** -> Step 5 for that issuer.
 - **Unrated holdings** -> offer to research and record them (Step 5's research, then
   `bond_facts.py set`). An unrated holding is unknown, not safe.
