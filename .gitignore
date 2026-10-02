@@ -21,8 +21,10 @@ sbi-tt-rates.json
 
 !skills/*/*-template.*
 
-# Implementation plans written by the superpowers:writing-plans workflow —
-# working scratch for a session, not something this repo needs to track.
+# Design specs and implementation plans written by the superpowers
+# brainstorming / writing-plans workflow — working scratch for a session, not
+# something this repo needs to track.
+docs/superpowers/specs/
 docs/superpowers/plans/
 
 # Statements and spreadsheets: the file types personal records actually arrive
