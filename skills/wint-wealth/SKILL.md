@@ -113,9 +113,10 @@ do not re-sort it by YTM. Mention how many were rejected and the commonest reaso
 
 For each bond you take forward (at most five unless asked for more):
 
-1. **Read its detail page** (`url` in the shortlist) for ISIN, rating agency, security cover,
-   secured or unsecured, seniority, collateral, listed or not, and call or early-redemption terms.
-   Record what you find:
+1. **Read its detail page** (`url` in the shortlist): open it, click "Other bond details", and
+   read the Overview panel that opens. It states ISIN, rating with outlook, rating agency and
+   date of rating, collateral type, seniority (for example "Senior secured bond"), listed or not,
+   coupon, and maturity date. Never click "Invest Now". Record what you find:
    `python3 scripts/bond_facts.py set --bond-id ID --isin ISIN --issuer NAME --rating R --agency A --secured yes|no --seniority senior|subordinated --listed yes|no --source URL`
    A bond still "security unconfirmed" after this cannot get ENTER.
 2. **Research the issuer's credit** from primary sources: the rating agency's latest rationale,
