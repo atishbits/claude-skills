@@ -49,6 +49,21 @@ def idle_cash(snapshot, start, days):
             "available_by": events[-1]["date"] if events else None, "events": events}
 
 
+def principal_ahead(snapshot, start, days):
+    """Principal coming back over a longer horizon than the lookahead window,
+    by month, and as a share of what is held now: the reinvestment that has to
+    be planned for."""
+    by_month = {}
+    for f in upcoming(snapshot, start, days):
+        if (f["principal"] or 0) > 0:
+            by_month[f["date"][:7]] = round(by_month.get(f["date"][:7], 0) + f["principal"], 2)
+    total = round(sum(by_month.values()), 2)
+    held = sum(h["current_value"] or 0 for h in snapshot["holdings"])
+    return {"window_days": days, "from": start, "to": _end(start, days),
+            "total_principal": total, "by_month": by_month,
+            "share_of_portfolio_pct": round(100 * total / held, 2) if held else 0.0}
+
+
 def maturities(snapshot, start, days):
     end = _end(start, days)
     due = [{"issuer": h["issuer"], "isin": h["isin"], "maturity_date": h["maturity_date"],
@@ -79,6 +94,8 @@ def main(argv=None):
     start = snapshot["as_of"]
     print(json.dumps({"as_of": start, "upcoming": upcoming(snapshot, start, days),
                       "monthly": monthly(snapshot), "idle_cash": idle_cash(snapshot, start, days),
+                      "principal_ahead": principal_ahead(
+                          snapshot, start, common.load_config()["reinvestment_horizon_days"]),
                       "maturities": maturities(snapshot, start, days)},
                      indent=2, ensure_ascii=False))
     return 0

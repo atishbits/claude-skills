@@ -7,7 +7,8 @@ and which of the profile's limits are breached.
 
 Writes data/skill-data/PORTFOLIO.md and prints the same summary as JSON.
 Ratings come from bond-facts.json; a holding with no recorded rating is shown
-as unrated and listed for research."""
+as unrated and listed for research. Issuers recorded there under one group (a
+parent and its subsidiary) are counted together against the issuer cap."""
 import argparse
 import json
 import os
@@ -33,6 +34,14 @@ def tenure_bucket(months):
     return "over 36m"
 
 
+def _members(positions, by_issuer):
+    for name, share in by_issuer.items():
+        members = sorted({p["issuer"] for p in positions if p["group"] == name})
+        if members != [name]:
+            share["members"] = members
+    return by_issuer
+
+
 def _shares(positions, key, total):
     groups = {}
     for p in positions:
@@ -53,12 +62,14 @@ def summarise(snapshot, facts, profile):
         positions.append({
             "issuer": h["issuer"], "isin": h["isin"], "value": h["current_value"],
             "share_pct": round(100 * h["current_value"] / total, 2), "ytm": h["ytm"],
-            "months_left": months, "rating": fact.get("rating"),
+            "months_left": months, "maturity_date": h["maturity_date"],
+            "rating": fact.get("rating"), "rating_scope": fact.get("rating_scope"),
+            "group": fact.get("group") or bond_facts.group_of(facts, h["issuer"]),
             "bucket": rating_bucket(fact.get("rating")), "tenure": tenure_bucket(months)})
     positions.sort(key=lambda p: -p["value"])
     with_ytm = [p for p in positions if p["ytm"] is not None]
     weight = sum(p["value"] for p in with_ytm)
-    by_issuer = _shares(positions, "issuer", total)
+    by_issuer = _members(positions, _shares(positions, "group", total))
     by_bucket = _shares(positions, "bucket", total)
     breaches = []
     for issuer, share in by_issuer.items():
@@ -86,6 +97,8 @@ def summarise(snapshot, facts, profile):
         "by_tenure": _shares(positions, "tenure", total),
         "breaches": breaches,
         "unrated": sorted({p["issuer"] for p in positions if p["rating"] is None}),
+        "ratings_not_for_this_bond": sorted({p["issuer"] for p in positions
+                                             if p["rating_scope"] in ("issuer", "sibling bond")}),
     }
 
 
@@ -105,9 +118,15 @@ def render_markdown(summary):
                [[t["current_value"], t["invested"], t["weighted_ytm"], t["principal_repaid"],
                  t["interest_net_received"], t["tds"]]]),
         "## Positions",
-        _table(["Issuer", "ISIN", "Value", "Share %", "YTM %", "Months left", "Rating"],
-               [[p["issuer"], p["isin"], p["value"], p["share_pct"], p["ytm"], p["months_left"],
-                 p["rating"] or "unrated"] for p in summary["positions"]]),
+        _table(["Issuer", "ISIN", "Value", "Share %", "YTM %", "Matures", "Months left", "Rating",
+                "Rating applies to"],
+               [[p["issuer"], p["isin"], p["value"], p["share_pct"], p["ytm"], p["maturity_date"],
+                 p["months_left"], p["rating"] or "unrated", p["rating_scope"] or "not recorded"]
+                for p in summary["positions"]]),
+        "## By issuer group",
+        _table(["Issuer or group", "Value", "Share %", "Members"],
+               [[k, v["value"], v["share_pct"], ", ".join(v.get("members", []))]
+                for k, v in summary["by_issuer"].items()]),
         "## By rating bucket",
         _table(["Bucket", "Value", "Share %"],
                [[k, v["value"], v["share_pct"]] for k, v in summary["by_rating_bucket"].items()]),
