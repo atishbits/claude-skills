@@ -98,11 +98,13 @@ and how much principal comes back; unrated holdings; anything `diff_snapshots.py
 ## Step 3: screen what is on sale
 
 ```
-python3 scripts/screen_listings.py            # cash defaults to what is due in the lookahead window
-python3 scripts/screen_listings.py --cash 50000
+python3 scripts/screen_listings.py            # no cash filter; output shows cash_arriving
+python3 scripts/screen_listings.py --cash 50000   # drop bonds whose minimum is above this
 ```
 
-Exit code 2 means the capture is stale: recapture (Step 1) and do not pass `--allow-stale` unless
+Ask the user how much they want to deploy and pass it as `--cash`; if they have not said, run it
+without and report `cash_arriving` (what comes back within the lookahead window, and by when)
+beside the shortlist. Exit code 2 means the capture is stale: recapture (Step 1) and do not pass `--allow-stale` unless
 the user asks, in which case say every figure is stale. Present the shortlist in rank order with
 its risk bucket, post-tax YTM, tenure, minimum and `max_buy`. The ranking is by risk bucket first;
 do not re-sort it by YTM. Mention how many were rejected and the commonest reasons.

@@ -18,9 +18,10 @@ data/profile.json. Steps, in order:
      unsecured, senior before subordinated; only then monthly income (if the
      profile prefers it) and post-tax YTM. Never by YTM across the whole list.
 
---cash defaults to the principal and interest due within the profile's
-lookahead_days (cashflows.idle_cash), so the shortlist fits money that is
-actually arriving. A bond whose security status no tag or recorded fact
+--cash AMOUNT drops bonds whose minimum is above the money available. Without
+it nothing is filtered on cash; the output's cash_arriving shows the principal
+and interest due within the profile's lookahead_days (cashflows.idle_cash), so
+a shortlist can be sized to money that is actually coming back. A bond whose security status no tag or recorded fact
 settles is labelled "security unconfirmed": check its detail page and record
 it with bond_facts.py before any ENTER verdict."""
 import argparse
@@ -170,19 +171,18 @@ def main(argv=None):
         return 1
     config = common.load_config()
     snapshot = common.load_json(snapshots[-1])
-    cash = args.cash
-    if cash is None:
-        cash = cashflows.idle_cash(snapshot, snapshot["as_of"], profile["lookahead_days"])["total"]
-        cash = cash or None
+    arriving = cashflows.idle_cash(snapshot, snapshot["as_of"], profile["lookahead_days"])
     try:
         result = screen(common.load_json(listings[-1]), snapshot,
                         bond_facts.load(bond_facts.facts_path(root)), profile, config,
-                        dt.datetime.now(dt.timezone.utc), cash=cash, allow_stale=args.allow_stale)
+                        dt.datetime.now(dt.timezone.utc), cash=args.cash,
+                        allow_stale=args.allow_stale)
     except StaleCapture as err:
         print(err, file=sys.stderr)
         return 2
     for warning in common.stale_config_warnings(config, dt.date.today().isoformat()):
         print(f"warning: {warning}", file=sys.stderr)
+    result["cash_arriving"] = {k: arriving[k] for k in ("window_days", "total", "available_by")}
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 
