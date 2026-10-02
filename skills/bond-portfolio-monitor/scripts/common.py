@@ -41,10 +41,30 @@ def load_config(path=None):
     return load_json(path or os.path.join(SKILL_DIR, "config.json"))
 
 
-def validate_profile(profile):
+def _is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def validate_profile(profile, config=None):
     missing = [k for k in PROFILE_KEYS if k not in profile]
     if missing:
         raise ValueError(f"profile.json is missing: {missing}. See profile-template.json.")
+    order = (config or load_config())["rating_order"]
+    problems = []
+    if profile["min_rating"] not in order:
+        problems.append(f"min_rating {profile['min_rating']!r} must be one of {order}")
+    for key in ("tax_slab_pct", "max_tenure_months", "min_post_tax_ytm_pct",
+                "max_issuer_share_pct", "lookahead_days"):
+        if not _is_number(profile[key]):
+            problems.append(f"{key} must be a number")
+    for key in ("allow_unsecured", "allow_subordinated", "prefer_monthly_income"):
+        if not isinstance(profile[key], bool):
+            problems.append(f"{key} must be true or false")
+    caps = profile["max_rating_bucket_share_pct"]
+    if not isinstance(caps, dict) or not all(_is_number(v) for v in caps.values()):
+        problems.append("max_rating_bucket_share_pct must map a rating bucket to a number")
+    if problems:
+        raise ValueError("profile.json: " + "; ".join(problems))
     return profile
 
 

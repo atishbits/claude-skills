@@ -66,5 +66,16 @@ class TestAppendAndLoad(unittest.TestCase):
             self.assertEqual([e["verdict"] for e in loaded], ["HOLD", "REVIEW"])
 
 
+
+class TestEnterGate(unittest.TestCase):
+    def test_enter_needs_confirmed_security_and_seniority(self):
+        for fact in (None, {"secured": None, "seniority": "senior"},
+                     {"secured": True, "seniority": None}):
+            with self.assertRaises(ValueError):
+                rating_ledger.enter_gate(fact)
+        rating_ledger.enter_gate({"secured": True, "seniority": "senior"})
+        rating_ledger.enter_gate({"secured": False, "seniority": "subordinated"})
+
+
 if __name__ == "__main__":
     unittest.main()

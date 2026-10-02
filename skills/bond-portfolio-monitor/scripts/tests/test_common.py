@@ -45,6 +45,15 @@ class TestProfile(unittest.TestCase):
             common.validate_profile(template)
         self.assertIn("min_rating", str(ctx.exception))
 
+    def test_bad_values_are_named(self):
+        template = common.load_json(os.path.join(common.SKILL_DIR, "profile-template.json"))
+        for key, value in (("min_rating", "BBB +"), ("tax_slab_pct", "thirty"),
+                           ("max_rating_bucket_share_pct", 40), ("allow_unsecured", "no"),
+                           ("max_rating_bucket_share_pct", {"BBB": "forty"})):
+            with self.assertRaises(ValueError) as ctx:
+                common.validate_profile(dict(template, **{key: value}))
+            self.assertIn(key, str(ctx.exception))
+
     def test_missing_profile_points_at_template(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaises(FileNotFoundError) as ctx:

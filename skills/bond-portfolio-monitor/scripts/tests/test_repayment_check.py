@@ -102,8 +102,57 @@ class TestPickBaseline(unittest.TestCase):
         older = {"as_of": "2026-09-01"}
         same_day = {"as_of": "2026-10-02"}
         cur = {"as_of": "2026-10-02"}
-        self.assertEqual(repayment_check.pick_baseline([older, same_day], cur), older)
-        self.assertIsNone(repayment_check.pick_baseline([same_day], cur))
+        self.assertEqual(repayment_check.earlier_snapshots([older, same_day], cur), [older])
+        self.assertEqual(repayment_check.earlier_snapshots([same_day], cur), [])
+
+
+
+class TestReviewFindings(unittest.TestCase):
+    def due(self, date, gross=0.0, principal=None):
+        return {"issuer": "Alpha Finance", "isin": ALPHA, "date": date, "principal": principal,
+                "interest_gross": gross}
+
+    def test_close_snapshots_still_check_a_due_from_an_older_schedule(self):
+        earlier = [{"as_of": "2026-10-01", "expected_cashflows": [self.due("2026-10-03", 200.0)]},
+                   {"as_of": "2026-10-04", "expected_cashflows": []},
+                   {"as_of": "2026-10-07", "expected_cashflows": []}]
+        result = repayment_check.check(earlier, current([], as_of="2026-10-10"))
+        self.assertEqual(result["checked"], 1)
+        self.assertEqual(result["flags"][0]["kind"], "missing")
+        self.assertEqual(result["flags"][0]["date"], "2026-10-03")
+
+    def test_due_just_before_a_monthly_snapshot_is_checked_next_time(self):
+        earlier = [{"as_of": "2026-10-01", "expected_cashflows": [self.due("2026-10-30", 200.0)]},
+                   {"as_of": "2026-11-01", "expected_cashflows": []}]
+        result = repayment_check.check(earlier, current([], as_of="2026-12-01"))
+        self.assertEqual([f["date"] for f in result["flags"]], ["2026-10-30"])
+
+    def test_newest_schedule_before_the_due_date_wins(self):
+        earlier = [{"as_of": "2026-10-01", "expected_cashflows": [self.due("2026-10-20", 200.0)]},
+                   {"as_of": "2026-10-10", "expected_cashflows": [self.due("2026-10-20", 150.0)]}]
+        result = repayment_check.check(earlier, current([paid("2026-10-20", 150.0)]))
+        self.assertEqual(result["flags"], [])
+
+    def test_same_date_rows_for_one_bond_are_summed(self):
+        base = {"as_of": "2026-10-02", "expected_cashflows": [
+            self.due("2026-10-15", 100.0), self.due("2026-10-15", 0.0, principal=10000.0)]}
+        result = repayment_check.check(base, current([paid("2026-10-15", 0.0, 10000.0)]))
+        self.assertEqual(result["checked"], 1)
+        flag = result["flags"][0]
+        self.assertEqual((flag["kind"], flag["expected"], flag["received"]),
+                         ("short", 10100.0, 10000.0))
+
+    def test_overdue_sums_same_date_rows_too(self):
+        snap = {"as_of": "2026-10-02", "received_cashflows": [paid("2026-09-21", 0.0, 10000.0)],
+                "expected_cashflows": [self.due("2026-09-21", 100.0),
+                                       self.due("2026-09-21", 0.0, principal=10000.0)]}
+        flags = repayment_check.overdue(snap)
+        self.assertEqual((flags[0]["expected"], flags[0]["received"]), (10100.0, 10000.0))
+
+    def test_nothing_checkable_is_said_plainly(self):
+        result = repayment_check.check(baseline(), current([], as_of="2026-10-05"))
+        self.assertEqual(result["checked"], 0)
+        self.assertIn("nothing was checkable", result["note"])
 
 
 if __name__ == "__main__":

@@ -55,6 +55,7 @@ def estimate(holding, purchases, fact, config, profile, as_of):
         "hold_to_maturity": {"maturity_date": holding["maturity_date"],
                              "upcoming_interest": holding["upcoming_interest"],
                              "upcoming_principal": holding["upcoming_principal"]},
+        "config_warnings": common.stale_config_warnings(config, as_of),
     }
 
 

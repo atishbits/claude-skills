@@ -18,6 +18,7 @@ import json
 import os
 import sys
 
+import bond_facts
 import common
 
 VERDICTS = {"listing": {"ENTER", "SKIP"}, "holding": {"HOLD", "REVIEW", "EXIT"}}
@@ -46,6 +47,15 @@ def make_entry(kind, issuer, verdict, reason, inputs, sources, snapshot_hash=Non
             "kind": kind, "issuer": issuer, "isin": isin, "bond_id": bond_id, "verdict": verdict,
             "reason": reason.strip(), "inputs": inputs or {}, "sources": list(sources or []),
             "snapshot_hash": snapshot_hash, "listings_sha256": listings_sha256}
+
+
+def enter_gate(fact):
+    """ENTER is refused until the bond's detail page has been read and its
+    security and seniority recorded with bond_facts.py. The listings page
+    leaves both unknown for most bonds, and unknown is not good enough to buy."""
+    if not fact or fact.get("secured") is None or fact.get("seniority") is None:
+        raise ValueError("ENTER needs the bond's secured and seniority facts recorded first "
+                         "(bond_facts.py set --bond-id ... --secured yes|no --seniority ...)")
 
 
 def append(path, entry):
@@ -88,12 +98,15 @@ def main(argv=None):
     snapshots = common.dated_files(data, "snapshot-")
     listings = common.dated_files(data, "listings-")
     try:
+        if args.kind == "listing" and args.verdict.upper() == "ENTER":
+            enter_gate(bond_facts.lookup(bond_facts.load(bond_facts.facts_path(root)),
+                                         isin=args.isin, bond_id=args.bond_id))
         entry = make_entry(
             args.kind, args.issuer, args.verdict, args.reason, json.loads(args.inputs), args.source,
             snapshot_hash=common.load_json(snapshots[-1])["snapshot_hash"] if snapshots else None,
             listings_sha256=common.load_json(listings[-1])["capture_sha256"] if listings else None,
             isin=args.isin, bond_id=args.bond_id)
-    except ValueError as err:
+    except ValueError as err:  # includes a malformed --inputs JSON
         print(f"rating_ledger: {err}", file=sys.stderr)
         return 1
     append(path, entry)

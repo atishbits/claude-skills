@@ -169,5 +169,21 @@ class TestRanking(unittest.TestCase):
         self.assertEqual(result["shortlist"][0]["risk_bucket"], "A / secured / senior")
 
 
+
+class TestReviewFindings(unittest.TestCase):
+    def test_unrated_holdings_are_reported_because_bucket_caps_cannot_see_them(self):
+        result = screen_listings.screen(doc([listing()]), snapshot(), [], profile(), CONFIG, NOW)
+        self.assertEqual(result["unrated_held_value"], 100000.0)
+        self.assertTrue(any("unrated" in w for w in result["warnings"]))
+        rated = run([listing()])
+        self.assertEqual(rated["unrated_held_value"], 0)
+        self.assertEqual(rated["warnings"], [])
+
+    def test_bad_profile_rating_is_a_value_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            run([listing()], profile=profile(min_rating="BBB +"))
+        self.assertIn("min_rating", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -154,5 +154,25 @@ class TestBuildAndCli(unittest.TestCase):
             self.assertEqual(ingest.main(["listings", "--file", path, "--root", root]), 1)
 
 
+
+class TestReviewFindings(unittest.TestCase):
+    def test_unknown_money_suffix_is_null_not_a_guess(self):
+        for text in ("Min. ₹1L", "Min. ₹1 Lac", "Min. ₹10 thousand", "Min. ₹1.2.3"):
+            item, warnings = ingest.normalise_listing(row(min=text))
+            self.assertIsNone(item["min_investment"], text)
+            self.assertTrue(any("min_investment" in w for w in warnings), text)
+
+    def test_wrong_value_types_are_rejected_by_name(self):
+        for field, value in (("sold", None), ("ytm", 10), ("tags", None), ("tags", [1])):
+            rows = [row(**{field: value})]
+            with self.assertRaises(ingest.IngestError) as ctx:
+                ingest.verify_capture(capture(rows), check_sum=False)
+            self.assertIn(field, str(ctx.exception))
+
+    def test_unsecured_tag_with_extra_words(self):
+        item, _ = ingest.normalise_listing(row(tags=["UNSECURED NCD"]))
+        self.assertIs(item["secured"], False)
+
+
 if __name__ == "__main__":
     unittest.main()

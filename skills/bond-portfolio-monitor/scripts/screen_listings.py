@@ -59,6 +59,7 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
         raise StaleCapture(
             f"listings capture is {age} hours old (limit {config['listings_max_age_hours']}). "
             "Recapture the listings page, or pass --allow-stale.")
+    common.validate_profile(profile, config)
     order = config["rating_order"]
     floor = order.index(profile["min_rating"])
     slab = profile["tax_slab_pct"]
@@ -140,11 +141,19 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
             "_sort": (order.index(rating), secured is False, seniority == "subordinated",
                       profile["prefer_monthly_income"] and item["interest_frequency"] != "Monthly",
                       -post_tax)})
+    unrated = round(by_bucket.get("unrated", 0), 2)
+    warnings = []
+    if unrated > 0:
+        warnings.append(
+            f"{unrated} of holdings is unrated (no rating in bond-facts.json), so the "
+            "rating-bucket caps cannot count it; max_buy reflects the issuer cap only for "
+            "those buckets. Record the ratings to make the bucket caps real.")
     shortlist.sort(key=lambda row: row.pop("_sort"))
     for rank, row in enumerate(shortlist, start=1):
         row["rank"] = rank
     return {"captured_at": listings_doc["captured_at"], "age_hours": age, "stale": stale,
             "verified": listings_doc.get("verified", False), "cash": cash,
+            "unrated_held_value": unrated, "warnings": warnings,
             "counts": {"listed": len(listings_doc["listings"]), "shortlisted": len(shortlist),
                        "rejected": len(rejected)},
             "shortlist": shortlist, "rejected": rejected}
@@ -180,6 +189,9 @@ def main(argv=None):
     except StaleCapture as err:
         print(err, file=sys.stderr)
         return 2
+    except (ValueError, TypeError) as err:
+        print(f"screen_listings: {err}", file=sys.stderr)
+        return 1
     for warning in common.stale_config_warnings(config, dt.date.today().isoformat()):
         print(f"warning: {warning}", file=sys.stderr)
     result["cash_arriving"] = {k: arriving[k] for k in ("window_days", "total", "available_by")}
