@@ -60,7 +60,8 @@ skills/
 
 [MIT](LICENSE). Take these, fork them, adapt them.
 
-The skills that touch money — `advance-tax`, `itr2-filing-assistant`, `portfolio-review` — are
+The skills that touch money — `advance-tax`, `itr2-filing-assistant`, `portfolio-review`,
+`wint-wealth` — are
 tooling for my own use, published in case they are useful. They are not tax, legal or investment
 advice, and the MIT warranty disclaimer means exactly what it says: verify anything that matters
 with your own CA or adviser before acting on it.
