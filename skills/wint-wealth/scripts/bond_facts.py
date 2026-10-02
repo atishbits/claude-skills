@@ -52,6 +52,11 @@ def upsert(facts, isin=None, bond_id=None, **fields):
         raise ValueError(f"unknown fact field(s): {unknown}")
     if not fields.get("source") or not fields.get("as_of"):
         raise ValueError("a fact needs a source and an as_of date")
+    if fields.get("seniority") not in (None, "senior", "subordinated"):
+        raise ValueError("seniority must be 'senior' or 'subordinated'")
+    for flag in ("secured", "listed"):
+        if fields.get(flag) is not None and not isinstance(fields[flag], bool):
+            raise ValueError(f"{flag} must be true or false")
     entry = lookup(facts, isin=isin, bond_id=bond_id)
     if entry is None:
         entry = {"isin": None, "wint_bond_id": None, **{k: None for k in FIELDS}}
@@ -77,9 +82,10 @@ def main(argv=None):
         p.add_argument("--isin")
         p.add_argument("--bond-id")
         p.add_argument("--root")
-    for name in ("issuer", "rating", "agency", "rating-action", "outlook", "seniority",
+    for name in ("issuer", "rating", "agency", "rating-action", "outlook",
                  "collateral", "issuer-type", "source", "as-of"):
         setter.add_argument(f"--{name}")
+    setter.add_argument("--seniority", choices=["senior", "subordinated"])
     setter.add_argument("--secured", choices=["yes", "no"])
     setter.add_argument("--listed", choices=["yes", "no"])
     args = parser.parse_args(argv)

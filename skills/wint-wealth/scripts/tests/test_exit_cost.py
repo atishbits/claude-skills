@@ -69,5 +69,17 @@ class TestEstimate(unittest.TestCase):
                                                    "upcoming_principal": 20000.0})
 
 
+
+class TestConfigAge(unittest.TestCase):
+    def test_old_config_entries_are_reported_with_the_estimate(self):
+        import copy
+        fresh = exit_cost.estimate(holding(), PURCHASES, None, CONFIG, PROFILE, "2026-10-02")
+        self.assertEqual(fresh["config_warnings"], [])
+        old = copy.deepcopy(CONFIG)
+        old["portal"]["early_exit_deduction_pct"]["as_of"] = "2024-01-01"
+        stale = exit_cost.estimate(holding(), PURCHASES, None, old, PROFILE, "2026-10-02")
+        self.assertTrue(any("early_exit_deduction_pct" in w for w in stale["config_warnings"]))
+
+
 if __name__ == "__main__":
     unittest.main()

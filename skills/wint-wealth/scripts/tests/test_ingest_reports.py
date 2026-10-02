@@ -109,10 +109,29 @@ class TestFormatDrift(unittest.TestCase):
         self.assertEqual(snap["sells"], [])
         self.assertTrue(any("Sell Summary Report" in w for w in snap["warnings"]))
 
-    def test_rows_without_an_isin_end_the_table(self):
+    def test_rows_without_an_isin_are_skipped_not_a_stop(self):
         sheets = sample_report()
-        sheets["Holding Statement"].insert(-1, ["Total", "", "", "3.0"])
-        self.assertEqual(len(snapshot_of(sheets)["holdings"]), 2)
+        rows = sheets["Holding Statement"]
+        first = rows.index(HOLD_HEADERS) + 1
+        rows.insert(first + 1, ["Subtotal", "", "", "2.0"])
+        rows.insert(-1, ["Total", "", "", "3.0"])
+        snap = snapshot_of(sheets)
+        self.assertEqual([h["isin"] for h in snap["holdings"]], [ALPHA, BETA])
+
+    def test_unreadable_cell_names_sheet_and_field(self):
+        sheets = sample_report()
+        rows = sheets["Holding Statement"]
+        rows[rows.index(HOLD_HEADERS) + 1][2] = "45567"
+        with self.assertRaises(ingest.IngestError) as ctx:
+            snapshot_of(sheets)
+        self.assertIn("Holding Statement", str(ctx.exception))
+        self.assertIn("maturity_date", str(ctx.exception))
+
+    def test_required_sheet_with_no_table_is_an_error(self):
+        sheets = sample_report()
+        sheets["Holding Statement"] = [["", "Name Of Bond", "ISIN"], ["", "x", "y"]]
+        with self.assertRaises(ingest.IngestError):
+            snapshot_of(sheets)
 
 
 class TestCli(unittest.TestCase):
@@ -127,6 +146,38 @@ class TestCli(unittest.TestCase):
             self.assertEqual({h["isin"] for h in snap["holdings"]}, {ALPHA, BETA})
             self.assertEqual(snap["source"]["report_sha256"], common.sha256_file(report))
             self.assertNotIn("report.xlsx", json.dumps(snap))
+
+
+
+class TestFindingAndFailing(unittest.TestCase):
+    def test_newest_report_wins_wherever_it_is(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as downloads:
+            os.makedirs(os.path.join(root, "data", "reports"))
+            old = os.path.join(root, "data", "reports", "old.xlsx")
+            new = os.path.join(downloads, "WintWealth_Master_Report_new.xlsx")
+            for path, stamp in ((old, 1_000_000), (new, 2_000_000)):
+                open(path, "w").close()
+                os.utime(path, (stamp, stamp))
+            self.assertEqual(ingest._find_report(root, downloads), new)
+            os.utime(old, (3_000_000, 3_000_000))
+            self.assertEqual(ingest._find_report(root, downloads), old)
+
+    def test_missing_or_corrupt_file_is_an_error_not_a_traceback(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(ingest.main(["reports", "--file", os.path.join(root, "nope.xlsx"),
+                                          "--root", root]), 1)
+            bad = os.path.join(root, "bad.xlsx")
+            with open(bad, "w") as fh:
+                fh.write("not a workbook")
+            self.assertEqual(ingest.main(["reports", "--file", bad, "--root", root]), 1)
+            self.assertEqual(ingest.main(["listings", "--file", bad, "--root", root]), 1)
+
+    def test_bad_date_argument_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            report = os.path.join(root, "report.xlsx")
+            make_xlsx(report, sample_report())
+            self.assertEqual(ingest.main(["reports", "--file", report, "--root", root,
+                                          "--date", "today"]), 1)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ import json
 import os
 import re
 import sys
+import zipfile
 
 import common
 import xlsx_reader
@@ -55,31 +56,32 @@ def _has_table(rows):
     return any(len(_main_block(row)) >= 4 for row in rows)
 
 
-def extract_table(rows, column_map, sheet):
-    """Read every block of `rows` that sits under a header row containing all
-    the mapped headers. Returns (records as text, warnings)."""
+def extract_table(rows, column_map, sheet, required=False):
+    """Read every row of `rows` that sits under a header row containing all the
+    mapped headers and carries an ISIN. A sheet may repeat its header (one
+    block per financial year); each header re-reads the column positions. Rows
+    without an ISIN (titles, totals, spacers, the disclaimer) are skipped, not
+    treated as the end of the table. Returns (records as text, warnings)."""
     wanted = list(column_map.values())
-    records, warnings, headers_seen = [], [], 0
-    i = 0
-    while i < len(rows):
-        block = _main_block(rows[i])
-        if not all(h in block for h in wanted):
-            i += 1
+    records, warnings, headers_seen, index = [], [], 0, None
+    for row in rows:
+        block = _main_block(row)
+        if all(h in block for h in wanted):
+            headers_seen += 1
+            if headers_seen == 1:
+                unknown = [h for h in block if h not in wanted]
+                if unknown:
+                    warnings.append(f"{sheet}: unmapped column(s) {unknown}")
+            index = {field: block.index(source) for field, source in column_map.items()}
             continue
-        headers_seen += 1
-        if headers_seen == 1:
-            unknown = [h for h in block if h not in wanted]
-            if unknown:
-                warnings.append(f"{sheet}: unmapped column(s) {unknown}")
-        index = {field: block.index(source) for field, source in column_map.items()}
-        i += 1
-        while i < len(rows):
-            row = rows[i]
-            cells = {f: (row[j].strip() if j < len(row) else "") for f, j in index.items()}
-            if not ISIN.match(cells.get("isin", "")):
-                break
+        if index is None:
+            continue
+        cells = {f: (row[j].strip() if j < len(row) else "") for f, j in index.items()}
+        if ISIN.match(cells.get("isin", "")):
             records.append(cells)
-            i += 1
+    if headers_seen == 0 and not _has_table(rows) and required:
+        raise IngestError(f"{sheet}: no header row found starting in column A. "
+                          f"Expected column(s) {wanted}.")
     if headers_seen == 0 and _has_table(rows):
         best = max((_main_block(r) for r in rows), key=lambda b: len(set(b) & set(wanted)))
         if not set(best) & set(wanted):
@@ -91,15 +93,19 @@ def extract_table(rows, column_map, sheet):
     return records, warnings
 
 
-def _typed(record):
+def _typed(record, sheet):
     out = {}
     for field, text in record.items():
-        if field in NUM_FIELDS:
-            out[field] = common.parse_num(text)
-        elif field in DATE_FIELDS:
-            out[field] = common.parse_date(text)
-        else:
-            out[field] = text or None
+        try:
+            if field in NUM_FIELDS:
+                out[field] = common.parse_num(text)
+            elif field in DATE_FIELDS:
+                out[field] = common.parse_date(text)
+            else:
+                out[field] = text or None
+        except ValueError:
+            raise IngestError(f"{sheet}: cannot read {field} from {text!r} "
+                              f"(bond {record.get('isin')})") from None
     return out
 
 
@@ -122,11 +128,12 @@ def build_snapshot(workbook, config, as_of, report_sha256):
                     f"report_columns.{key}")
             content[key] = []
             continue
-        records, table_warnings = extract_table(rows, spec["columns"], spec["sheet"])
-        if spec.get("required") and not records and not _has_table(rows):
+        records, table_warnings = extract_table(rows, spec["columns"], spec["sheet"],
+                                                required=bool(spec.get("required")))
+        if spec.get("required") and not records:
             warnings.append(f"{spec['sheet']} has no rows")
         warnings.extend(table_warnings)
-        content[key] = [_typed(r) for r in records]
+        content[key] = [_typed(r, spec["sheet"]) for r in records]
     content["warnings"] = warnings
     content["source"] = {"report_sha256": report_sha256}
     content["snapshot_hash"] = common.sha256_text(common.canonical(content))
@@ -135,7 +142,7 @@ def build_snapshot(workbook, config, as_of, report_sha256):
 
 LISTING_KEYS = ["href", "issuer", "rating", "min", "sold", "ytm_label", "ytm", "ytm_alt",
                 "maturity_left", "interest", "principal", "tags"]
-MONEY = re.compile(r"₹\s*([\d.,]+)\s*(k|lakhs?|cr|crores?)?", re.IGNORECASE)
+MONEY = re.compile(r"₹\s*(\d[\d,]*(?:\.\d+)?)\s*(k|lakhs?|cr|crores?)?\s*$", re.IGNORECASE)
 MULTIPLIER = {"": 1, "k": 1_000, "lakh": 100_000, "lakhs": 100_000, "cr": 10_000_000,
               "crore": 10_000_000, "crores": 10_000_000}
 SITE = "https://www.wintwealth.com"
@@ -155,6 +162,14 @@ def verify_capture(capture, check_sum=True):
         missing = [k for k in LISTING_KEYS if k not in row]
         if extra or missing:
             raise IngestError(f"capture row has unexpected field(s) {extra} / missing {missing}")
+        for key in LISTING_KEYS:
+            value = row[key]
+            ok = (isinstance(value, list) and all(isinstance(t, str) for t in value)
+                  if key == "tags" else isinstance(value, str))
+            if not ok:
+                raise IngestError(
+                    f"capture row for {row.get('issuer')!r}: {key} must be "
+                    f"{'a list of strings' if key == 'tags' else 'a string'}, got {value!r}")
     if check_sum and rows_checksum(capture["rows"]) != capture.get("sha256"):
         raise IngestError("capture checksum mismatch: the file changed after it was saved. "
                           "Recapture the listings page.")
@@ -210,7 +225,7 @@ def normalise_listing(row):
         "interest_frequency": row["interest"] or None,
         "principal_type": row["principal"] or None,
         "seniority": "subordinated" if any("SUB DEBT" in t for t in upper) else None,
-        "secured": False if "UNSECURED" in upper else None,
+        "secured": False if any("UNSECURED" in t for t in upper) else None,
         "collateral": next((t for t in tags if "BACKED" in t.upper()), None),
         "guarantee": next((t for t in tags if "GUARANTEED" in t.upper()), None),
         "rating_action": ("upgrade" if any(t.startswith("RATING UPGRADED") for t in upper) else
@@ -266,12 +281,14 @@ def cmd_listings(args):
     return 0
 
 
-def _find_report(root):
-    for pattern in (os.path.join(root, "data", "reports", "*.xlsx"),
-                    os.path.expanduser("~/Downloads/WintWealth_Master_Report_*.xlsx")):
-        found = sorted(glob.glob(pattern), key=os.path.getmtime)
-        if found:
-            return found[-1]
+def _find_report(root, downloads=None):
+    """The most recently modified Master Report in data/reports/ or Downloads,
+    whichever is newer, so an old copy in one never shadows a new one."""
+    downloads = downloads or os.path.expanduser("~/Downloads")
+    found = (glob.glob(os.path.join(root, "data", "reports", "*.xlsx"))
+             + glob.glob(os.path.join(downloads, "WintWealth_Master_Report_*.xlsx")))
+    if found:
+        return max(found, key=os.path.getmtime)
     raise IngestError(
         "No Master Report found in data/reports/ or ~/Downloads. Download it from "
         "Reports and documents -> Master Report, or pass --file.")
@@ -281,6 +298,13 @@ def cmd_reports(args):
     root = common.resolve_root(args.root)
     path = args.file or _find_report(root)
     as_of = args.date or dt.date.today().isoformat()
+    try:
+        dt.date.fromisoformat(as_of)
+    except ValueError:
+        raise IngestError(f"--date must be YYYY-MM-DD, got {as_of!r}") from None
+    modified = dt.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+    print(f"report: a workbook in {os.path.dirname(os.path.abspath(path))}, "
+          f"last modified {modified}")
     snapshot = build_snapshot(xlsx_reader.read_workbook(path), common.load_config(), as_of,
                               common.sha256_file(path))
     out = os.path.join(common.skill_data_dir(root), f"snapshot-{as_of}.json")
@@ -316,6 +340,10 @@ def main(argv=None):
         return args.func(args)
     except IngestError as err:
         print(f"ingest failed: {err}", file=sys.stderr)
+        return 1
+    except (OSError, zipfile.BadZipFile, KeyError, ValueError) as err:
+        print(f"ingest failed: could not read the file ({type(err).__name__}: {err})",
+              file=sys.stderr)
         return 1
 
 

@@ -87,7 +87,8 @@ python3 scripts/diff_snapshots.py
 Report, briefly: totals and weighted YTM; any limit breach; what is due in the lookahead window
 and how much principal comes back; unrated holdings; anything `diff_snapshots.py` flags.
 
-- **`repayment_check.py` says "no baseline yet"**: say exactly that. It is not a clean result.
+- **`repayment_check.py` says "no baseline yet" or "nothing was checkable"**: say exactly that.
+  It is not a clean result.
 - **Any repayment flag** (missing or short) or **any `overdue` entry** -> that holding is REVIEW
   now. Go to Step 5 for it. An overdue entry can be a late payment or a report that lags the
   bank, so ask the user to check their bank statement for that credit before you conclude.
@@ -106,7 +107,8 @@ Ask the user how much they want to deploy and pass it as `--cash`; if they have 
 without and report `cash_arriving` (what comes back within the lookahead window, and by when)
 beside the shortlist. Exit code 2 means the capture is stale: recapture (Step 1) and do not pass `--allow-stale` unless
 the user asks, in which case say every figure is stale. Present the shortlist in rank order with
-its risk bucket, post-tax YTM, tenure, minimum and `max_buy`. The ranking is by risk bucket first;
+its risk bucket, post-tax YTM, tenure, minimum and `max_buy`. Pass on every entry in the
+output's `warnings` (for example, unrated holdings that the bucket caps cannot count). The ranking is by risk bucket first;
 do not re-sort it by YTM. Mention how many were rejected and the commonest reasons.
 
 ## Step 4: ENTER or SKIP, for shortlisted bonds only
@@ -118,7 +120,9 @@ For each bond you take forward (at most five unless asked for more):
    date of rating, collateral type, seniority (for example "Senior secured bond"), listed or not,
    coupon, and maturity date. Never click "Invest Now". Record what you find:
    `python3 scripts/bond_facts.py set --bond-id ID --isin ISIN --issuer NAME --rating R --agency A --secured yes|no --seniority senior|subordinated --listed yes|no --source URL`
-   A bond still "security unconfirmed" after this cannot get ENTER.
+   Then **re-run `screen_listings.py`**: the recorded facts now go through the hard filters, and
+   a bond the screen rejects on them is SKIP. A bond still "security unconfirmed" cannot get
+   ENTER; `rating_ledger.py` refuses an ENTER whose secured and seniority facts are not recorded.
 2. **Research the issuer's credit** from primary sources: the rating agency's latest rationale,
    recent results, exchange filings, and news. Look specifically for **rating actions**, which
    matter more than the grade: rating watch negative, "issuer not cooperating", outlook changes,

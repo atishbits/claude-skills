@@ -44,6 +44,12 @@ class TestBondFacts(unittest.TestCase):
             bond_facts.upsert([], isin="INE000A07011", colour="blue",
                               source="https://example.com", as_of="2026-10-02")
 
+    def test_seniority_and_flags_take_fixed_values_only(self):
+        for bad in ({"seniority": "Subordinated"}, {"secured": "yes"}, {"listed": 1}):
+            with self.assertRaises(ValueError):
+                bond_facts.upsert([], isin="INE000A07011", source="https://example.com",
+                                  as_of="2026-10-02", **bad)
+
     def test_save_and_load_round_trip(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "bond-facts.json")
