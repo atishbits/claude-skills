@@ -5,6 +5,9 @@ other script reads.
     python3 scripts/ingest.py reports  [--file REPORT.xlsx] [--root PATH] [--date YYYY-MM-DD]
     python3 scripts/ingest.py listings [--file CAPTURE.json] [--root PATH] [--no-checksum]
 
+`listings` reads the file capture-listings.js saved from the listings page,
+checks its SHA-256 against the rows, and writes data/skill-data/listings-<time>.json.
+
 `reports` reads the Master Report workbook (Reports and documents -> Master
 Report on the portal) and writes data/skill-data/snapshot-<date>.json.
 
@@ -16,6 +19,7 @@ and the workbook's file name (it carries a phone number) are never copied.
 import argparse
 import datetime as dt
 import glob
+import json
 import os
 import re
 import sys
@@ -129,6 +133,139 @@ def build_snapshot(workbook, config, as_of, report_sha256):
     return content
 
 
+LISTING_KEYS = ["href", "issuer", "rating", "min", "sold", "ytm_label", "ytm", "ytm_alt",
+                "maturity_left", "interest", "principal", "tags"]
+MONEY = re.compile(r"₹\s*([\d.,]+)\s*(k|lakhs?|cr|crores?)?", re.IGNORECASE)
+MULTIPLIER = {"": 1, "k": 1_000, "lakh": 100_000, "lakhs": 100_000, "cr": 10_000_000,
+              "crore": 10_000_000, "crores": 10_000_000}
+SITE = "https://www.wintwealth.com"
+
+
+def rows_checksum(rows):
+    """SHA-256 of the rows serialised the way the browser's JSON.stringify does."""
+    return common.sha256_text(json.dumps(rows, separators=(",", ":"), ensure_ascii=False))
+
+
+def verify_capture(capture, check_sum=True):
+    for key in ("schema", "captured_at", "rows"):
+        if key not in capture:
+            raise IngestError(f"capture is missing {key!r}; recapture the listings page")
+    for row in capture["rows"]:
+        extra = [k for k in row if k not in LISTING_KEYS]
+        missing = [k for k in LISTING_KEYS if k not in row]
+        if extra or missing:
+            raise IngestError(f"capture row has unexpected field(s) {extra} / missing {missing}")
+    if check_sum and rows_checksum(capture["rows"]) != capture.get("sha256"):
+        raise IngestError("capture checksum mismatch: the file changed after it was saved. "
+                          "Recapture the listings page.")
+
+
+def _money(text):
+    match = MONEY.search(text or "")
+    if not match:
+        return None
+    return int(round(float(match.group(1).replace(",", "")) *
+                     MULTIPLIER[(match.group(2) or "").lower()]))
+
+
+def _tenure_months(text):
+    match = re.match(r"([\d.]+)\s*(day|month|year)s?$", (text or "").strip(), re.IGNORECASE)
+    if not match:
+        return None
+    value, unit = float(match.group(1)), match.group(2).lower()
+    if unit == "day":
+        return round(value / 30.4375, 1)
+    return value * 12 if unit == "year" else value
+
+
+def _percent(text):
+    text = (text or "").strip()
+    return common.parse_num(text) if text.endswith("%") else None
+
+
+def normalise_listing(row):
+    warnings = []
+    href = row["href"]
+    bond = re.search(r"-(\d+)/?(?:\?|$)", href)
+    tenure = re.search(r"productTenureId=(\d+)", href)
+    sold = re.match(r"([\d.]+)% Sold$", row["sold"])
+    units = re.match(r"(\d+) units? left$", row["sold"])
+    tags = row["tags"]
+    upper = [t.upper() for t in tags]
+    item = {
+        "key": href,
+        "bond_id": bond.group(1) if bond else None,
+        "tenure_id": tenure.group(1) if tenure else None,
+        "url": SITE + href,
+        "issuer": row["issuer"],
+        "rating": re.sub(r"\s*\(.*\)", "", row["rating"]).strip() or None,
+        "rating_raw": row["rating"],
+        "min_investment": _money(row["min"]),
+        "sold_pct": float(sold.group(1)) if sold else None,
+        "units_left": int(units.group(1)) if units else None,
+        "ytm": _percent(row["ytm"]),
+        "ytm_is_upper_bound": row["ytm_label"] == "YTM up to",
+        "ytm_alt": _percent(row["ytm_alt"]),
+        "tenure_months": _tenure_months(row["maturity_left"]),
+        "interest_frequency": row["interest"] or None,
+        "principal_type": row["principal"] or None,
+        "seniority": "subordinated" if any("SUB DEBT" in t for t in upper) else None,
+        "secured": False if "UNSECURED" in upper else None,
+        "collateral": next((t for t in tags if "BACKED" in t.upper()), None),
+        "guarantee": next((t for t in tags if "GUARANTEED" in t.upper()), None),
+        "rating_action": ("upgrade" if any(t.startswith("RATING UPGRADED") for t in upper) else
+                          "downgrade" if any(t.startswith("RATING DOWNGRADED") for t in upper)
+                          else None),
+        "held": any(re.match(r"₹.* Invested$", t) for t in tags),
+        "tags": tags,
+    }
+    for field, source in (("min_investment", "min"), ("ytm", "ytm"),
+                          ("tenure_months", "maturity_left")):
+        if item[field] is None:
+            warnings.append(f"{row['issuer']} ({href}): could not read {field} "
+                            f"from {row[source]!r}")
+    return item, warnings
+
+
+def build_listings(capture, check_sum=True):
+    verify_capture(capture, check_sum)
+    listings, warnings = [], []
+    for row in capture["rows"]:
+        item, row_warnings = normalise_listing(row)
+        listings.append(item)
+        warnings.extend(row_warnings)
+    stated = capture.get("stated_live_count")
+    if stated is not None and stated != len(listings):
+        warnings.append(f"page says {stated} live bonds but {len(listings)} cards were captured")
+    return {"schema": 1, "captured_at": capture["captured_at"],
+            "capture_sha256": rows_checksum(capture["rows"]), "verified": bool(check_sum),
+            "stated_live_count": stated, "warnings": warnings, "listings": listings}
+
+
+def _find_capture():
+    found = sorted(glob.glob(os.path.expanduser("~/Downloads/wint-listings-*.json")),
+                   key=os.path.getmtime)
+    if not found:
+        raise IngestError("No wint-listings-*.json in ~/Downloads. Run capture-listings.js on "
+                          "the listings page first, or pass --file.")
+    return found[-1]
+
+
+def cmd_listings(args):
+    root = common.resolve_root(args.root)
+    path = args.file or _find_capture()
+    doc = build_listings(common.load_json(path), check_sum=not args.no_checksum)
+    stamp = doc["captured_at"][:16].replace("-", "").replace(":", "")
+    out = os.path.join(common.skill_data_dir(root), f"listings-{stamp}.json")
+    common.write_json(out, doc)
+    print(f"listings: {out}")
+    print(f"bonds: {len(doc['listings'])}  captured at: {doc['captured_at']}  "
+          f"verified: {doc['verified']}")
+    for warning in doc["warnings"]:
+        print(f"warning: {warning}")
+    return 0
+
+
 def _find_report(root):
     for pattern in (os.path.join(root, "data", "reports", "*.xlsx"),
                     os.path.expanduser("~/Downloads/WintWealth_Master_Report_*.xlsx")):
@@ -168,6 +305,12 @@ def main(argv=None):
     reports.add_argument("--root")
     reports.add_argument("--date")
     reports.set_defaults(func=cmd_reports)
+    listings = sub.add_parser("listings")
+    listings.add_argument("--file")
+    listings.add_argument("--root")
+    listings.add_argument("--no-checksum", action="store_true",
+                          help="for a hand-written file; the output is marked unverified")
+    listings.set_defaults(func=cmd_listings)
     args = parser.parse_args(argv)
     try:
         return args.func(args)

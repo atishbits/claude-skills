@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "captured_at": "2026-01-01T09:00:00.000Z",
+  "source": "manual",
+  "stated_live_count": null,
+  "sha256": "",
+  "rows": [
+    {
+      "href": "/bonds/listing/Alpha-Finance-101",
+      "issuer": "Alpha Finance",
+      "rating": "A",
+      "min": "Min. ₹10k",
+      "sold": "40% Sold",
+      "ytm_label": "YTM",
+      "ytm": "10%",
+      "ytm_alt": "",
+      "maturity_left": "18 months",
+      "interest": "Monthly",
+      "principal": "At Maturity",
+      "tags": []
+    }
+  ]
+}
