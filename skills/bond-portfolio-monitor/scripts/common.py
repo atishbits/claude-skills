@@ -65,6 +65,15 @@ def validate_profile(profile, config=None):
     if "total_investable" in profile and not (
             _is_number(profile["total_investable"]) and profile["total_investable"] > 0):
         problems.append("total_investable must be a number above zero")
+    if "tax_multiplier" in profile and not (
+            _is_number(profile["tax_multiplier"]) and profile["tax_multiplier"] >= 1):
+        problems.append("tax_multiplier must be a number of 1 or more")
+    if "annual_investment_budget" in profile and not (
+            _is_number(profile["annual_investment_budget"])
+            and profile["annual_investment_budget"] > 0):
+        problems.append("annual_investment_budget must be a number above zero")
+    if "min_ytm_pct" in profile and not _is_number(profile["min_ytm_pct"]):
+        problems.append("min_ytm_pct must be a number")
     caps = profile["max_rating_bucket_share_pct"]
     if not isinstance(caps, dict) or not all(_is_number(v) for v in caps.values()):
         problems.append("max_rating_bucket_share_pct must map a rating bucket to a number")
@@ -77,6 +86,12 @@ def tax_rate(profile):
     """The rate applied to slab-taxed income: the effective rate (slab plus cess
     and any surcharge) if the profile gives one, otherwise the bare slab."""
     return profile.get("effective_tax_rate_pct", profile["tax_slab_pct"])
+
+
+def financial_year_start(date_iso):
+    """1 April of the Indian financial year that `date_iso` falls in."""
+    year, month = int(date_iso[:4]), int(date_iso[5:7])
+    return f"{year if month >= 4 else year - 1}-04-01"
 
 
 def cap_basis(profile):

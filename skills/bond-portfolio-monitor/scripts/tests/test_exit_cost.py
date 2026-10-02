@@ -108,5 +108,15 @@ class TestLots(unittest.TestCase):
         self.assertEqual(out["tax_if_unlisted"], 555.36)
 
 
+
+class TestSurchargeAndCess(unittest.TestCase):
+    def test_multiplier_applies_to_the_long_term_rate_too(self):
+        out = exit_cost.estimate(holding(), PURCHASES, None, CONFIG,
+                                 dict(PROFILE, effective_tax_rate_pct=34.32, tax_multiplier=1.144),
+                                 "2026-10-02")
+        self.assertEqual(out["tax_if_listed"], 254.54)    # 1780 x 12.5% x 1.144
+        self.assertEqual(out["tax_if_unlisted"], 610.9)   # 1780 x 34.32%
+
+
 if __name__ == "__main__":
     unittest.main()

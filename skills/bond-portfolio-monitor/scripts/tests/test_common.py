@@ -59,6 +59,7 @@ class TestProfile(unittest.TestCase):
         self.assertTrue(common.validate_profile(dict(template, effective_tax_rate_pct=31.2,
                                                      total_investable=500000)))
         for key, value in (("effective_tax_rate_pct", "31%"), ("total_investable", 0),
+                           ("tax_multiplier", 0.9), ("tax_multiplier", "x"),
                            ("total_investable", "lots")):
             with self.assertRaises(ValueError) as ctx:
                 common.validate_profile(dict(template, **{key: value}))

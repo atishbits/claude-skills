@@ -19,6 +19,7 @@ allowed-tools:
   - Bash(python3 *bond_facts.py*)
   - Bash(python3 *rating_ledger.py*)
   - Bash(python3 *run_record.py*)
+  - Bash(python3 *tax_profile.py*)
   - Read
   - Write
   - Edit
@@ -49,7 +50,12 @@ Do not recompute a share, a YTM, a tax amount or a date difference yourself.
   the shortlist.
 - **A named issuer the user holds, "is X still safe", "should I exit"** -> Steps 1, 2, then 5.
 - **First run** (no `data/profile.json`) -> copy `profile-template.json` to `data/profile.json`,
-  ask the user to set each limit, and only then continue. Do not invent their limits.
+  ask the user to set each limit, and only then continue. Do not invent their limits. Offer the
+  optional ones too: `total_investable`, `annual_investment_budget` and `min_ytm_pct`. For the tax
+  rates, if the user keeps an `advance-tax` profile, do not ask or work them out: run
+  `python3 scripts/tax_profile.py --tax-profile <their tax-profile.json> --person NAME --write`,
+  which sets the slab, the effective rate (slab x surcharge x cess) and the multiplier, and say
+  which person's rates were used.
 
 ## Step 1: get the data in
 
@@ -122,7 +128,8 @@ without and report `cash_arriving` (what comes back within the lookahead window,
 beside the shortlist. Exit code 2 means the capture is stale: recapture (Step 1) and do not pass `--allow-stale` unless
 the user asks, in which case say every figure is stale. Present the shortlist in rank order with
 its risk bucket, post-tax YTM, tenure, minimum and `max_buy`. State `post_tax_basis` (post-tax
-YTM is an approximation) and `cap_basis` (what the caps are a share of) once. Pass on every entry in the
+YTM is an approximation) and `cap_basis` (what the caps are a share of) once, and `budget` when
+the profile sets one: invested so far this financial year and what is left. Pass on every entry in the
 output's `warnings` (for example, unrated holdings that the bucket caps cannot count). The ranking is by risk bucket first;
 do not re-sort it by YTM. Mention how many were rejected and the commonest reasons.
 
