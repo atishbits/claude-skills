@@ -81,7 +81,8 @@ password is the user's PAN.
 Limits on what you do in the browser, with no exceptions: read-only; one capture per review; no
 loops, polling or scheduling; no calls to Wint's API; never read, print or store a token, cookie
 or account detail. If the capture returns far fewer bonds than the page's "Live (N)" or the
-checksum fails, the page layout has probably changed: tell the user, and fall back to filling
+checksum fails, the page layout has probably changed (ingest rejects a capture with under 90% of
+the stated count; do not pass `--allow-partial` unless the user asks): tell the user, and fall back to filling
 `listings-template.json` by hand and `ingest.py listings --file <it> --no-checksum`.
 
 ## Step 2: the standing picture
@@ -120,7 +121,8 @@ Ask the user how much they want to deploy and pass it as `--cash`; if they have 
 without and report `cash_arriving` (what comes back within the lookahead window, and by when)
 beside the shortlist. Exit code 2 means the capture is stale: recapture (Step 1) and do not pass `--allow-stale` unless
 the user asks, in which case say every figure is stale. Present the shortlist in rank order with
-its risk bucket, post-tax YTM, tenure, minimum and `max_buy`. Pass on every entry in the
+its risk bucket, post-tax YTM, tenure, minimum and `max_buy`. State `post_tax_basis` (post-tax
+YTM is an approximation) and `cap_basis` (what the caps are a share of) once. Pass on every entry in the
 output's `warnings` (for example, unrated holdings that the bucket caps cannot count). The ranking is by risk bucket first;
 do not re-sort it by YTM. Mention how many were rejected and the commonest reasons.
 

@@ -54,6 +54,16 @@ class TestProfile(unittest.TestCase):
                 common.validate_profile(dict(template, **{key: value}))
             self.assertIn(key, str(ctx.exception))
 
+    def test_optional_keys_are_checked_when_present(self):
+        template = common.load_json(os.path.join(common.SKILL_DIR, "profile-template.json"))
+        self.assertTrue(common.validate_profile(dict(template, effective_tax_rate_pct=31.2,
+                                                     total_investable=500000)))
+        for key, value in (("effective_tax_rate_pct", "31%"), ("total_investable", 0),
+                           ("total_investable", "lots")):
+            with self.assertRaises(ValueError) as ctx:
+                common.validate_profile(dict(template, **{key: value}))
+            self.assertIn(key, str(ctx.exception))
+
     def test_missing_profile_points_at_template(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaises(FileNotFoundError) as ctx:

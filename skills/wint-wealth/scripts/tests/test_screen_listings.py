@@ -198,5 +198,52 @@ class TestGroups(unittest.TestCase):
         self.assertIn("Alpha Group", text)
 
 
+
+class TestRecordedRatingAndTaxBasis(unittest.TestCase):
+    def facts(self, rating):
+        return FACTS + [{"isin": None, "wint_bond_id": "1", "issuer": "Gamma Microfin",
+                         "rating": rating, "secured": True, "seniority": "senior"}]
+
+    def test_recorded_rating_overrides_the_card_for_the_floor(self):
+        # The card says A; the agency's rating, recorded from its rationale, is BBB.
+        result = screen_listings.screen(doc([listing()]), snapshot(), self.facts("BBB"),
+                                        profile(), CONFIG, NOW)
+        self.assertEqual(result["counts"]["shortlisted"], 0)
+        self.assertIn("rating BBB is below", " ".join(result["rejected"][0]["reasons"]))
+
+    def test_recorded_rating_drives_bucket_and_sort_and_the_card_is_shown(self):
+        result = screen_listings.screen(
+            doc([listing(rating="BBB+", rating_raw="BBB+", ytm=11.0),
+                 listing(issuer="Other Co", bond_id="2", rating="A", ytm=10.0)]),
+            snapshot(), self.facts("AA"), profile(), CONFIG, NOW)
+        first = result["shortlist"][0]
+        self.assertEqual((first["issuer"], first["rating"], first["rating_on_card"]),
+                         ("Gamma Microfin", "AA", "BBB+"))
+        self.assertTrue(first["risk_bucket"].startswith("AA /"))
+        self.assertTrue(any("Gamma Microfin" in w and "BBB+" in w for w in result["warnings"]))
+
+    def test_effective_tax_rate_replaces_the_slab_when_given(self):
+        plain = run([listing()])
+        self.assertEqual(plain["shortlist"][0]["post_tax_ytm"], 7.0)
+        self.assertIn("30", plain["post_tax_basis"])
+        self.assertIn("approximation", plain["post_tax_basis"])
+        cess = run([listing()], profile=profile(effective_tax_rate_pct=31.2))
+        self.assertEqual(cess["shortlist"][0]["post_tax_ytm"], 6.88)
+        self.assertIn("31.2", cess["post_tax_basis"])
+
+
+class TestTotalInvestable(unittest.TestCase):
+    def test_caps_are_measured_against_everything_invested_when_given(self):
+        # Alpha is 80000 of a 100000 Wint book, but 8% of 1,000,000 invested overall.
+        result = run([listing(issuer="Alpha Finance")], profile=profile(total_investable=1_000_000))
+        row = result["shortlist"][0]
+        # 15% of 1,000,000 less the 80000 already held; the base does not grow with the purchase
+        self.assertEqual(row["max_buy"], 70000.0)
+        self.assertIn("1000000", result["cap_basis"])
+
+    def test_without_it_the_basis_is_the_wint_book(self):
+        self.assertIn("Wint", run([listing()])["cap_basis"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,9 +11,15 @@ data/profile.json. Steps, in order:
   2. Hard filters from the profile: rating floor, tenure ceiling, minimum
      post-tax YTM, no subordinated or unsecured paper unless allowed, not sold
      out, and (when cash is known) a minimum investment that fits.
-  3. Post-tax YTM = YTM x (1 - tax slab), since bond interest is taxed at slab.
-  4. Concentration: how much could be bought before the issuer or its rating
-     bucket goes over the profile's cap. Nothing fits -> rejected.
+  3. Post-tax YTM = YTM x (1 - tax rate), since bond interest is taxed at slab.
+     The rate is the profile's effective_tax_rate_pct if set (slab plus cess and
+     surcharge), else the bare slab. It is an approximation, good for ranking.
+  4. Concentration: how much could be bought before the issuer (or its group)
+     or its rating bucket goes over the profile's cap. Nothing fits -> rejected.
+     Caps are a share of the Wint portfolio, or of the profile's
+     total_investable if that is set.
+     The rating used throughout is the one recorded in bond-facts.json when
+     there is one; the listing card's rating is only the fallback.
   5. Rank within risk buckets: better rating first, then secured before
      unsecured, senior before subordinated; only then monthly income (if the
      profile prefers it) and post-tax YTM. Never by YTM across the whole list.
@@ -44,9 +50,15 @@ def age_hours(captured_at, now):
     return round((now - captured).total_seconds() / 3600, 1)
 
 
-def _room(cap_pct, total, held):
-    """Rupees that can be added before held/total exceeds cap_pct. None = no limit."""
-    if total <= 0 or cap_pct is None or cap_pct >= 100:
+def _room(cap_pct, total, held, fixed_base=None):
+    """Rupees that can be added before held/total exceeds cap_pct. None = no limit.
+    With a fixed base (the profile's total_investable) the base does not grow
+    with the purchase, because the money comes from elsewhere in it."""
+    if cap_pct is None or cap_pct >= 100:
+        return None
+    if fixed_base:
+        return max(0.0, cap_pct / 100 * fixed_base - held)
+    if total <= 0:
         return None
     cap = cap_pct / 100
     return max(0.0, (cap * total - held) / (1 - cap))
@@ -62,7 +74,9 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
     common.validate_profile(profile, config)
     order = config["rating_order"]
     floor = order.index(profile["min_rating"])
-    slab = profile["tax_slab_pct"]
+    slab = common.tax_rate(profile)
+    base = profile.get("total_investable")
+    warnings = []
     held = [h for h in snapshot["holdings"] if (h["current_value"] or 0) > 0]
     total = sum(h["current_value"] for h in held)
     by_issuer, by_bucket = {}, {}
@@ -78,10 +92,15 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
         fact = bond_facts.lookup(facts, bond_id=item["bond_id"]) or {}
         secured = item["secured"] if item["secured"] is not None else fact.get("secured")
         seniority = item["seniority"] or fact.get("seniority")
-        rating = item["rating"]
+        # A rating recorded from the agency's own document outranks the card's.
+        rating = fact.get("rating") or item["rating"]
+        if fact.get("rating") and fact["rating"] != item["rating"]:
+            warnings.append(f"{item['issuer']} ({item['key']}): the card shows "
+                            f"{item['rating_raw']} but the recorded rating is {rating}; "
+                            "the recorded rating is used")
         reasons = []
         if rating not in order:
-            reasons.append(f"rating {item['rating_raw']!r} is unknown")
+            reasons.append(f"rating {rating or item['rating_raw']!r} is unknown")
         elif order.index(rating) > floor:
             reasons.append(f"rating {rating} is below the floor {profile['min_rating']}")
         if item["tenure_months"] is None:
@@ -110,10 +129,10 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
             reasons.append(f"minimum {minimum} is above available cash {cash}")
         group = fact.get("group") or bond_facts.group_of(facts, item["issuer"])
         rooms = [_room(profile["max_issuer_share_pct"], total,
-                       by_issuer.get(group.casefold(), 0))]
+                       by_issuer.get(group.casefold(), 0), base)]
         bucket = portfolio.rating_bucket(rating if rating in order else None)
         bucket_cap = profile["max_rating_bucket_share_pct"].get(bucket)
-        rooms.append(_room(bucket_cap, total, by_bucket.get(bucket, 0)))
+        rooms.append(_room(bucket_cap, total, by_bucket.get(bucket, 0), base))
         if minimum is not None:
             if rooms[0] is not None and rooms[0] < minimum:
                 who = ("this issuer" if group.casefold() == item["issuer"].casefold()
@@ -131,7 +150,7 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
                     else "security unconfirmed")
         shortlist.append({
             "issuer": item["issuer"], "key": item["key"], "url": item["url"],
-            "bond_id": item["bond_id"], "rating": rating,
+            "bond_id": item["bond_id"], "rating": rating, "rating_on_card": item["rating_raw"],
             "risk_bucket": f"{rating} / {security} / {seniority or 'seniority unconfirmed'}",
             "security": security, "ytm": item["ytm"],
             "ytm_is_upper_bound": item["ytm_is_upper_bound"], "post_tax_ytm": post_tax,
@@ -145,7 +164,6 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
                       profile["prefer_monthly_income"] and item["interest_frequency"] != "Monthly",
                       -post_tax)})
     unrated = round(by_bucket.get("unrated", 0), 2)
-    warnings = []
     if unrated > 0:
         warnings.append(
             f"{unrated} of holdings is unrated (no rating in bond-facts.json), so the "
@@ -157,6 +175,10 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
     return {"captured_at": listings_doc["captured_at"], "age_hours": age, "stale": stale,
             "verified": listings_doc.get("verified", False), "cash": cash,
             "unrated_held_value": unrated, "warnings": warnings,
+            "post_tax_basis": f"YTM x (1 - {slab}%): an approximation that treats the whole "
+                              "yield as interest taxed at one rate. Set effective_tax_rate_pct "
+                              "in the profile to include cess and surcharge.",
+            "cap_basis": common.cap_basis(profile),
             "counts": {"listed": len(listings_doc["listings"]), "shortlisted": len(shortlist),
                        "rejected": len(rejected)},
             "shortlist": shortlist, "rejected": rejected}

@@ -12,6 +12,8 @@ and HOLD / REVIEW / EXIT on what you hold. It never places an order.
 |---|---|---|
 | Master Report (`data/wint-master-report-<date>.xlsx`) | Wint: account menu -> Reports and documents -> Master Report | Everything. It carries five sheets: holdings, upcoming cash flows, repayments received, purchases, sales |
 | Your limits (`data/profile.json`) | Copy `profile-template.json` and edit it: tax slab, rating floor, tenure ceiling, issuer and rating-bucket caps, whether unsecured or subordinated paper is allowed | Limit breaches and screening |
+| Optional, in the same file: `effective_tax_rate_pct` | Your slab plus cess and any surcharge (for example 31.2 for the 30% slab with 4% cess) | A closer post-tax yield and exit tax; without it the bare slab is used |
+| Optional, in the same file: `total_investable` | Everything you invest, in rupees, not only what is on Wint | Measuring the issuer and rating-bucket caps against your whole portfolio; without it they are a share of the Wint book alone, which is looser than it sounds if Wint is a small part of your money |
 | A second Master Report, some weeks later | Same download, kept alongside the first | Checking that payments due in between actually arrived |
 
 Save the report under the name above: the name Wint gives it carries your phone number.
@@ -169,10 +171,10 @@ Tests: `cd scripts && python3 -m unittest discover -s tests -p 'test_*.py'`.
 
 Facts about the portal and the tax code, each with a date and a source: the early-exit deduction,
 TDS on interest, how gains on listed and unlisted bonds are taxed, and the Master Report's column
-names. These change. A script warns when an entry is over a year old; re-verify it then. The TDS
-rate is taken from the Income Tax Department's rate table; the capital-gains entries were checked
-against secondary sources, not the Act, so confirm with your CA before relying on a post-tax
-figure.
+names. These change. A script warns when an entry is over a year old; re-verify it then. The tax
+entries point at the Income Tax Department and PIB, but were read through search summaries (the
+pages refuse a direct fetch) and describe the 1961 Act as amended in 2024, so open them yourself
+and confirm with your CA before relying on a post-tax or exit figure.
 
 ## Limits
 
@@ -181,7 +183,12 @@ figure.
 - The listings page does not say whether most bonds are secured or senior. Those show as
   "security unconfirmed" until the bond's detail page has been read.
 - The exit estimate assumes a buyer and takes the 1% deduction on current value. Use the portal's
-  own sell quote for the real number.
+  own sell quote for the real number. It taxes each purchase lot on its own holding period.
+- Post-tax YTM is YTM x (1 - tax rate): an approximation that treats the whole yield as interest
+  taxed at one rate. It is good for ranking bonds against each other, not for a tax computation.
+- The screener uses the rating recorded in `bond-facts.json` when there is one, and the listing
+  card's rating only as a fallback; it warns when the two differ.
+- A capture with fewer than 90% of the bonds the page says are live is rejected as partial.
 - Laptop only: capture needs your logged-in browser.
 
 ## Keep your data out of git

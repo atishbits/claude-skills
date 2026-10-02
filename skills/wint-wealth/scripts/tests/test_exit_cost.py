@@ -81,5 +81,32 @@ class TestConfigAge(unittest.TestCase):
         self.assertTrue(any("early_exit_deduction_pct" in w for w in stale["config_warnings"]))
 
 
+
+class TestLots(unittest.TestCase):
+    def test_each_lot_is_taxed_on_its_own_holding_period(self):
+        lots = [{"isin": ALPHA, "date": "2025-06-01", "units": 1.0},
+                {"isin": ALPHA, "date": "2026-06-01", "units": 1.0}]
+        out = exit_cost.estimate(holding(units=2.0), lots, {"listed": True}, CONFIG, PROFILE,
+                                 "2026-10-02")
+        # gain 1780 split equally: 890 at 12.5% (held 16 months) + 890 at 30% (held 4 months)
+        self.assertEqual(out["tax_if_listed"], 378.25)
+        self.assertEqual(out["tax_if_unlisted"], 534.0)
+        self.assertEqual([(l["date"], l["units"], l["long_term_if_listed"]) for l in out["lots"]],
+                         [("2025-06-01", 1.0, True), ("2026-06-01", 1.0, False)])
+
+    def test_units_already_sold_come_off_the_earliest_lots_first(self):
+        lots = [{"isin": ALPHA, "date": "2025-06-01", "units": 1.0},
+                {"isin": ALPHA, "date": "2026-06-01", "units": 1.0}]
+        out = exit_cost.estimate(holding(units=1.0), lots, {"listed": True}, CONFIG, PROFILE,
+                                 "2026-10-02")
+        self.assertEqual([l["date"] for l in out["lots"]], ["2026-06-01"])
+        self.assertEqual(out["tax_if_listed"], 534.0)
+
+    def test_effective_tax_rate_is_used_for_slab_taxed_gains(self):
+        out = exit_cost.estimate(holding(), PURCHASES, None, CONFIG,
+                                 dict(PROFILE, effective_tax_rate_pct=31.2), "2026-10-02")
+        self.assertEqual(out["tax_if_unlisted"], 555.36)
+
+
 if __name__ == "__main__":
     unittest.main()

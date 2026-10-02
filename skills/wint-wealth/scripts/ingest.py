@@ -246,19 +246,26 @@ def normalise_listing(row):
     return item, warnings
 
 
-def build_listings(capture, check_sum=True):
+def build_listings(capture, check_sum=True, allow_partial=False):
     verify_capture(capture, check_sum)
+    stated = capture.get("stated_live_count")
+    ratio = common.load_config()["min_capture_ratio"]
+    partial = bool(stated) and len(capture["rows"]) < ratio * stated
+    if partial and not allow_partial:
+        raise IngestError(
+            f"only {len(capture['rows'])} cards were captured but the page says {stated} bonds "
+            "are live. The page probably had not finished loading, or its layout changed. "
+            "Recapture, or pass --allow-partial to use it anyway.")
     listings, warnings = [], []
     for row in capture["rows"]:
         item, row_warnings = normalise_listing(row)
         listings.append(item)
         warnings.extend(row_warnings)
-    stated = capture.get("stated_live_count")
     if stated is not None and stated != len(listings):
         warnings.append(f"page says {stated} live bonds but {len(listings)} cards were captured")
     return {"schema": 1, "captured_at": capture["captured_at"],
             "capture_sha256": rows_checksum(capture["rows"]), "verified": bool(check_sum),
-            "stated_live_count": stated, "warnings": warnings, "listings": listings}
+            "partial": partial, "stated_live_count": stated, "warnings": warnings, "listings": listings}
 
 
 def _find_capture(root):
@@ -272,7 +279,8 @@ def _find_capture(root):
 def cmd_listings(args):
     root = common.resolve_root(args.root)
     path = args.file or _find_capture(root)
-    doc = build_listings(common.load_json(path), check_sum=not args.no_checksum)
+    doc = build_listings(common.load_json(path), check_sum=not args.no_checksum,
+                         allow_partial=args.allow_partial)
     stamp = doc["captured_at"][:16].replace("-", "").replace(":", "")
     out = os.path.join(common.skill_data_dir(root), f"listings-{stamp}.json")
     common.write_json(out, doc)
@@ -333,6 +341,8 @@ def main(argv=None):
     listings.add_argument("--root")
     listings.add_argument("--no-checksum", action="store_true",
                           help="for a hand-written file; the output is marked unverified")
+    listings.add_argument("--allow-partial", action="store_true",
+                          help="accept a capture with far fewer cards than the page says are live")
     listings.set_defaults(func=cmd_listings)
     args = parser.parse_args(argv)
     try:

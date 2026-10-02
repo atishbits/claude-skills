@@ -60,12 +60,31 @@ def validate_profile(profile, config=None):
     for key in ("allow_unsecured", "allow_subordinated", "prefer_monthly_income"):
         if not isinstance(profile[key], bool):
             problems.append(f"{key} must be true or false")
+    if "effective_tax_rate_pct" in profile and not _is_number(profile["effective_tax_rate_pct"]):
+        problems.append("effective_tax_rate_pct must be a number")
+    if "total_investable" in profile and not (
+            _is_number(profile["total_investable"]) and profile["total_investable"] > 0):
+        problems.append("total_investable must be a number above zero")
     caps = profile["max_rating_bucket_share_pct"]
     if not isinstance(caps, dict) or not all(_is_number(v) for v in caps.values()):
         problems.append("max_rating_bucket_share_pct must map a rating bucket to a number")
     if problems:
         raise ValueError("profile.json: " + "; ".join(problems))
     return profile
+
+
+def tax_rate(profile):
+    """The rate applied to slab-taxed income: the effective rate (slab plus cess
+    and any surcharge) if the profile gives one, otherwise the bare slab."""
+    return profile.get("effective_tax_rate_pct", profile["tax_slab_pct"])
+
+
+def cap_basis(profile):
+    """What the issuer and rating-bucket caps are a share of."""
+    total = profile.get("total_investable")
+    return (f"total investable of {total} (profile)" if total
+            else "the Wint portfolio alone (set total_investable in the profile to measure "
+                 "caps against everything you invest)")
 
 
 def load_profile(root):

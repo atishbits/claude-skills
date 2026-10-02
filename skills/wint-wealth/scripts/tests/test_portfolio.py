@@ -114,5 +114,17 @@ class TestGroupsAndScope(unittest.TestCase):
         self.assertIn("issuer", portfolio.render_markdown(self.summary))
 
 
+
+class TestTotalInvestable(unittest.TestCase):
+    def test_breaches_use_total_investable_and_say_so(self):
+        summary = portfolio.summarise(snapshot(), FACTS, dict(PROFILE, total_investable=300000))
+        # Alpha is 20000 of 30000 on Wint (66.67%) but 6.67% of 300000 overall: no breach.
+        self.assertEqual(summary["by_issuer"]["Alpha Finance"]["share_pct"], 66.67)
+        self.assertEqual(summary["by_issuer"]["Alpha Finance"]["share_of_total_pct"], 6.67)
+        self.assertEqual(summary["breaches"], [])
+        self.assertIn("300000", summary["cap_basis"])
+        self.assertIn("300000", portfolio.render_markdown(summary))
+
+
 if __name__ == "__main__":
     unittest.main()

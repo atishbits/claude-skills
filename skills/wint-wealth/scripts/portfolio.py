@@ -71,15 +71,21 @@ def summarise(snapshot, facts, profile):
     weight = sum(p["value"] for p in with_ytm)
     by_issuer = _members(positions, _shares(positions, "group", total))
     by_bucket = _shares(positions, "bucket", total)
+    base = profile.get("total_investable")
+    of_what = "total investable" if base else "the portfolio"
+    key = "share_of_total_pct" if base else "share_pct"
+    if base:
+        for share in list(by_issuer.values()) + list(by_bucket.values()):
+            share["share_of_total_pct"] = round(100 * share["value"] / base, 2)
     breaches = []
     for issuer, share in by_issuer.items():
-        if share["share_pct"] > profile["max_issuer_share_pct"]:
-            breaches.append(f"{issuer} is {share['share_pct']}% of the portfolio; "
+        if share[key] > profile["max_issuer_share_pct"]:
+            breaches.append(f"{issuer} is {share[key]}% of {of_what}; "
                             f"limit {profile['max_issuer_share_pct']}%")
     for bucket, limit in profile["max_rating_bucket_share_pct"].items():
-        share = by_bucket.get(bucket, {"share_pct": 0})["share_pct"]
+        share = by_bucket.get(bucket, {key: 0})[key]
         if share > limit:
-            breaches.append(f"{bucket}-rated bonds are {share}% of the portfolio; limit {limit}%")
+            breaches.append(f"{bucket}-rated bonds are {share}% of {of_what}; limit {limit}%")
     everything = snapshot["holdings"]
     return {
         "as_of": snapshot["as_of"],
@@ -96,6 +102,7 @@ def summarise(snapshot, facts, profile):
         "by_rating_bucket": by_bucket,
         "by_tenure": _shares(positions, "tenure", total),
         "breaches": breaches,
+        "cap_basis": common.cap_basis(profile),
         "unrated": sorted({p["issuer"] for p in positions if p["rating"] is None}),
         "ratings_not_for_this_bond": sorted({p["issuer"] for p in positions
                                              if p["rating_scope"] in ("issuer", "sibling bond")}),
@@ -134,6 +141,7 @@ def render_markdown(summary):
         _table(["Tenure", "Value", "Share %"],
                [[k, v["value"], v["share_pct"]] for k, v in summary["by_tenure"].items()]),
         "## Limit breaches",
+        f"Caps are measured against {summary['cap_basis']}.",
         "\n".join(f"- {b}" for b in summary["breaches"]) or "None.",
         "## Unrated",
         "\n".join(f"- {i}: no rating recorded in bond-facts.json" for i in summary["unrated"])
