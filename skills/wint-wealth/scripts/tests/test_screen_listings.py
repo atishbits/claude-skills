@@ -245,5 +245,36 @@ class TestTotalInvestable(unittest.TestCase):
         self.assertIn("Wint", run([listing()])["cap_basis"])
 
 
+
+class TestBudgetAndYieldFloor(unittest.TestCase):
+    def snap(self):
+        s = snapshot()
+        s["purchases"] = [{"isin": "INE000A07011", "date": "2026-05-01", "invested": 300000.0},
+                          {"isin": "INE000B07022", "date": "2026-02-01", "invested": 900000.0}]
+        return s
+
+    def test_yield_under_the_floor_is_rejected(self):
+        result = run([listing(ytm=8.9)], profile=profile(min_ytm_pct=9, min_post_tax_ytm_pct=0))
+        self.assertIn("YTM 8.9% is under the 9% floor", reasons(result))
+        ok = run([listing(ytm=9.0)], profile=profile(min_ytm_pct=9, min_post_tax_ytm_pct=0))
+        self.assertEqual(ok["counts"]["shortlisted"], 1)
+
+    def test_budget_counts_only_this_financial_year_and_caps_max_buy(self):
+        # Financial year from 1 Apr 2026: 300000 invested so far, 12000 of a 312000 budget left.
+        result = run([listing()], snapshot=self.snap(),
+                     profile=profile(annual_investment_budget=312000))
+        self.assertEqual(result["budget"], {"annual": 312000, "financial_year_from": "2026-04-01",
+                                            "invested_so_far": 300000.0, "remaining": 12000.0})
+        self.assertEqual(result["shortlist"][0]["max_buy"], 12000.0)
+
+    def test_budget_used_up_rejects_everything(self):
+        result = run([listing()], snapshot=self.snap(),
+                     profile=profile(annual_investment_budget=305000))
+        self.assertIn("budget", reasons(result))
+
+    def test_no_budget_set(self):
+        self.assertIsNone(run([listing()])["budget"])
+
+
 if __name__ == "__main__":
     unittest.main()

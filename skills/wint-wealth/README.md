@@ -12,7 +12,8 @@ and HOLD / REVIEW / EXIT on what you hold. It never places an order.
 |---|---|---|
 | Master Report (`data/wint-master-report-<date>.xlsx`) | Wint: account menu -> Reports and documents -> Master Report | Everything. It carries five sheets: holdings, upcoming cash flows, repayments received, purchases, sales |
 | Your limits (`data/profile.json`) | Copy `profile-template.json` and edit it: tax slab, rating floor, tenure ceiling, issuer and rating-bucket caps, whether unsecured or subordinated paper is allowed | Limit breaches and screening |
-| Optional, in the same file: `effective_tax_rate_pct` | Your slab plus cess and any surcharge (for example 31.2 for the 30% slab with 4% cess) | A closer post-tax yield and exit tax; without it the bare slab is used |
+| Optional, in the same file: `effective_tax_rate_pct` and `tax_multiplier` | Your slab plus cess and any surcharge (for example 31.2 for the 30% slab with 4% cess), and the surcharge-and-cess multiplier on its own. If you use the `advance-tax` skill, `scripts/tax_profile.py --tax-profile <your tax-profile.json> --person NAME --write` fills both from the rates you already keep there | A closer post-tax yield and exit tax; without them the bare slab is used |
+| Optional, in the same file: `annual_investment_budget` and `min_ytm_pct` | The most you will put into new bonds in a financial year (April to March), and the lowest yield worth buying | The screener rejects bonds under the yield floor, counts what you have already invested this year, and caps each purchase at what is left |
 | Optional, in the same file: `total_investable` | Everything you invest, in rupees, not only what is on Wint | Measuring the issuer and rating-bucket caps against your whole portfolio; without it they are a share of the Wint book alone, which is looser than it sounds if Wint is a small part of your money |
 | A second Master Report, some weeks later | Same download, kept alongside the first | Checking that payments due in between actually arrived |
 
@@ -164,6 +165,7 @@ Python 3 only; no packages. Browser capture needs Claude in Chrome.
 | `bond_facts.py` | Records per-bond credit facts with their source, the issuer's group, and whether a rating is the bond's own. |
 | `rating_ledger.py` | Append-only verdict history. |
 | `run_record.py` | Saves a dated record of a review and refreshes the issuer notes from the ledger. |
+| `tax_profile.py` | Fills the profile's tax rates from the `advance-tax` skill's personal profile. |
 
 Tests: `cd scripts && python3 -m unittest discover -s tests -p 'test_*.py'`.
 

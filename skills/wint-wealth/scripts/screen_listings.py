@@ -77,6 +77,14 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
     slab = common.tax_rate(profile)
     base = profile.get("total_investable")
     warnings = []
+    budget = None
+    if profile.get("annual_investment_budget"):
+        since = common.financial_year_start(snapshot["as_of"])
+        spent = round(sum(p.get("invested") or 0 for p in snapshot.get("purchases", [])
+                          if p.get("date") and p["date"] >= since), 2)
+        budget = {"annual": profile["annual_investment_budget"], "financial_year_from": since,
+                  "invested_so_far": spent,
+                  "remaining": round(max(0.0, profile["annual_investment_budget"] - spent), 2)}
     held = [h for h in snapshot["holdings"] if (h["current_value"] or 0) > 0]
     total = sum(h["current_value"] for h in held)
     by_issuer, by_bucket = {}, {}
@@ -112,6 +120,9 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
         if item["ytm"] is None:
             reasons.append("YTM is unknown")
         else:
+            floor_ytm = profile.get("min_ytm_pct")
+            if floor_ytm is not None and item["ytm"] < floor_ytm:
+                reasons.append(f"YTM {item['ytm']}% is under the {floor_ytm}% floor")
             post_tax = round(item["ytm"] * (1 - slab / 100), 2)
             if post_tax < profile["min_post_tax_ytm_pct"]:
                 reasons.append(f"post-tax YTM {post_tax}% is under "
@@ -133,6 +144,11 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
         bucket = portfolio.rating_bucket(rating if rating in order else None)
         bucket_cap = profile["max_rating_bucket_share_pct"].get(bucket)
         rooms.append(_room(bucket_cap, total, by_bucket.get(bucket, 0), base))
+        if budget is not None:
+            rooms.append(budget["remaining"])
+            if minimum is not None and budget["remaining"] < minimum:
+                reasons.append(f"this financial year's investment budget has "
+                               f"{budget['remaining']} left, under the minimum {minimum}")
         if minimum is not None:
             if rooms[0] is not None and rooms[0] < minimum:
                 who = ("this issuer" if group.casefold() == item["issuer"].casefold()
@@ -178,7 +194,7 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
             "post_tax_basis": f"YTM x (1 - {slab}%): an approximation that treats the whole "
                               "yield as interest taxed at one rate. Set effective_tax_rate_pct "
                               "in the profile to include cess and surcharge.",
-            "cap_basis": common.cap_basis(profile),
+            "cap_basis": common.cap_basis(profile), "budget": budget,
             "counts": {"listed": len(listings_doc["listings"]), "shortlisted": len(shortlist),
                        "rejected": len(rejected)},
             "shortlist": shortlist, "rejected": rejected}

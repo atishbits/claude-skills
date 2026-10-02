@@ -51,6 +51,7 @@ def estimate(holding, purchases, fact, config, profile, as_of):
     months_held = (common.months_between(lots[0]["date"], as_of) if lots else None)
     long_term = config["tax"]["listed_ltcg"]
     slab = common.tax_rate(profile)
+    multiplier = profile.get("tax_multiplier", 1)  # surcharge and cess on the long-term rate
     units = sum(lot["units"] for lot in lots)
     for lot in lots:
         lot["months_held"] = common.months_between(lot["date"], as_of)
@@ -63,7 +64,8 @@ def estimate(holding, purchases, fact, config, profile, as_of):
             return round(gain * slab / 100, 2)
         return round(sum(
             gain * lot["units"] / units
-            * (long_term["rate_pct"] if listed and lot["long_term_if_listed"] else slab) / 100
+            * (long_term["rate_pct"] * multiplier
+               if listed and lot["long_term_if_listed"] else slab) / 100
             for lot in lots), 2)
 
     listed_tax, unlisted_tax = tax(True), tax(False)
