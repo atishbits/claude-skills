@@ -119,11 +119,22 @@ class TestNormalise(unittest.TestCase):
 
 
 class TestBuildAndCli(unittest.TestCase):
-    def test_count_mismatch_warns(self):
-        doc = ingest.build_listings(capture([row()], stated_live_count=3))
-        self.assertTrue(doc["verified"])
-        self.assertEqual(len(doc["listings"]), 1)
-        self.assertTrue(any("3" in w for w in doc["warnings"]))
+    def test_small_count_mismatch_warns(self):
+        rows = [row(href=f"/bonds/listing/Alpha-Finance-{i}") for i in range(97)]
+        doc = ingest.build_listings(capture(rows, stated_live_count=100))
+        self.assertEqual(len(doc["listings"]), 97)
+        self.assertTrue(any("100" in w for w in doc["warnings"]))
+
+    def test_partial_capture_fails_unless_allowed(self):
+        rows = [row(href=f"/bonds/listing/Alpha-Finance-{i}") for i in range(60)]
+        raw = capture(rows, stated_live_count=100)
+        with self.assertRaises(ingest.IngestError) as ctx:
+            ingest.build_listings(raw)
+        self.assertIn("60", str(ctx.exception))
+        self.assertIn("100", str(ctx.exception))
+        doc = ingest.build_listings(raw, allow_partial=True)
+        self.assertEqual(len(doc["listings"]), 60)
+        self.assertTrue(doc["partial"])
 
     def test_no_checksum_marks_unverified(self):
         raw = capture([row()], sha256="")

@@ -11,7 +11,8 @@
     "interest": {
       "treatment": "slab",
       "as_of": "2026-10-02",
-      "source": "https://bondlab.in/guides/bond-taxation-india/"
+      "source": "https://www.incometaxindia.gov.in/w/treatment-of-income-from-different-sources-1",
+      "note": "Official source, read through a search result's summary; the page itself refused a direct fetch, so open it in a browser to confirm. It describes the 1961 Act as amended in July 2024; the Income-tax Act, 2025 renumbers the sections."
     },
     "tds_interest_pct": {
       "value": 10.0,
@@ -23,20 +24,42 @@
       "rate_pct": 12.5,
       "min_holding_months": 12,
       "as_of": "2026-10-02",
-      "source": "https://www.equirize.com/resources/blogs/capital-gains-on-bonds-tax-rules"
+      "source": "https://www.incometaxindia.gov.in/w/tax-on-long-term-capital-gains%E2%80%8B",
+      "note": "Official source, read through a search result's summary; the page itself refused a direct fetch, so open it in a browser to confirm. It describes the 1961 Act as amended in July 2024; the Income-tax Act, 2025 renumbers the sections."
     },
     "unlisted_gains": {
       "treatment": "slab",
       "as_of": "2026-10-02",
-      "source": "https://www.bajajfinserv.in/investments/section-50aa-of-income-tax-act"
+      "source": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2035596",
+      "note": "Official source, read through a search result's summary; the page itself refused a direct fetch, so open it in a browser to confirm. It describes the 1961 Act as amended in July 2024; the Income-tax Act, 2025 renumbers the sections."
     }
   },
   "listings_max_age_hours": 6,
+  "min_capture_ratio": 0.9,
   "reinvestment_horizon_days": 120,
   "config_max_age_months": 12,
   "nearly_sold_pct": 95,
   "nearly_sold_units": 10,
-  "rating_order": ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-", "B+", "B", "B-", "C", "D"],
+  "rating_order": [
+    "AAA",
+    "AA+",
+    "AA",
+    "AA-",
+    "A+",
+    "A",
+    "A-",
+    "BBB+",
+    "BBB",
+    "BBB-",
+    "BB+",
+    "BB",
+    "BB-",
+    "B+",
+    "B",
+    "B-",
+    "C",
+    "D"
+  ],
   "report_columns": {
     "holdings": {
       "sheet": "Holding Statement",
