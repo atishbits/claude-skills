@@ -1,0 +1,117 @@
+{
+  "portal": {
+    "early_exit_deduction_pct": {
+      "value": 1.0,
+      "as_of": "2026-10-02",
+      "source": "https://www.wintwealth.com/bonds/listing/",
+      "note": "Portal banner: selling early carries a 1% deduction. The base it applies to is not stated; exit_cost.py treats it as 1% of current value and labels the result an estimate."
+    }
+  },
+  "tax": {
+    "interest": {
+      "treatment": "slab",
+      "as_of": "2026-10-02",
+      "source": "https://bondlab.in/guides/bond-taxation-india/"
+    },
+    "tds_interest_pct": {
+      "value": 10.0,
+      "as_of": "2026-10-02",
+      "source": "https://goldenpi.com/blog/bond-news/tds-on-bond-interest-in-2026-rules-rates-what-to-do/",
+      "note": "Informational. Cash-flow figures use the TDS the Master Report states, not this rate."
+    },
+    "listed_ltcg": {
+      "rate_pct": 12.5,
+      "min_holding_months": 12,
+      "as_of": "2026-10-02",
+      "source": "https://www.equirize.com/resources/blogs/capital-gains-on-bonds-tax-rules"
+    },
+    "unlisted_gains": {
+      "treatment": "slab",
+      "as_of": "2026-10-02",
+      "source": "https://www.bajajfinserv.in/investments/section-50aa-of-income-tax-act"
+    }
+  },
+  "listings_max_age_hours": 6,
+  "config_max_age_months": 12,
+  "nearly_sold_pct": 95,
+  "nearly_sold_units": 10,
+  "rating_order": ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-", "B+", "B", "B-", "C", "D"],
+  "report_columns": {
+    "holdings": {
+      "sheet": "Holding Statement",
+      "required": true,
+      "columns": {
+        "issuer": "Name Of Bond",
+        "isin": "ISIN",
+        "maturity_date": "Maturity Date",
+        "units": "Units",
+        "ytm": "YTM",
+        "current_value": "Current Value",
+        "upcoming_sell_value": "Upcoming Sell Value",
+        "upcoming_interest": "Upcoming interest",
+        "upcoming_principal": "Upcoming Principal",
+        "invested": "Total Invested",
+        "sold": "Total Sold",
+        "principal_repaid": "Principal Repaid till Date",
+        "interest_gross_paid": "Interest Paid (Before TDS Deduction) till Date",
+        "interest_net_paid": "Interest Paid (After TDS Deduction) till Date",
+        "tds_paid": "TDS Deducted till Date",
+        "principal_type": "Principal Repayment Type",
+        "interest_frequency": "Interest Repayment Type"
+      }
+    },
+    "expected_cashflows": {
+      "sheet": "Upcoming Cashflow Statement",
+      "required": true,
+      "columns": {
+        "issuer": "Name Of Bond",
+        "isin": "ISIN",
+        "date": "Date",
+        "amount": "Amount in Bank",
+        "principal": "Principal Repaid",
+        "interest_net": "Interest Paid (After TDS deduction)",
+        "interest_gross": "Interest Paid (Before TDS deduction)",
+        "tds": "TDS",
+        "sell_value": "Sell Value",
+        "kind": "Transactiontype"
+      }
+    },
+    "received_cashflows": {
+      "sheet": "Repayment Summary Report",
+      "required": false,
+      "columns": {
+        "date": "Date",
+        "issuer": "Name Of Bond",
+        "isin": "ISIN",
+        "units": "No. Of Units",
+        "amount": "Amount in Bank",
+        "principal": "Principal Repaid",
+        "interest_gross": "Interest Paid (Before TDS Deduction)",
+        "interest_net": "Interest Paid (After TDS Deduction)",
+        "tds": "TDS Deducted"
+      }
+    },
+    "purchases": {
+      "sheet": "Investment Summary Report",
+      "required": false,
+      "columns": {
+        "issuer": "Bond Name",
+        "isin": "ISIN",
+        "units": "No. Of Units",
+        "invested": "Invested Amount",
+        "face_value": "Face Value",
+        "acquisition_cost": "Acquisition Cost*",
+        "date": "Date of Investment",
+        "maturity_date": "Maturity Date",
+        "xirr": "XIRR",
+        "interest_frequency": "Frequency of Interest Payment",
+        "principal_frequency": "Frequency Of Principal Repayment"
+      }
+    },
+    "sells": {
+      "sheet": "Sell Summary Report",
+      "required": false,
+      "columns": null
+    }
+  }
+}
