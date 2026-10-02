@@ -5,7 +5,8 @@ collateral, issuer type, listed or not. Each entry records where it came from
 and when, so a verdict can be traced back to a source.
 
     python3 scripts/bond_facts.py set --isin ISIN [--bond-id ID] --source URL
-        [--issuer NAME] [--rating R] [--agency A] [--rating-action X] [--outlook X]
+        [--issuer NAME] [--group GROUP] [--rating R] [--rating-scope "this bond"|issuer|"sibling bond"]
+        [--agency A] [--rating-action X] [--outlook X]
         [--secured yes|no] [--seniority senior|subordinated] [--collateral TEXT]
         [--issuer-type TEXT] [--listed yes|no] [--as-of YYYY-MM-DD] [--root PATH]
     python3 scripts/bond_facts.py get (--isin ISIN | --bond-id ID) [--root PATH]
@@ -19,8 +20,9 @@ import sys
 
 import common
 
-FIELDS = ["issuer", "rating", "agency", "rating_action", "outlook", "secured", "seniority",
-          "collateral", "issuer_type", "listed", "source", "as_of"]
+FIELDS = ["issuer", "group", "rating", "rating_scope", "agency", "rating_action", "outlook",
+          "secured", "seniority", "collateral", "issuer_type", "listed", "source", "as_of"]
+RATING_SCOPES = ["this bond", "issuer", "sibling bond"]
 
 
 def facts_path(root):
@@ -44,6 +46,16 @@ def lookup(facts, isin=None, bond_id=None):
     return None
 
 
+def group_of(facts, issuer):
+    """The group an issuer belongs to (a parent and its subsidiaries are one
+    credit and share one issuer cap), or the issuer's own name if none is
+    recorded."""
+    for entry in facts:
+        if entry.get("group") and (entry.get("issuer") or "").casefold() == issuer.casefold():
+            return entry["group"]
+    return issuer
+
+
 def upsert(facts, isin=None, bond_id=None, **fields):
     if not isin and not bond_id:
         raise ValueError("a fact needs an ISIN or a Wint bond id")
@@ -52,6 +64,8 @@ def upsert(facts, isin=None, bond_id=None, **fields):
         raise ValueError(f"unknown fact field(s): {unknown}")
     if not fields.get("source") or not fields.get("as_of"):
         raise ValueError("a fact needs a source and an as_of date")
+    if fields.get("rating_scope") not in (None, *RATING_SCOPES):
+        raise ValueError(f"rating_scope must be one of {RATING_SCOPES}")
     if fields.get("seniority") not in (None, "senior", "subordinated"):
         raise ValueError("seniority must be 'senior' or 'subordinated'")
     for flag in ("secured", "listed"):
@@ -86,6 +100,9 @@ def main(argv=None):
                  "collateral", "issuer-type", "source", "as-of"):
         setter.add_argument(f"--{name}")
     setter.add_argument("--seniority", choices=["senior", "subordinated"])
+    setter.add_argument("--group", help="parent group; issuers in one group share the issuer cap")
+    setter.add_argument("--rating-scope", choices=RATING_SCOPES,
+                        help="whether the rating is this bond's, the issuer's, or a sibling bond's")
     setter.add_argument("--secured", choices=["yes", "no"])
     setter.add_argument("--listed", choices=["yes", "no"])
     args = parser.parse_args(argv)
@@ -96,7 +113,8 @@ def main(argv=None):
         return 0
     try:
         entry = upsert(
-            facts, isin=args.isin, bond_id=args.bond_id, issuer=args.issuer, rating=args.rating,
+            facts, isin=args.isin, bond_id=args.bond_id, issuer=args.issuer, group=args.group,
+            rating_scope=args.rating_scope, rating=args.rating,
             agency=args.agency, rating_action=args.rating_action, outlook=args.outlook,
             secured=_yes_no(args.secured), seniority=args.seniority, collateral=args.collateral,
             issuer_type=args.issuer_type, listed=_yes_no(args.listed), source=args.source,

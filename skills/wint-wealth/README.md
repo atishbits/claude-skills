@@ -51,12 +51,12 @@ Python 3 only; no packages. Browser capture needs Claude in Chrome.
 | `ingest.py reports` | Master Report -> `snapshot-<date>.json`. Fails loudly on a renamed column. |
 | `ingest.py listings` | Verifies the capture's checksum and normalises it. |
 | `portfolio.py` | Shares by issuer, rating bucket and tenure; weighted YTM; limit breaches. |
-| `cashflows.py` | What is due, income by month, principal coming back. |
+| `cashflows.py` | What is due, income by month, principal coming back soon and over the next few months. |
 | `repayment_check.py` | Flags a missing or short payment against the earlier schedule. Needs two snapshots. |
 | `screen_listings.py` | Filters and ranks bonds on sale within risk buckets. Refuses a stale capture. |
 | `diff_snapshots.py` | What changed since last time; rating signals on issuers you hold. |
 | `exit_cost.py` | Estimated proceeds of selling now, conditional on a buyer. |
-| `bond_facts.py` | Records per-bond credit facts with their source. |
+| `bond_facts.py` | Records per-bond credit facts with their source, the issuer's group, and whether a rating is the bond's own. |
 | `rating_ledger.py` | Append-only verdict history. |
 
 Tests: `cd scripts && python3 -m unittest discover -s tests -p 'test_*.py'`.

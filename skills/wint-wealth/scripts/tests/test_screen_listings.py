@@ -185,5 +185,18 @@ class TestReviewFindings(unittest.TestCase):
         self.assertIn("min_rating", str(ctx.exception))
 
 
+
+class TestGroups(unittest.TestCase):
+    def test_a_listing_from_a_held_group_counts_against_the_group(self):
+        facts = FACTS + [{"isin": "INE000A07011", "wint_bond_id": None, "issuer": "Alpha Finance",
+                          "group": "Alpha Group", "rating": "A"},
+                         {"isin": None, "wint_bond_id": "9", "issuer": "Gamma Microfin",
+                          "group": "Alpha Group"}]
+        facts = [f for f in facts if f.get("issuer") or f["isin"] != "INE000A07011"]
+        result = screen_listings.screen(doc([listing()]), snapshot(), facts, profile(), CONFIG, NOW)
+        text = " | ".join(r for x in result["rejected"] for r in x["reasons"])
+        self.assertIn("Alpha Group", text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -41,6 +41,13 @@ class TestCashflows(unittest.TestCase):
         self.assertIsNone(idle["available_by"])
         self.assertEqual(idle["events"], [])
 
+    def test_principal_ahead_looks_past_the_short_window(self):
+        ahead = cashflows.principal_ahead(snapshot(), "2026-10-02", 120)
+        self.assertEqual(ahead["window_days"], 120)
+        self.assertEqual(ahead["total_principal"], 5000.0)
+        self.assertEqual(ahead["by_month"], {"2026-10": 5000.0})
+        self.assertEqual(ahead["share_of_portfolio_pct"], 16.67)
+
     def test_maturities_in_window(self):
         self.assertEqual(cashflows.maturities(snapshot(), "2026-10-02", 30), [])
         due = cashflows.maturities(snapshot(), "2027-06-01", 45)

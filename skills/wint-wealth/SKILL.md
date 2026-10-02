@@ -92,8 +92,12 @@ python3 scripts/repayment_check.py
 python3 scripts/diff_snapshots.py
 ```
 
-Report, briefly: totals and weighted YTM; any limit breach; what is due in the lookahead window
-and how much principal comes back; unrated holdings; anything `diff_snapshots.py` flags.
+Report, briefly: totals and weighted YTM; any limit breach (issuers in one group are capped
+together); what is due in the lookahead window; `principal_ahead` from `cashflows.py` (principal
+returning over the longer horizon, by month, and its share of the book), since that is the
+reinvestment to plan for; unrated holdings; `ratings_not_for_this_bond`; anything
+`diff_snapshots.py` flags. Say when the book is concentrated in one sector: every bond on Wint is
+lender paper, so reinvesting there does not diversify it.
 
 - **`repayment_check.py` says "no baseline yet" or "nothing was checkable"**: say exactly that.
   It is not a clean result.
@@ -123,18 +127,27 @@ do not re-sort it by YTM. Mention how many were rejected and the commonest reaso
 
 For each bond you take forward (at most five unless asked for more):
 
-1. **Read its detail page** (`url` in the shortlist): open it, click "Other bond details", and
-   read the Overview panel that opens. It states ISIN, rating with outlook, rating agency and
-   date of rating, collateral type, seniority (for example "Senior secured bond"), listed or not,
-   coupon, and maturity date. Never click "Invest Now". Record what you find:
-   `python3 scripts/bond_facts.py set --bond-id ID --isin ISIN --issuer NAME --rating R --agency A --secured yes|no --seniority senior|subordinated --listed yes|no --source URL`
+1. **Read its detail page** (`url` in the shortlist): open it and run the contents of
+   `${CLAUDE_SKILL_DIR}/read-bond-details.js` in that tab. It opens "Other bond details" and
+   returns the Overview panel: ISIN, rating with outlook, rating agency and date of rating,
+   collateral type, seniority (for example "Senior secured bond"), listed or not, coupon, and
+   maturity date. Never click "Invest Now". Record what you find:
+   `python3 scripts/bond_facts.py set --bond-id ID --isin ISIN --issuer NAME --rating R --rating-scope "this bond" --agency A --secured yes|no --seniority senior|subordinated --listed yes|no --source URL`
+   Wint's page is the seller's page: good for the bond's terms, **not a source for its credit**.
+   It shows one agency's grade and a date; it cannot show a watch, a second agency's view, or
+   asset quality, and its listing cards have been seen to disagree with the agency.
    Then **re-run `screen_listings.py`**: the recorded facts now go through the hard filters, and
    a bond the screen rejects on them is SKIP. A bond still "security unconfirmed" cannot get
    ENTER; `rating_ledger.py` refuses an ENTER whose secured and seniority facts are not recorded.
 2. **Research the issuer's credit** from primary sources: the rating agency's latest rationale,
-   recent results, exchange filings, and news. Look specifically for **rating actions**, which
-   matter more than the grade: rating watch negative, "issuer not cooperating", outlook changes,
-   a downgrade at another agency. Also: asset quality trend, capital and liquidity, who lends to
+   recent results, exchange filings, and news. Open the rationale itself for every bond you give
+   a verdict on, and say so plainly when you could not. Look specifically for **rating actions**,
+   which matter more than the grade: rating watch negative, "issuer not cooperating", outlook
+   changes, a downgrade at another agency. **Check every agency that rates the issuer**, not only
+   the one Wint shows: a Negative outlook at any one of them counts, even if another is Positive.
+   A lead you found and did not follow up is not something to leave out; follow it or report it.
+   For a securitised pool (a PTC), the monthly trustee payout reports on the exchange are the
+   primary source: collections, overdue buckets, and whether the cash collateral was drawn. Also: asset quality trend, capital and liquidity, who lends to
    them, auditor or regulator trouble. A search summary is a lead, not a source; open the page.
 3. **Decide.** ENTER needs: facts confirmed, no adverse rating action, a reason this bond beats
    the others in its risk bucket, and a size no larger than `max_buy`. Otherwise SKIP. A higher
@@ -145,12 +158,23 @@ For each bond you take forward (at most five unless asked for more):
 
 ## Step 5: HOLD, REVIEW or EXIT, for a holding
 
-1. Research the issuer as in Step 4.2, and update `bond_facts.py set --isin ...` if the rating,
-   action or outlook has changed.
+1. Find the holding's own bond among the listings if it is still on sale (same issuer and
+   maturity) and read its detail page as in Step 4.1; the ISIN on the page tells you whether it is
+   the same bond. Then research the issuer as in Step 4.2 and record what you find with
+   `bond_facts.py set --isin ...`:
+   - `--rating-scope "this bond"` only when the agency's own annexure or the bond's page lists
+     this ISIN; otherwise `issuer` or `"sibling bond"`. A rating that is not this bond's, and
+     security or seniority that is not confirmed for it, are stated in the verdict.
+   - `--group NAME` when the issuer is rated together with a parent or subsidiary (the agency
+     says "consolidated"): they are one credit and share one issuer cap.
 2. Decide:
    - **HOLD**: no adverse rating action, payments on time, nothing new and material.
-   - **REVIEW**: a repayment flag, a negative watch or outlook, a held-issuer signal, or material
-     bad news that is not yet a rating change. Say what would settle it and when to look again.
+   - **REVIEW**: a repayment flag, a negative watch or outlook at any agency (including split
+     outlooks), a held-issuer signal, or material bad news that is not yet a rating change. Say
+     what would settle it and when to look again.
+   "No adverse rating action" is the minimum for HOLD, not the whole case: agencies lag. For
+   BBB-range issuers also weigh, from the rationale, the trend in profit and credit cost and the
+   debt falling due in the next year against the liquidity available to pay it.
    - **EXIT**: credit has deteriorated enough that the remaining payments are in real doubt. Run
      `python3 scripts/exit_cost.py ISIN` and quote it as it is: an estimate, conditional on a
      buyer being found. Tell the user to check the portal's own sell quote for that bond first.
@@ -158,7 +182,10 @@ For each bond you take forward (at most five unless asked for more):
 3. Maturity and reinvestment are not a sale: when `cashflows.py` shows principal coming back,
    say how much and when, and offer Step 3.
 4. Record it:
-   `python3 scripts/rating_ledger.py add --kind holding --issuer NAME --isin ISIN --verdict HOLD --reason "..." --inputs '{"ytm": .., "rating": "..", "rating_action": .., "repayment_flag": ..}' --source URL`
+   `python3 scripts/rating_ledger.py add --kind holding --issuer NAME --isin ISIN --verdict HOLD --reason "..." --inputs '{"ytm": .., "rating": "..", "rating_scope": "..", "outlook": "..", "repayment_check": ".."}' --source URL`
+   For `repayment_check` write what the script actually returned: `"clean"` only if it checked
+   this bond's dues and found none short, otherwise `"no baseline yet"`, `"nothing checkable"` or
+   the flag itself. Never record an unchecked repayment history as clean.
 5. Update the issuer's note.
 
 ## Before you finish

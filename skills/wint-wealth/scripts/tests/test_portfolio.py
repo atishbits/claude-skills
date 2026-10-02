@@ -90,5 +90,29 @@ class TestSummarise(unittest.TestCase):
         self.assertIn("## Unrated", text)
 
 
+
+class TestGroupsAndScope(unittest.TestCase):
+    def setUp(self):
+        facts = [{"isin": ALPHA, "wint_bond_id": None, "issuer": "Alpha Finance", "rating": "A",
+                  "group": "Alpha Group", "rating_scope": "issuer"},
+                 {"isin": "INE000B07022", "wint_bond_id": None, "issuer": "Beta Capital",
+                  "rating": "A", "group": "Alpha Group", "rating_scope": "this bond"}]
+        self.summary = portfolio.summarise(snapshot(), facts, dict(PROFILE, max_issuer_share_pct=70))
+
+    def test_issuers_in_one_group_are_capped_together(self):
+        self.assertEqual(self.summary["by_issuer"]["Alpha Group"]["share_pct"], 100.0)
+        self.assertEqual(self.summary["by_issuer"]["Alpha Group"]["members"],
+                         ["Alpha Finance", "Beta Capital"])
+        self.assertTrue(any("Alpha Group" in b for b in self.summary["breaches"]))
+
+    def test_positions_carry_maturity_scope_and_group(self):
+        alpha = self.summary["positions"][0]
+        self.assertEqual(alpha["maturity_date"], "2027-12-31")
+        self.assertEqual(alpha["rating_scope"], "issuer")
+        self.assertEqual(alpha["group"], "Alpha Group")
+        self.assertEqual(self.summary["ratings_not_for_this_bond"], ["Alpha Finance"])
+        self.assertIn("issuer", portfolio.render_markdown(self.summary))
+
+
 if __name__ == "__main__":
     unittest.main()

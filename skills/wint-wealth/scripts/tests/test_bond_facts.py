@@ -50,6 +50,22 @@ class TestBondFacts(unittest.TestCase):
                 bond_facts.upsert([], isin="INE000A07011", source="https://example.com",
                                   as_of="2026-10-02", **bad)
 
+    def test_group_and_rating_scope_are_recorded(self):
+        facts = []
+        entry = bond_facts.upsert(facts, isin="INE000A07011", group="Alpha Group",
+                                  rating_scope="issuer", source="https://example.com",
+                                  as_of="2026-10-02")
+        self.assertEqual((entry["group"], entry["rating_scope"]), ("Alpha Group", "issuer"))
+        with self.assertRaises(ValueError):
+            bond_facts.upsert(facts, isin="INE000A07011", rating_scope="guess",
+                              source="https://example.com", as_of="2026-10-02")
+
+    def test_group_of_issuer_falls_back_to_the_issuer_name(self):
+        facts = [{"isin": "INE000A07011", "wint_bond_id": None, "issuer": "Alpha Finance",
+                  "group": "Alpha Group"}]
+        self.assertEqual(bond_facts.group_of(facts, "alpha finance"), "Alpha Group")
+        self.assertEqual(bond_facts.group_of(facts, "Beta Capital"), "Beta Capital")
+
     def test_save_and_load_round_trip(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "bond-facts.json")

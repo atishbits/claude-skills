@@ -32,6 +32,7 @@
     }
   },
   "listings_max_age_hours": 6,
+  "reinvestment_horizon_days": 120,
   "config_max_age_months": 12,
   "nearly_sold_pct": 95,
   "nearly_sold_units": 10,

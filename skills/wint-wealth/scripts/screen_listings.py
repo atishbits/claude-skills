@@ -67,9 +67,9 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
     total = sum(h["current_value"] for h in held)
     by_issuer, by_bucket = {}, {}
     for h in held:
-        name = h["issuer"].casefold()
-        by_issuer[name] = by_issuer.get(name, 0) + h["current_value"]
         fact = bond_facts.lookup(facts, isin=h["isin"]) or {}
+        name = (fact.get("group") or bond_facts.group_of(facts, h["issuer"])).casefold()
+        by_issuer[name] = by_issuer.get(name, 0) + h["current_value"]
         bucket = portfolio.rating_bucket(fact.get("rating"))
         by_bucket[bucket] = by_bucket.get(bucket, 0) + h["current_value"]
 
@@ -108,14 +108,17 @@ def screen(listings_doc, snapshot, facts, profile, config, now, cash=None, allow
             reasons.append("minimum investment is unknown")
         elif cash is not None and minimum > cash:
             reasons.append(f"minimum {minimum} is above available cash {cash}")
+        group = fact.get("group") or bond_facts.group_of(facts, item["issuer"])
         rooms = [_room(profile["max_issuer_share_pct"], total,
-                       by_issuer.get(item["issuer"].casefold(), 0))]
+                       by_issuer.get(group.casefold(), 0))]
         bucket = portfolio.rating_bucket(rating if rating in order else None)
         bucket_cap = profile["max_rating_bucket_share_pct"].get(bucket)
         rooms.append(_room(bucket_cap, total, by_bucket.get(bucket, 0)))
         if minimum is not None:
             if rooms[0] is not None and rooms[0] < minimum:
-                reasons.append(f"the minimum would take this issuer over the "
+                who = ("this issuer" if group.casefold() == item["issuer"].casefold()
+                       else f"this issuer's group ({group})")
+                reasons.append(f"the minimum would take {who} over the "
                                f"{profile['max_issuer_share_pct']}% cap")
             if rooms[1] is not None and rooms[1] < minimum:
                 reasons.append(f"the minimum would take {bucket}-rated bonds over the "
