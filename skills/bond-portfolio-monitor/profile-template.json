@@ -1,0 +1,12 @@
+{
+  "tax_slab_pct": 30,
+  "min_rating": "BBB+",
+  "max_tenure_months": 36,
+  "min_post_tax_ytm_pct": 6.5,
+  "max_issuer_share_pct": 15,
+  "max_rating_bucket_share_pct": {"BBB": 40},
+  "allow_unsecured": false,
+  "allow_subordinated": false,
+  "prefer_monthly_income": true,
+  "lookahead_days": 45
+}
