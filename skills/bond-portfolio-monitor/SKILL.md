@@ -18,6 +18,7 @@ allowed-tools:
   - Bash(python3 *exit_cost.py*)
   - Bash(python3 *bond_facts.py*)
   - Bash(python3 *rating_ledger.py*)
+  - Bash(python3 *run_record.py*)
   - Read
   - Write
   - Edit
@@ -154,7 +155,8 @@ For each bond you take forward (at most five unless asked for more):
    YTM than its bucket peers is a question to answer, not a reason to buy.
 4. **Record it**, with the script's numbers as inputs:
    `python3 scripts/rating_ledger.py add --kind listing --issuer NAME --bond-id ID --verdict ENTER --reason "..." --inputs '{"ytm": .., "post_tax_ytm": .., "rating": "..", "risk_bucket": "..", "tenure_months": .., "max_buy": ..}' --source URL --source URL`
-5. Write or update `data/skill-data/bonds/<issuer-slug>.md` from `note-template.md`.
+5. Write or update `data/skill-data/bonds/<issuer-slug>.md` from `note-template.md` (bond
+   facts, credit read, what would change the verdict, sources).
 
 ## Step 5: HOLD, REVIEW or EXIT, for a holding
 
@@ -188,7 +190,35 @@ For each bond you take forward (at most five unless asked for more):
    the flag itself. Never record an unchecked repayment history as clean.
 5. Update the issuer's note.
 
+## Save the run
+
+Do this last, on every run, once the verdicts are in the ledger:
+
+```
+python3 scripts/run_record.py save
+```
+
+It writes `data/skill-data/runs/<date>/` (every script's output as JSON, the newest verdict per
+bond, and a generated `REVIEW.md`) and refreshes the verdict history at the top of each issuer
+note from the ledger. Then write `data/skill-data/runs/<date>/analysis.md` yourself: the reading
+of this run that a script cannot produce. Keep it short:
+
+- what changed since the last run, and what you concluded;
+- each REVIEW or EXIT, and what would settle it;
+- what you could not verify, and which verdicts rest on thin evidence;
+- what the user should do or check, most important first;
+- if a separate reviewer judged the run, its main findings and what you changed because of them.
+
+Numbers in `analysis.md` are quoted from the JSON files beside it. If you change a verdict after
+saving, record it in the ledger and run `run_record.py save` again; it rewrites the generated
+files and leaves `analysis.md` alone.
+
+In an issuer note, write below the generated verdict history. Do not write a verdict line of your
+own there: the history comes from the ledger, so it cannot go stale.
+
 ## Before you finish
+
+- The run is saved and `analysis.md` is written.
 
 - Every number in what you wrote appears in a script's output from this run.
 - Every ENTER and EXIT has sources you opened, and a ledger entry.
