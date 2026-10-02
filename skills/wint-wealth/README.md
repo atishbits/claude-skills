@@ -4,15 +4,113 @@ Monitors a bond portfolio held on Wint Wealth and screens the bonds on sale ther
 do the arithmetic; the skill does the credit research and gives ENTER / SKIP verdicts on new bonds
 and HOLD / REVIEW / EXIT on what you hold. It never places an order.
 
-## What you provide
+## What it needs
 
-1. **The Master Report**: on Wint, account menu -> Reports and documents -> Master Report. Save
-   it as `data/wint-master-report-<date>.xlsx`.
-2. **Your limits**: copy `profile-template.json` to `data/profile.json` and edit it (tax slab,
-   rating floor, tenure ceiling, issuer and rating-bucket caps, and so on).
-3. **A listings capture**, when you want new bonds screened: Claude runs `capture-listings.js` on
-   the listings page in your logged-in Chrome. It reads the bond cards on the page and saves one
-   JSON file to Downloads, which then moves into `data/`. It makes no network request and reads no token or account detail.
+**From you**
+
+| Input | Where it comes from | Needed for |
+|---|---|---|
+| Master Report (`data/wint-master-report-<date>.xlsx`) | Wint: account menu -> Reports and documents -> Master Report | Everything. It carries five sheets: holdings, upcoming cash flows, repayments received, purchases, sales |
+| Your limits (`data/profile.json`) | Copy `profile-template.json` and edit it: tax slab, rating floor, tenure ceiling, issuer and rating-bucket caps, whether unsecured or subordinated paper is allowed | Limit breaches and screening |
+| A second Master Report, some weeks later | Same download, kept alongside the first | Checking that payments due in between actually arrived |
+
+Save the report under the name above: the name Wint gives it carries your phone number.
+
+**From the session Claude runs in**
+
+| Access | Used for | Without it |
+|---|---|---|
+| Chrome with Claude in Chrome, logged in to Wint | Capturing the bonds on sale (`capture-listings.js`) and reading a bond's detail panel (`read-bond-details.js`): ISIN, rating and outlook, agency, collateral, seniority, listed or not | No screening of new bonds; holdings can still be reviewed, with ratings taken from the agencies |
+| Web search and page fetch | The rating agency's own rationale for each issuer, exchange filings, trustee payout reports for securitised pools | Verdicts cannot be given; the scripts still produce the portfolio and cash-flow figures |
+
+Both browser snippets only read what is already on the page. They make no network request of
+their own and read no token, cookie or account detail. The skill never invests, sells, or signs
+anything.
+
+**What makes a run good**
+
+- A Master Report downloaded the same day.
+- A listings capture under six hours old (the screener refuses an older one).
+- For each bond, the agency's rationale opened and read, at every agency that rates the issuer.
+  The rating on Wint's own page is the seller's statement of one agency's grade.
+- An earlier snapshot on disk, so late or short payments can be detected.
+
+## What you get
+
+Ask "review my Wint portfolio", "what is due this quarter", "is Alpha Finance still safe", or
+"what should I buy with the money coming back". A full review ends with a short summary in the
+conversation and a dated folder on disk. The example below uses invented issuers and round
+numbers.
+
+**In the conversation**
+
+> No holding warrants an exit. Two of three are HOLD and one is REVIEW.
+>
+> - **Beta Capital:** on a negative rating outlook; it matures on 30 Jun 2027, so that principal
+>   payment is the test.
+> - **Issuer cap:** Alpha Finance is 50% of the portfolio against your 25% cap.
+>
+> | Holding | Share | YTM | Matures | Rating (agency, outlook) | Verdict | What settles it |
+> |---|---|---|---|---|---|---|
+> | Alpha Finance | 50.0% | 11.0% | 2027-12-31 | A (Agency One, stable) | HOLD | - |
+> | Beta Capital | 30.0% | 12.0% | 2027-06-30 | BBB+ (Agency Two, negative) | REVIEW | Principal paid on 30 Jun 2027 |
+> | Gamma Microfin | 20.0% | 10.5% | 2028-03-31 | A- (Agency One, stable) | HOLD | - |
+>
+> Not verified: Gamma Microfin's rating is the issuer's, not confirmed for this bond. The
+> repayment check has no earlier snapshot to compare against yet.
+
+**On disk, in `data/skill-data/runs/<date>/`**
+
+```
+REVIEW.md             generated: totals, breaches, holdings and verdicts, repayments, cash coming back
+analysis.md           the written reading of the run: conclusions, what was not verified, what to do
+portfolio.json        shares by issuer group, rating bucket and tenure; weighted YTM; breaches
+cashflows.json        what is due, income by month, principal returning over the next 120 days
+repayment_check.json  payments missing, short or overdue
+diff.json             what changed since the last report and capture
+screen.json           the shortlist of bonds on sale and why the rest were rejected
+verdicts.json         the newest verdict for each bond
+```
+
+An extract of a generated `REVIEW.md`:
+
+```
+## Limit breaches
+
+- Alpha Finance is 50.0% of the portfolio; limit 25%
+
+## Holdings and verdicts
+
+| Issuer | ISIN | Value | Share % | YTM % | Matures | Rating | Rating applies to | Verdict | Verdict date | Deciding reason |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Alpha Finance | INE000A07011 | 50000.0 | 50.0 | 11.0 | 2027-12-31 | A | this bond | HOLD | 2026-01-15 | Rating reaffirmed in December; payments on time. |
+| Beta Capital | INE000B07022 | 30000.0 | 30.0 | 12.0 | 2027-06-30 | BBB+ | this bond | REVIEW | 2026-01-15 | Outlook cut to negative for rising overdue loans. |
+| Gamma Microfin | INE000C07033 | 20000.0 | 20.0 | 10.5 | 2028-03-31 | A- | issuer | HOLD | 2026-01-15 | No adverse action at either agency. |
+
+## Repayments
+
+Baseline check: compared against schedules recorded since 2025-12-01 (4 due payment(s) checked).
+No late, short or overdue payment flagged.
+
+## Cash coming back
+
+Next 45 days: 1450.0 (principal 0.0). Next 120 days, principal only: 10000.0, 10.0% of the portfolio.
+```
+
+When new bonds are screened, the shortlist is ranked within risk buckets, never by yield alone:
+
+| Rank | Issuer | Risk bucket | YTM | Post-tax YTM | Tenure | Minimum | Most you can buy |
+|---|---|---|---|---|---|---|---|
+| 1 | Delta Housing | AA / secured / senior | 9.0% | 6.3% | 18 months | 10,000 | 33,333 |
+| 2 | Epsilon Gold | A / secured / senior | 10.0% | 7.0% | 12 months | 10,000 | 33,333 |
+| 3 | Zeta Finance | A / security unconfirmed | 10.5% | 7.35% | 24 months | 10,000 | 33,333 |
+
+A bond gets ENTER only after its detail page and the agency's rationale have been read; the ledger
+refuses an ENTER for a bond whose security and seniority are not recorded.
+
+Every verdict is also appended to `ratings-ledger.jsonl` with its reason, the numbers it relied
+on, its sources and the hash of the data behind it, and each issuer's note in `bonds/` carries
+its verdict history.
 
 ## Layout
 
@@ -44,6 +142,9 @@ mkdir -p skills/wint-wealth/data
 cp skills/wint-wealth/profile-template.json skills/wint-wealth/data/profile.json
 ```
 
+Then put the Master Report in `skills/wint-wealth/data/` and ask Claude to review your Wint
+portfolio, or run `/wint-wealth`.
+
 Python 3 only; no packages. Browser capture needs Claude in Chrome.
 
 ## Scripts
@@ -68,9 +169,10 @@ Tests: `cd scripts && python3 -m unittest discover -s tests -p 'test_*.py'`.
 
 Facts about the portal and the tax code, each with a date and a source: the early-exit deduction,
 TDS on interest, how gains on listed and unlisted bonds are taxed, and the Master Report's column
-names. These change. A script warns when an entry is over a year old; re-verify it then. The tax
-entries were checked against secondary sources, not the Act; confirm with your CA before relying
-on a post-tax figure.
+names. These change. A script warns when an entry is over a year old; re-verify it then. The TDS
+rate is taken from the Income Tax Department's rate table; the capital-gains entries were checked
+against secondary sources, not the Act, so confirm with your CA before relying on a post-tax
+figure.
 
 ## Limits
 
