@@ -29,7 +29,9 @@ data/                        gitignored: yours
     bond-facts.json              rating, security, seniority per bond, with sources
     ratings-ledger.jsonl         every verdict, with the hashes of the data behind it
     PORTFOLIO.md                 generated summary
-    bonds/<issuer>.md            one note per issuer
+    bonds/<issuer>.md            one note per issuer; verdict history kept in step with the ledger
+    runs/<date>/                 a dated record of each review: every script's output,
+                                 REVIEW.md (generated) and analysis.md (the written reading)
 ```
 
 The data root is `--root PATH`, then `$WINT_ROOT`, then the working directory.
@@ -58,6 +60,7 @@ Python 3 only; no packages. Browser capture needs Claude in Chrome.
 | `exit_cost.py` | Estimated proceeds of selling now, conditional on a buyer. |
 | `bond_facts.py` | Records per-bond credit facts with their source, the issuer's group, and whether a rating is the bond's own. |
 | `rating_ledger.py` | Append-only verdict history. |
+| `run_record.py` | Saves a dated record of a review and refreshes the issuer notes from the ledger. |
 
 Tests: `cd scripts && python3 -m unittest discover -s tests -p 'test_*.py'`.
 

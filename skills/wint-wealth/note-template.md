@@ -1,7 +1,6 @@
 # <Issuer>
 
-**Verdict:** <ENTER | SKIP | HOLD | REVIEW | EXIT> on <YYYY-MM-DD> (prev: <verdict, date>)
-**Deciding reason:** <one sentence: why this verdict and not the adjacent one>
+<!-- run_record.py puts the verdict history here, from the ledger. Write below it. -->
 
 ## Bond facts
 | | |
