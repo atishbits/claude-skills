@@ -16,6 +16,11 @@ Rules when you commit here:
 - Never pass `--no-verify`. If the hook fires, the default assumption is that it is right; if it is
   genuinely a false positive, say so and let the user decide.
 - Examples in skills use invented tickers and round numbers, never a real position.
+- A generic skill never names a vendor, platform, bank, broker or other tool its user happens to
+  use, nor another skill that is specific to one. Describe the input generically ("bond
+  interest", "a broker export") and document the file format. Which vendor a figure comes from,
+  and how to refresh it, is personal: it goes in that skill's gitignored `data/notes.md`, which
+  the skill reads at runtime. A skill built for one platform may of course name that platform.
 - A skill that needs personal input reads it at runtime from the user's own project folder and
   documents that in its README — it does not ship a copy here.
 - If a skill has a `scripts/` folder, its deterministic logic gets unit tests under

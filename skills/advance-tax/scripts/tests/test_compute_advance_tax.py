@@ -34,7 +34,7 @@ class TestCompute(unittest.TestCase):
         self.assertAlmostEqual(out["bond_tax"], 3000.0)
         self.assertAlmostEqual(out["estimated_annual_tax"], 3000.0 * 1.10 * 1.04 - 1000.0)
 
-    def test_bond_figures_are_read_from_a_fy_interest_file(self):
+    def test_bond_figures_are_read_from_a_file(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "bond-interest.json")
             with open(path, "w") as f:
