@@ -77,7 +77,7 @@ class TestSave(unittest.TestCase):
     def test_writes_every_output_a_review_and_the_notes(self):
         out = run_record.save(self.root, "2026-10-02")
         self.assertTrue(out.endswith(os.path.join("runs", "2026-10-02")))
-        for name in ("portfolio.json", "cashflows.json", "repayment_check.json", "diff.json",
+        for name in ("portfolio.json", "positions.json", "cashflows.json", "repayment_check.json", "diff.json",
                      "screen.json", "verdicts.json", "REVIEW.md"):
             self.assertTrue(os.path.exists(os.path.join(out, name)), name)
         self.assertEqual(common.load_json(os.path.join(out, "portfolio.json"))["totals"]
@@ -95,6 +95,8 @@ class TestSave(unittest.TestCase):
         self.assertIn("| Alpha Finance |", text)
         self.assertIn("REVIEW", text)
         self.assertIn("no baseline yet", text)
+        self.assertIn("## Returns by bond", text)
+        self.assertIn("Return % a year", text)
 
     def test_a_rerun_keeps_the_written_analysis(self):
         out = run_record.save(self.root, "2026-10-02")

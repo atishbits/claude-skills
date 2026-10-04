@@ -65,9 +65,10 @@ numbers.
 **On disk, in `data/skill-data/runs/<date>/`**
 
 ```
-REVIEW.md             generated: totals, breaches, holdings and verdicts, repayments, cash coming back
+REVIEW.md             generated: totals, breaches, holdings and verdicts, returns by bond, repayments, cash coming back
 analysis.md           the written reading of the run: conclusions, what was not verified, what to do
 portfolio.json        shares by issuer group, rating bucket and tenure; weighted YTM; breaches
+positions.json        per bond: invested, received, still to come, yearly return, rating, principal dates
 cashflows.json        what is due, income by month, principal returning over the next 120 days
 repayment_check.json  payments missing, short or overdue
 diff.json             what changed since the last report and capture
@@ -130,6 +131,7 @@ data/                        gitignored: yours
     bond-facts.json              rating, security, seniority per bond, with sources
     ratings-ledger.jsonl         every verdict, with the hashes of the data behind it
     PORTFOLIO.md                 generated summary
+    POSITIONS.md                 generated returns-by-bond table
     bonds/<issuer>.md            one note per issuer; verdict history kept in step with the ledger
     runs/<date>/                 a dated record of each review: every script's output,
                                  REVIEW.md (generated) and analysis.md (the written reading)
@@ -158,6 +160,7 @@ Python 3 only; no packages. Browser capture needs Claude in Chrome.
 | `ingest.py listings` | Verifies the capture's checksum and normalises it. |
 | `portfolio.py` | Shares by issuer, rating bucket and tenure; weighted YTM; limit breaches. |
 | `cashflows.py` | What is due, income by month, principal coming back soon and over the next few months. |
+| `positions.py` | One row per bond: rating, invested, received so far, still to come, the yearly return (XIRR on the report's dated flows) before and after tax, and the dates principal returns. Shown on every portfolio review. |
 | `repayment_check.py` | Flags a missing or short payment against the earlier schedule. Needs two snapshots. |
 | `screen_listings.py` | Filters and ranks bonds on sale within risk buckets. Refuses a stale capture. |
 | `diff_snapshots.py` | What changed since last time; rating signals on issuers you hold. |

@@ -12,6 +12,7 @@ allowed-tools:
   - Bash(python3 *ingest.py*)
   - Bash(python3 *portfolio.py*)
   - Bash(python3 *cashflows.py*)
+  - Bash(python3 *positions.py*)
   - Bash(python3 *repayment_check.py*)
   - Bash(python3 *screen_listings.py*)
   - Bash(python3 *diff_snapshots.py*)
@@ -96,11 +97,21 @@ the stated count; do not pass `--allow-partial` unless the user asks): tell the 
 ```
 python3 scripts/portfolio.py          # writes data/skill-data/PORTFOLIO.md
 python3 scripts/cashflows.py
+python3 scripts/positions.py          # writes data/skill-data/POSITIONS.md
 python3 scripts/repayment_check.py
 python3 scripts/diff_snapshots.py
 ```
 
-Report, briefly: totals and weighted YTM; any limit breach (issuers in one group are capped
+**Always show the returns-by-bond table from `positions.py`**, one row per bond plus the total
+row, whenever the request touches what the user holds or what they have earned. Copy the figures;
+do not recompute them. Columns: issuer, rating (say when it is the issuer's and not this bond's)
+with outlook, date bought, invested, `return_pct` and `post_tax_return_pct`, interest received,
+principal still to come, interest still to come, when the principal comes back
+(`principal_dates`), and `net_if_all_paid`. State `basis` and `return_basis` once: the returns
+assume every scheduled payment arrives, and the post-tax figure is an approximation. A non-zero
+`past_due` is a payment the report does not show as received; say so beside that row.
+
+Then report, briefly: totals and weighted YTM; any limit breach (issuers in one group are capped
 together); what is due in the lookahead window; `principal_ahead` from `cashflows.py` (principal
 returning over the longer horizon, by month, and its share of the book), since that is the
 reinvestment to plan for; unrated holdings; `ratings_not_for_this_bond`; anything

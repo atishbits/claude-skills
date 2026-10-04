@@ -6,9 +6,10 @@
 Writes data/skill-data/runs/<date>/ from the newest snapshot, listings capture,
 bond facts and ledger:
 
-    portfolio.json  cashflows.json  repayment_check.json  diff.json  screen.json
+    portfolio.json  positions.json  cashflows.json  repayment_check.json  diff.json
+    screen.json
     verdicts.json   the newest verdict per bond
-    REVIEW.md       totals, breaches, repayment status, and the verdict table
+    REVIEW.md       totals, breaches, returns by bond, repayment status, and the verdict table
 
 and refreshes the verdict history at the top of each data/skill-data/bonds/
 <issuer>.md note, so a note never shows a verdict the ledger has since replaced.
@@ -32,6 +33,7 @@ import cashflows
 import common
 import diff_snapshots
 import portfolio
+import positions
 import rating_ledger
 import repayment_check
 import screen_listings
@@ -101,7 +103,7 @@ def sync_notes(bonds_dir, entries):
     return written
 
 
-def render_review(date, summary, flows, repay, screen, verdicts):
+def render_review(date, summary, flows, repay, screen, verdicts, returns):
     totals = summary["totals"]
     by_isin = {v["isin"]: v for v in verdicts if v["kind"] == "holding" and v.get("isin")}
     holdings = []
@@ -131,6 +133,9 @@ def render_review(date, summary, flows, repay, screen, verdicts):
         "## Holdings and verdicts",
         _table(["Issuer", "ISIN", "Value", "Share %", "YTM %", "Matures", "Rating",
                 "Rating applies to", "Verdict", "Verdict date", "Deciding reason"], holdings),
+        "## Returns by bond",
+        positions.render_table(returns),
+        returns["basis"] + " " + returns["return_basis"],
         "## Repayments",
         f"Baseline check: {repay['note']} ({repay['checked']} due payment(s) checked).",
         _table(["Issuer", "ISIN", "Due", "Expected", "Received", "Kind"],
@@ -173,6 +178,7 @@ def save(root, date, now=None):
     entries = rating_ledger.load(rating_ledger.ledger_path(root))
 
     summary = portfolio.summarise(current, facts, profile)
+    returns = positions.positions(current, facts, common.tax_rate(profile))
     start, days = current["as_of"], profile["lookahead_days"]
     flows = {"as_of": start, "upcoming": cashflows.upcoming(current, start, days),
              "monthly": cashflows.monthly(current),
@@ -199,12 +205,12 @@ def save(root, date, now=None):
 
     out = os.path.join(data, "runs", date)
     os.makedirs(out, exist_ok=True)
-    for name, content in (("portfolio", summary), ("cashflows", flows),
+    for name, content in (("portfolio", summary), ("positions", returns), ("cashflows", flows),
                           ("repayment_check", repay), ("diff", diff), ("screen", screen),
                           ("verdicts", verdicts)):
         common.write_json(os.path.join(out, name + ".json"), content)
     with open(os.path.join(out, "REVIEW.md"), "w", encoding="utf-8") as fh:
-        fh.write(render_review(date, summary, flows, repay, screen, verdicts))
+        fh.write(render_review(date, summary, flows, repay, screen, verdicts, returns))
     sync_notes(os.path.join(data, "bonds"), entries)
     return out
 
