@@ -13,6 +13,7 @@ allowed-tools:
   - Bash(python3 *portfolio.py*)
   - Bash(python3 *cashflows.py*)
   - Bash(python3 *positions.py*)
+  - Bash(python3 *fy_interest.py*)
   - Bash(python3 *repayment_check.py*)
   - Bash(python3 *screen_listings.py*)
   - Bash(python3 *diff_snapshots.py*)
@@ -110,6 +111,13 @@ principal still to come, interest still to come, when the principal comes back
 (`principal_dates`), and `net_if_all_paid`. State `basis` and `return_basis` once: the returns
 assume every scheduled payment arrives, and the post-tax figure is an approximation. A non-zero
 `past_due` is a payment the report does not show as received; say so beside that row.
+
+**Tax on the interest.** When the user asks what tax or advance tax the bonds bring, run
+`python3 scripts/fy_interest.py` and quote its figures: gross interest for the financial year
+(received plus scheduled) and the TDS on it. Interest is taxed at the slab and TDS covers only
+part of it; principal coming back is not income. If the `advance-tax` skill is installed, add
+`--out <advance-tax skill>/data/bond-interest.json` so that skill counts it, and leave the
+instalment arithmetic to that skill.
 
 Then report, briefly: totals and weighted YTM; any limit breach (issuers in one group are capped
 together); what is due in the lookahead window; `principal_ahead` from `cashflows.py` (principal

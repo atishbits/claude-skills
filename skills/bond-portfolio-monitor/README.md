@@ -161,6 +161,7 @@ Python 3 only; no packages. Browser capture needs Claude in Chrome.
 | `portfolio.py` | Shares by issuer, rating bucket and tenure; weighted YTM; limit breaches. |
 | `cashflows.py` | What is due, income by month, principal coming back soon and over the next few months. |
 | `positions.py` | One row per bond: rating, invested, received so far, still to come, the yearly return (XIRR on the report's dated flows) before and after tax, and the dates principal returns. Shown on every portfolio review. |
+| `fy_interest.py` | Bond interest for a financial year, received plus scheduled, and the TDS on it: the input the `advance-tax` skill needs. |
 | `repayment_check.py` | Flags a missing or short payment against the earlier schedule. Needs two snapshots. |
 | `screen_listings.py` | Filters and ranks bonds on sale within risk buckets. Refuses a stale capture. |
 | `diff_snapshots.py` | What changed since last time; rating signals on issuers you hold. |
