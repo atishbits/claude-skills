@@ -25,7 +25,8 @@ hook refuses, the same layout the other skills here use:
 data/
   tax-profile.json      your rates, one entry per person
   ledger.md             optional: what you paid, when, and what is still due
-  bond-interest.json    optional: the year's bond interest, written by wint-wealth's fy_interest.py
+  bond-interest.json    optional: the year's bond interest and the TDS on it
+  notes.md              optional: the skill's local memory, e.g. where each of your inputs comes from
 ```
 
 1. Copy `tax-profile-template.json` to `data/tax-profile.json` and fill it in. The template says where to
@@ -45,8 +46,15 @@ data/
 **Bond interest.** If you hold bonds, pass the year's gross interest and the TDS on it with
 `--bond-interest-total N --bond-tds N`, or `--bond-interest-file data/bond-interest.json`. The
 interest is taxed at your slab with surcharge and cess, and the TDS is taken off the result, so
-do not count that TDS again in `--already-paid`. The `wint-wealth` skill writes the file from its
-Master Report: `python3 scripts/fy_interest.py --out <this skill>/data/bond-interest.json`.
+do not count that TDS again in `--already-paid`. The file needs only this much, however you
+produce it:
+
+```json
+{"as_of": "2026-10-01", "total": {"interest_gross": 12000.0, "tds": 1200.0}}
+```
+
+Where your own figures come from (a platform's statement, another tool) is personal: write it in
+`data/notes.md`, which the skill reads first, not in this repo.
 
 Tests: `python3 -m unittest discover -s tests -p 'test_*.py'` from `scripts/`.
 

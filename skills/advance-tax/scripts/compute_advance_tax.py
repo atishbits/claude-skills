@@ -109,8 +109,8 @@ def resolve_cum_pct(config, installment=None, cum_pct=None):
 
 
 def load_bond_interest(path):
-    """(gross interest, TDS) for the FY from a file written by the wint-wealth
-    skill's fy_interest.py."""
+    """(gross interest, TDS) for the FY from a JSON file shaped
+    {"total": {"interest_gross": N, "tds": N}}."""
     with open(path) as f:
         total = json.load(f)["total"]
     return total["interest_gross"], total["tds"]
@@ -164,8 +164,8 @@ def main(argv=None):
                    help="TDS deducted, or to be deducted, on that bond interest (Rs). "
                         "Do not also count it in --already-paid")
     p.add_argument("--bond-interest-file",
-                   help="Read both bond figures from a file written by the wint-wealth skill's "
-                        "fy_interest.py --out, instead of the two flags above")
+                   help="Read both bond figures from a JSON file with total.interest_gross and "
+                        "total.tds, instead of the two flags above")
     p.add_argument("--already-paid", type=float, default=0.0, help="Tax already paid this FY: TDS credits + prior advance tax installments (Rs)")
     p.add_argument("--json", action="store_true", help="Print machine-readable JSON instead of a report")
     args = p.parse_args(argv)

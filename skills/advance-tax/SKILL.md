@@ -17,7 +17,7 @@ Request for this run: **$ARGUMENTS**
 
 You are helping compute an advance tax installment for an individual (self-assessed "other sources"
 income only — salary TDS is assumed already covered separately and folded into "already paid" if
-the user gives it). The reference schedule (verified against ClearTax, Sep 2026) is Sec 208/211 of
+the user gives it). The reference schedule (last checked Sep 2026) is Sec 208/211 of
 the Income Tax Act, 1961 (renumbered 424/425 under the Income Tax Act 2025):
 
 | Installment | Due date     | Cumulative % of estimated annual tax |
@@ -35,7 +35,11 @@ person (slab, FD and savings rates, surcharge band) comes from *their* `tax-prof
 is personal and is never committed. By default it sits in this skill's own `data/` folder
 (`${CLAUDE_SKILL_DIR}/data/tax-profile.json` once installed), which is gitignored, together with
 anything else personal the skill keeps: a payment ledger (`data/ledger.md`), a working spreadsheet,
-and `data/bond-interest.json` when the user holds bonds. The script looks for the profile in this
+`data/bond-interest.json` when the user holds bonds, and `data/notes.md`, the skill's local
+memory. **Read `data/notes.md` first if it exists**: it is where the user's own sources for each
+input are written down (which account, platform or tool a figure comes from and how to refresh
+it), and where you record anything of that kind you learn. Nothing specific to a person, a
+platform they use or another tool of theirs belongs in this file. The script looks for the profile in this
 order: `--profile PATH`, `$TAX_PROFILE`, `tax-profile.json` in the working directory, then
 `data/tax-profile.json`. If a rate is missing the script says exactly which, and it
 accepts them as flags for a one-off run that saves nothing.
@@ -69,17 +73,12 @@ Ask for (or take from the user's message):
 
 5. **Bond interest** — only if the user holds bonds. It is the gross interest for the full FY
    (already received plus still scheduled) and the TDS on it; the script taxes the interest at
-   the slab and takes the TDS off. Do not add it up yourself. If the bonds are on Wint Wealth and
-   the `wint-wealth` skill is installed, write the figures from its newest Master Report with
-
-   ```
-   python3 <wint-wealth skill>/scripts/fy_interest.py --out ${CLAUDE_SKILL_DIR}/data/bond-interest.json
-   ```
-
-   and pass `--bond-interest-file ${CLAUDE_SKILL_DIR}/data/bond-interest.json`. Say which report date the
-   file is from (`as_of`), and that bonds bought after it are not counted. Otherwise ask for the
-   two numbers and pass `--bond-interest-total` and `--bond-tds`. Bond TDS goes in here, never
-   also in `--already-paid`.
+   the slab and takes the TDS off. Do not add it up yourself. If `data/notes.md` says how the
+   user's bond figures are produced, follow it to refresh `data/bond-interest.json` and pass
+   `--bond-interest-file ${CLAUDE_SKILL_DIR}/data/bond-interest.json`; say which date the file is
+   as of, and that bonds bought after it are not counted. Otherwise ask for the two numbers (the
+   bond platform's tax or interest statement has them) and pass `--bond-interest-total` and
+   `--bond-tds`. Bond TDS goes in here, never also in `--already-paid`.
 
 If the user doesn't have fresh numbers for one of these, ask them for the source rather than
 assuming: last year's ITR, a recent salary slip, an FD receipt, or their own spreadsheet. Say
