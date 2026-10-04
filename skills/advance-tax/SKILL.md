@@ -2,7 +2,7 @@
 name: advance-tax
 description: >-
   Compute advance income tax due for a given installment date (15 Jun / 15 Sep / 15 Dec / 15 Mar),
-  from estimated FD interest, savings balance, dividends and house rent income. Use when the user
+  from estimated FD interest, savings balance, dividends, house rent and bond interest. Use when the user
   asks what advance tax they owe, for a specific due date or "next installment", for themselves or
   for another person they name.
 argument-hint: "[person] [due date | Q1-Q4] [FDR total] [savings balance] [dividends] [house rent] [already paid]"
@@ -32,8 +32,12 @@ the Income Tax Act, 1961 (renumbered 424/425 under the Income Tax Act 2025):
 **Where the personal numbers live.** The skill ships statutory constants only — the due-date
 schedule, the Section 24(a) standard deduction and the 4% cess. Every rate that depends on the
 person (slab, FD and savings rates, surcharge band) comes from *their* `tax-profile.json`, which
-lives in their own folder and never in the skills repo. Run the script from that folder, or pass
-`--profile /path/to/tax-profile.json`. If a rate is missing the script says exactly which, and it
+is personal and is never committed. By default it sits in this skill's own `data/` folder
+(`${CLAUDE_SKILL_DIR}/data/tax-profile.json` once installed), which is gitignored, together with
+anything else personal the skill keeps: a payment ledger (`data/ledger.md`), a working spreadsheet,
+and `data/bond-interest.json` when the user holds bonds. The script looks for the profile in this
+order: `--profile PATH`, `$TAX_PROFILE`, `tax-profile.json` in the working directory, then
+`data/tax-profile.json`. If a rate is missing the script says exactly which, and it
 accepts them as flags for a one-off run that saves nothing.
 
 ## Step 1 — identify who and which due date
@@ -47,7 +51,7 @@ accepts them as flags for a one-off run that saves nothing.
   between two due dates and the user says "the upcoming one" or doesn't specify, pick the next
   unpassed due date in the current FY.
 
-## Step 2 — gather the four income inputs
+## Step 2 — gather the income inputs
 
 Ask for (or take from the user's message):
 1. **FDR total** — total FD principal across all fixed deposits (Rs).
@@ -63,6 +67,20 @@ Ask for (or take from the user's message):
    30%, ask and pass a reduced `--house-rent-total` (net of those) since the script only knows the
    flat statutory deduction.
 
+5. **Bond interest** — only if the user holds bonds. It is the gross interest for the full FY
+   (already received plus still scheduled) and the TDS on it; the script taxes the interest at
+   the slab and takes the TDS off. Do not add it up yourself. If the bonds are on Wint Wealth and
+   the `wint-wealth` skill is installed, write the figures from its newest Master Report with
+
+   ```
+   python3 <wint-wealth skill>/scripts/fy_interest.py --out ${CLAUDE_SKILL_DIR}/data/bond-interest.json
+   ```
+
+   and pass `--bond-interest-file ${CLAUDE_SKILL_DIR}/data/bond-interest.json`. Say which report date the
+   file is from (`as_of`), and that bonds bought after it are not counted. Otherwise ask for the
+   two numbers and pass `--bond-interest-total` and `--bond-tds`. Bond TDS goes in here, never
+   also in `--already-paid`.
+
 If the user doesn't have fresh numbers for one of these, ask them for the source rather than
 assuming: last year's ITR, a recent salary slip, an FD receipt, or their own spreadsheet. Say
 clearly which numbers you carried forward from an older figure and which they gave you fresh.
@@ -73,7 +91,8 @@ assume 0 and say so (this will overstate what's due now).
 
 ## Step 3 — compute
 
-Run it from the user's own folder, the one holding their `tax-profile.json`:
+The profile is found in the skill's `data/` folder; pass `--profile` only if the user keeps it
+elsewhere:
 
 ```
 python3 ${CLAUDE_SKILL_DIR}/scripts/compute_advance_tax.py \
@@ -83,19 +102,20 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/compute_advance_tax.py \
   --savings-balance <N> \
   --dividends-total <N> \
   --house-rent-total <N> \
+  --bond-interest-file ${CLAUDE_SKILL_DIR}/data/bond-interest.json \
   --already-paid <N>
 ```
 
 Never do this arithmetic yourself — always run the script. If the rates were gathered in Step 1
 rather than read from a profile, pass them as flags (`--fd-tax-pct`, `--other-tax-pct`,
 `--surcharge-multiplier`, `--fd-interest-rate`, `--savings-interest-rate`) and offer to save them
-into the user's own `tax-profile.json` for next time. Never into the skill folder: it is a public
-repo, and a slab rate is personal information.
+into `data/tax-profile.json` for next time. Never anywhere else in the skill folder: only `data/`
+is gitignored, the rest is a public repo, and a slab rate is personal information.
 
 ## Step 4 — report
 
 State the due date and amount due now, then the breakdown (FD / savings / dividend / house rent tax
-components) so the user can sanity-check which bucket dominates. If `--already-paid` was assumed 0,
+components, and bond interest when given) so the user can sanity-check which bucket dominates. If `--already-paid` was assumed 0,
 repeat that assumption plainly next to the number. Note that Sections 234B/234C interest applies to
 shortfalls against this cumulative schedule — mention it only if the computed due-now amount is
 being paid late or the user asks about a past due date.
