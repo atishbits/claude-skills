@@ -80,7 +80,8 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
 
 4. **Stage 4 — full deep dive (expensive, thorough).** Run SKILL.md's existing Step 3a–3g on
    whatever survives Stage 3, capped at **3** names by default (more only if the user asks) — same
-   rules as `new-ideas.md` step 4 (3b–3d, then 3g for anything rated BUY/SELL). Record every rated
+   rules as `new-ideas.md` step 4 (3b–3d, then 3g for anything rated BUY/SELL), and the same
+   `entry_plan.py` staging for any BUY (SKILL.md 3e). Record every rated
    ticker to `rating_ledger.py` as usual, and additionally record the deep-dive stage to
    `scan_history.py`:
 

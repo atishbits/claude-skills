@@ -14,6 +14,8 @@ line each, not paragraphs. Match this structure:
 
 **Rating:** <BUY | HOLD | SELL / trim><, UPGRADED or DOWNGRADED from <prev> if it moved>
 **Action:** Now: <buy N / nothing / trim N>. Then: <what, at which level, or "nothing">.
+<For a BUY, Now/Then are the `entry_plan.py` tranches: shares now, the level-or-date tranche, and
+the after-result tranche with its cancel condition. On a later rewrite, say which tranches are done.>
 **Signal row:** Row <N> → *<row description from the cheat sheet>* (confidence: <high | low, and why>)
 
 **Snapshot (<date>):** Price ₹X (screener, <date><; CSV ₹Y on <date> if they differ by more than 2%>),
