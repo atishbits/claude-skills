@@ -10,25 +10,35 @@ import calendar_notes  # noqa: E402
 
 class TestNextResultsWindow(unittest.TestCase):
     def test_simple_quarter_rollover(self):
-        start, end = calendar_notes.next_results_window("2026-06-30")
-        # Next quarter end: 2026-09-30, +45/+75 days.
-        self.assertEqual(start, date(2026, 9, 30) + calendar_notes.timedelta(days=45))
-        self.assertEqual(end, date(2026, 9, 30) + calendar_notes.timedelta(days=75))
+        qe, start, end = calendar_notes.next_results_window("2026-06-30")
+        # Next quarter end: 2026-09-30; results are due within 45 days of it.
+        self.assertEqual(qe, date(2026, 9, 30))
+        self.assertEqual(start, date(2026, 10, 15))
+        self.assertEqual(end, date(2026, 11, 14))
 
-    def test_year_rollover(self):
-        start, _ = calendar_notes.next_results_window("2026-12-31")
-        # Next quarter end: 2027-03-31.
-        self.assertEqual(start.year, 2027)
-        self.assertEqual(start.month >= 3, True)
+    def test_year_end_quarter_gets_the_longer_deadline(self):
+        qe, start, end = calendar_notes.next_results_window("2026-12-31", "Mar")
+        self.assertEqual(qe, date(2027, 3, 31))
+        self.assertEqual(start, date(2027, 4, 15))
+        self.assertEqual(end, date(2027, 5, 30))
 
-    def test_clamps_day_for_shorter_target_month(self):
-        # Jun 30 + 3 months lands in Sep, which only has 30 days -- no crash,
-        # no rolling into October.
-        start, _ = calendar_notes.next_results_window("2026-03-31")
-        # Next quarter end should be Jun 30, not Jul 1.
-        # (start is +45 days from that quarter end, so just check no exception
-        # and the window is chronologically sane.)
-        self.assertIsNotNone(start)
+    def test_december_year_end_company(self):
+        # Sep quarter reported; the Dec quarter closes this company's year.
+        qe, _, end = calendar_notes.next_results_window("2026-09-30", "Dec")
+        self.assertEqual(qe, date(2026, 12, 31))
+        self.assertEqual((end - qe).days, 60)
+        # ...and its March quarter is an ordinary one.
+        qe, _, end = calendar_notes.next_results_window("2026-12-31", "Dec")
+        self.assertEqual((end - qe).days, 45)
+
+    def test_missing_fiscal_year_end_defaults_to_march(self):
+        qe, _, end = calendar_notes.next_results_window("2026-12-31", None)
+        self.assertEqual((end - qe).days, 60)
+
+    def test_next_quarter_ends_on_its_month_end(self):
+        # Mar 31 -> Jun 30 (shorter month), Sep 30 -> Dec 31 (longer month).
+        self.assertEqual(calendar_notes.next_results_window("2026-03-31")[0], date(2026, 6, 30))
+        self.assertEqual(calendar_notes.next_results_window("2026-09-30")[0], date(2026, 12, 31))
 
 
 class TestNearLevel(unittest.TestCase):
@@ -68,7 +78,8 @@ class TestPriceLevelRows(unittest.TestCase):
         self.assertIn("DUE NOW", due[0]["detail"])
 
     def test_includes_60_day_low(self):
-        rows = calendar_notes.price_level_rows("TCS", 3000, {"range_60d_low": 2800})
+        # The key fetch_fundamentals.py actually writes into `technicals`.
+        rows = calendar_notes.price_level_rows("TCS", 3000, {"recent_low_60d": 2800})
         self.assertTrue(any("60-day low" in r["detail"] for r in rows))
 
 

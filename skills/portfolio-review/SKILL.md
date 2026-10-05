@@ -14,6 +14,7 @@ allowed-tools:
   - Bash(python3 *tax_lots.py*)
   - Bash(python3 *rating_ledger.py*)
   - Bash(python3 *calendar_notes.py*)
+  - Bash(python3 *glossary.py*)
   - Bash(python3 *multibagger_screen.py*)
   - Bash(python3 *scan_history.py*)
   - Bash(curl *)
@@ -80,7 +81,9 @@ holdings keep the rows the last full run gave them. Either way `data/skill-data/
 
 If today's snapshot does not exist yet, a subset run says so and promotes itself to a full refresh;
 let it. That is the first run of the day paying for the network, and it is what makes every later
-run in the day nearly free.
+run in the day nearly free. It takes several minutes (about ten for a book of ~75 holdings), which
+is longer than a default command timeout: start it with a long timeout or in the background, tell
+the user it is running, and use the wait for the 3a reading and the 3c searches.
 
 Caching is per ticker per day, so a full rebuild from cache takes under a second and no network
 calls. Re-run freely — never skip Step 4 to save time.
@@ -535,7 +538,10 @@ Everything else below is weighed together, not ranked against each other by a fi
   that headroom before FY-end is tax-free, and `--harvest` names the lots that do it.
 - **The rating and the Action must agree.** BUY means buying at today's price is right. If the
   level you would add at is more than ~5% below the current price, either rate it HOLD with "add at
-  ₹X", or keep BUY and state the split: how much now, how much at the level.
+  ₹X", or keep BUY and state the split: how much now, how much at the level. A BUY whose Action
+  reads "Now: nothing" is a HOLD: if the reason not to add today is position size or a result due
+  in a few weeks, rate it HOLD and name the trigger. VGUARD's 30 Sep 2026 note was a BUY with
+  nothing to buy, and the user came back five days later asking whether to buy more.
 - **Materiality.** If the position is under ~0.5% of the book, the Action must say whether to build
   it toward a named target weight or leave it as it is. A one-share add to a 0.2% position is not a
   recommendation. Zerodha delivery has no brokerage, so this is about the position mattering, not
@@ -634,7 +640,9 @@ technical re-look levels (200/50 DMA, 60-day low) — a deterministic date/price
 forecast. If a calendar connector is available in this session, offer to turn the rows into actual
 events; otherwise point the user at the file so they (or another Claude session with a calendar
 tool) can do it. Never treat the results window as a confirmed date — it is a reporting-lag
-estimate, and the note itself already says so.
+estimate (the filing deadline after the next quarter end), and many companies report on much the
+same date every year. Check last year's date for that quarter and any board-meeting intimation
+before proposing a reminder date.
 
 **On a portfolio-wide sweep, or when the user asks how past calls have done, score the ledger:**
 
@@ -650,5 +658,21 @@ whether the original thesis was right, wrong, or still open. Where it was wrong,
 change about how similar calls get made — that is the point of keeping the ledger at all, not just
 a scoreboard. The ledger only starts counting from the first `record` call onward, so a first run
 may show little or nothing; say that rather than treating an empty ledger as a clean track record.
+
+**End every reply with the glossary footer — Step 2 summaries and new-idea runs included.** The
+user is still learning this vocabulary, so every abbreviation or piece of market shorthand in the
+reply gets its full form and a one-line explanation. The script holds the wording; do not write the
+explanations yourself:
+
+```
+python3 ${CLAUDE_SKILL_DIR}/scripts/glossary.py --terms "RSI,EBITDA,200 DMA"
+```
+
+It always includes the scorecard's own terms (P/E, run-rate P/E, ROE, ROCE, TP); `--terms` lists
+whatever else the reply used (add `--no-scorecard` when the reply has no scorecard). Paste its
+output verbatim after the prose and before the disclaimer. If it reports a term it has no line for,
+add that term to `GLOSSARY` in the script rather than explaining it by hand, so the next run has
+it. In the prose itself, prefer the plain word where one exists ("profit" over "PAT") — the footer
+is for the shorthand that survives, not a licence to use more of it.
 
 Close with: *Not investment advice — verify prices and figures before acting.*

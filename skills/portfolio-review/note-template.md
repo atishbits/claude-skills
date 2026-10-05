@@ -55,6 +55,10 @@ the consensus low estimate, not a round number picked by feel.>
 - Preserve `**My inputs:**` and roll the old analysis date into the `(prev ...)` field on every
   rewrite, including a same-day re-rating. Never drop the history.
 - Mark a rating change as **UPGRADED** or **DOWNGRADED** so the direction is visible at a glance.
+- Copy the **Signal row** confidence and the RSI label (oversold / neutral / overbought) from the
+  snapshot (`classification.confidence`, `technicals.rsi_note`), not from your own reading of the
+  numbers. If 3d's re-check overrides the confidence, write "overridden from <low|high>" and why.
+  VGUARD's 30 Sep 2026 note said "high" and "oversold" where the snapshot said low and neutral.
 - If this run shows the previous note got a fact wrong, open "What changed" with a **Correction:**
   line saying what was wrong. Do not quietly overwrite it.
 - Where a number is unavailable, write it as unavailable. Do not carry a stale figure forward as if
