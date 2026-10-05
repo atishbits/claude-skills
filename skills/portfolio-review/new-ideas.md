@@ -45,6 +45,9 @@ research steps.
    - Hero survived, but only after the target list was corrected (see 3c).
 5. **Size a BUY as a swap** if it adds to a theme that is already heavy, and name what it
    replaces, not only what funds it.
+   Then give it an entry plan (SKILL.md 3e): `entry_plan.py TICKER --budget N` reads a stock the
+   user does not hold from the screen file, and stages the purchase if the stock is falling. A new
+   idea found near its lows is usually still falling, so this is the common case, not the exception.
 6. **Don't write `stocks/<TICKER>.md`** for a stock the user doesn't hold unless asked.
    `PORTFOLIO.md` only picks notes up for holdings, so a note is only useful once the stock shows
    up in the holdings CSV.

@@ -108,6 +108,9 @@ GLOSSARY = [
     ("Beta", "sensitivity to the index",
      "how much the stock tends to move when the Nifty moves 1%; below 1 means it swings less than the market",
      r"\bbeta\b"),
+    ("Tranche", "one slice of a planned purchase",
+     "the total budget is split into parts bought at different times or prices instead of all at once",
+     r"\btranches?\b"),
     ("52wk range", "52-week range",
      "the lowest and highest prices of the past year",
      r"\b52[- ]?(?:wk|week)\b"),
@@ -169,7 +172,7 @@ GLOSSARY = [
 
 # Terms matched as written: "PAT" must not fire on "pat", "TP" not on "tp".
 # The rest are ordinary words and match in any case.
-CASE_INSENSITIVE = {"Run-rate P/E", "Capex", "Beta", "52wk range", "Promoters", "Pledge", "Debt/EBITDA"}
+CASE_INSENSITIVE = {"Run-rate P/E", "Tranche", "Capex", "Beta", "52wk range", "Promoters", "Pledge", "Debt/EBITDA"}
 
 
 def terms_in(text):

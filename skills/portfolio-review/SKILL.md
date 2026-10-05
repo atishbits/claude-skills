@@ -15,6 +15,7 @@ allowed-tools:
   - Bash(python3 *rating_ledger.py*)
   - Bash(python3 *calendar_notes.py*)
   - Bash(python3 *glossary.py*)
+  - Bash(python3 *entry_plan.py*)
   - Bash(python3 *multibagger_screen.py*)
   - Bash(python3 *scan_history.py*)
   - Bash(curl *)
@@ -180,6 +181,9 @@ For each ticker being researched (named in the request, or on the shortlist from
    - `market_risk` — `beta` against the Nifty with the `r2` that says how much of the move the
      index explains, and `technicals.max_drawdown_1y_pct` alongside it.
    - `weight_pct`, `sector_name`, `sector_weight_pct`, `sector_peers`
+3. **The entry budget**, if one is saved: `python3 ${CLAUDE_SKILL_DIR}/scripts/entry_plan.py TICKER`
+   prints the user's budget for this stock, how much of it is in, and which tranches are left
+   (3e). It exits saying none is saved if there isn't one.
 
 ### 3b. Validate the data before reasoning from it
 
@@ -542,6 +546,36 @@ Everything else below is weighed together, not ranked against each other by a fi
   reads "Now: nothing" is a HOLD: if the reason not to add today is position size or a result due
   in a few weeks, rate it HOLD and name the trigger. VGUARD's 30 Sep 2026 note was a BUY with
   nothing to buy, and the user came back five days later asking whether to buy more.
+- **Every BUY carries an entry plan from the script, not a lump sum sized by feel:**
+
+  ```
+  python3 ${CLAUDE_SKILL_DIR}/scripts/entry_plan.py TICKER --budget RUPEES
+  python3 ${CLAUDE_SKILL_DIR}/scripts/entry_plan.py TICKER --target-weight-pct N
+  ```
+
+  The budget is the user's number, and it is remembered: the first run with `--budget` (or
+  `--target-weight-pct`) saves it to `data/skill-data/entry-budgets.json`, and every later run
+  with the ticker alone reads it back and counts what has been invested since against the
+  tranches. So **run it with no flag first, on every review of a holding** — a saved budget
+  changes what "add" means, and the user should never have to restate one. If none is saved, ask;
+  never assume one from the size of the first purchase. If part of a budget being recorded has
+  already been bought, pass `--spent-so-far`. On 5 Oct 2026 a VGUARD review reasoned from the
+  ₹20K already in as if it were the whole plan, when the user's budget was ₹50K and nothing had
+  written it down. If the stock is
+  falling (below its 200 DMA and well off its 60-day high — the script prints the test), it splits
+  the budget into three tranches: one now, one at a named lower level or on a fallback date, one
+  only after the next result. Otherwise it prints a single purchase. Put its tranches in the
+  Action line and the scorecard as printed. Three things it does not do for you:
+  - **The last tranche is conditional, and you are the condition.** When the result lands, re-run
+    the review; if the deciding sentence no longer holds, say the remaining tranches are cancelled.
+    Staged buying without that check is averaging into a value trap.
+  - **Never say the stock is near its low.** The plan exists because the low cannot be seen in
+    advance; it spreads money across levels and across the result, it does not time a bottom.
+  - **The budget does not grow because the price fell.** A later tranche buys more shares for the
+    same rupees. Enlarging the total is a new decision with its own review, and "it is cheaper than
+    where I bought" is the cost-basis argument the first rule in this list already bans.
+  VGUARD's 28 Sep 2026 BUY went in as one purchase after the stock had dropped 10% in two weeks,
+  with a result a month away; this is the rule that run lacked.
 - **Materiality.** If the position is under ~0.5% of the book, the Action must say whether to build
   it toward a named target weight or leave it as it is. A one-share add to a 0.2% position is not a
   recommendation. Zerodha delivery has no brokerage, so this is about the position mattering, not
@@ -610,7 +644,7 @@ As of: <data fetch date/time> | Purchase (if one happened this run): <date/time,
 P/E N<x> (run-rate N<x> if it diverges), ROE N%, ROCE N%
 Consensus <rating>, avg TP ₹N = N% <upside|downside> (<date>, <M> of <N> post-result — or "unavailable" per 3c)
 3-Year case: base N% vs bear N% vs Nifty hurdle N%/yr — <clears|doesn't clear>    [BUY/SELL only, from three_year_case.py]
-Action: <what was done or should be done, per 3e>
+Action: <what was done or should be done, per 3e — for a BUY, the entry_plan.py tranches>
 Next check-in: <date/time, if a calendar reminder exists or was just set>
 ```
 
