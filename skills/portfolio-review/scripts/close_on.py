@@ -21,8 +21,16 @@ ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 CACHE_DIR = os.path.join(ROOT, "data", "skill-data", ".cache")
 
 
+def daily_chart_files(ticker, cache_dir=None):
+    """Cached daily charts for the ticker, oldest first. The long-history chart
+    three_year_case.py caches beside them (`-chart-long-`) is weekly, so a
+    lookup against it returns the close up to a week before the date asked."""
+    files = glob.glob(os.path.join(cache_dir or CACHE_DIR, f"{ticker}-chart-*.json"))
+    return sorted(f for f in files if "-chart-long-" not in os.path.basename(f))
+
+
 def closes(ticker):
-    files = sorted(glob.glob(os.path.join(CACHE_DIR, f"{ticker}-chart-*.json")))
+    files = daily_chart_files(ticker)
     if not files:
         sys.exit(f"No cached chart for {ticker} under {CACHE_DIR}.\n"
                  f"Run fetch_fundamentals.py {ticker} first (or --screen {ticker} if you "

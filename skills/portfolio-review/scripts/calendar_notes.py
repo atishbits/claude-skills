@@ -14,9 +14,11 @@ rows, both computed from data the skill already fetched in Step 1 -- no
 re-fetch, no network call of its own:
 
   - Next results window: the next quarter's end (last reported quarter end
-    plus 3 months) plus 45-75 days, the typical reporting lag for a listed
-    Indian company. Always an estimate, never a confirmed filing date --
-    confirming the actual date is a news/WebSearch job, not this script's.
+    plus 3 months) plus 15-45 days -- listed Indian companies must file
+    quarterly results within 45 days of the quarter end, and 60 days when
+    that quarter closes the financial year. Always an estimate, never a
+    confirmed filing date -- confirming the actual date is a news/WebSearch
+    job, not this script's.
   - Price re-look levels: the 200 DMA (or 50 DMA, where 200 is unreliable)
     and the 60-day low from `technicals`, flagged DUE NOW when today's price
     is within ~3% of the level, otherwise listed as a standing watch level.
@@ -32,8 +34,12 @@ ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 DATA_DIR = os.path.join(ROOT, "data", "skill-data")
 CALENDAR_PATH = os.path.join(DATA_DIR, "calendar.md")
 
-RESULTS_LAG_MIN_DAYS = 45
-RESULTS_LAG_MAX_DAYS = 75
+# The filing deadline is 45 days after a quarter end, 60 after the quarter that
+# closes the financial year; few companies report inside the first fortnight.
+RESULTS_LAG_MIN_DAYS = 15
+RESULTS_LAG_MAX_DAYS = 45
+RESULTS_LAG_MAX_DAYS_YEAR_END = 60
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 NEAR_LEVEL_PCT = 3.0
 
 
@@ -46,22 +52,25 @@ def newest_snapshot(data_dir=None):
         return json.load(fh), files[-1]
 
 
-def next_results_window(latest_quarter_end):
-    """(start, end) dates for the next results window, from the last quarter
-    end plus the typical reporting lag. `latest_quarter_end` is 'YYYY-MM-DD'
-    for the quarter just reported; the next quarter ends 3 months later, and
-    that quarter's results follow it by RESULTS_LAG_MIN..MAX_DAYS days."""
-    y, m, d = (int(x) for x in latest_quarter_end.split("-"))
+def next_results_window(latest_quarter_end, fiscal_year_end="Mar"):
+    """(next quarter end, start, end) for the next results window.
+    `latest_quarter_end` is 'YYYY-MM-DD' for the quarter just reported; the
+    next quarter ends 3 months later, and its results follow within
+    RESULTS_LAG_MIN..MAX_DAYS days -- or the longer year-end deadline when
+    that quarter ends in `fiscal_year_end` (a month abbreviation, as the
+    snapshot stores it)."""
+    y, m, _ = (int(x) for x in latest_quarter_end.split("-"))
     next_month = m + 3
     next_year = y + (next_month - 1) // 12
     next_month = ((next_month - 1) % 12) + 1
-    # Clamp the day for a target month shorter than the source day (e.g. Dec
-    # 31 + 3mo lands in Mar, which has 31, but Jun 30 + 3mo lands in Sep,
-    # which only has 30).
-    last_day_of_month = _cal.monthrange(next_year, next_month)[1]
-    next_quarter_end = date(next_year, next_month, min(d, last_day_of_month))
-    return (next_quarter_end + timedelta(days=RESULTS_LAG_MIN_DAYS),
-            next_quarter_end + timedelta(days=RESULTS_LAG_MAX_DAYS))
+    # A quarter ends on its month's last day, whatever day the previous one
+    # ended on: Sep 30 + 3 months is Dec 31, not Dec 30.
+    next_quarter_end = date(next_year, next_month, _cal.monthrange(next_year, next_month)[1])
+    year_end = MONTHS[next_month - 1] == (fiscal_year_end or "Mar")[:3].title()
+    max_days = RESULTS_LAG_MAX_DAYS_YEAR_END if year_end else RESULTS_LAG_MAX_DAYS
+    return (next_quarter_end,
+            next_quarter_end + timedelta(days=RESULTS_LAG_MIN_DAYS),
+            next_quarter_end + timedelta(days=max_days))
 
 
 def near_level(current_price, level, pct_threshold=NEAR_LEVEL_PCT):
@@ -76,8 +85,8 @@ def price_level_rows(ticker, price, technicals):
         rows.append(("200 DMA", technicals["dma200"]))
     elif technicals.get("dma50"):
         rows.append(("50 DMA", technicals["dma50"]))
-    if technicals.get("range_60d_low"):
-        rows.append(("60-day low", technicals["range_60d_low"]))
+    if technicals.get("recent_low_60d"):
+        rows.append(("60-day low", technicals["recent_low_60d"]))
     out = []
     for label, level in rows:
         due_now = near_level(price, level)
@@ -100,12 +109,12 @@ def build_rows(stocks, tickers=None):
         price = s.get("price")
         lqe = s.get("latest_quarter_end")
         if lqe:
-            start, end = next_results_window(lqe)
+            qe, start, end = next_results_window(lqe, s.get("fiscal_year_end"))
             rows.append({
                 "ticker": ticker, "kind": "results-estimate",
                 "detail": (f"Next results likely due {start.isoformat()} to {end.isoformat()} "
-                           f"(estimate, {RESULTS_LAG_MIN_DAYS}-{RESULTS_LAG_MAX_DAYS}d after the "
-                           f"{lqe} quarter end) -- confirm the date before relying on it."),
+                           f"(estimate, {(start - qe).days}-{(end - qe).days}d after the "
+                           f"{qe.isoformat()} quarter end) -- confirm the date before relying on it."),
                 "due_now": False,
             })
         rows.extend(price_level_rows(ticker, price, s.get("technicals") or {}))
