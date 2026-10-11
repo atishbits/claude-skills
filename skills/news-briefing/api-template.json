@@ -1,0 +1,7 @@
+{
+  "url_template": "https://api.example.com/v1/news?apikey={key}&q={query}&from={start_date}",
+  "key": "PASTE-KEY-HERE",
+  "items_path": "results",
+  "fields": {"title": "title", "url": "link", "published": "pubDate", "source": "source_name"},
+  "max_queries": 10
+}

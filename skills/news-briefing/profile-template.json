@@ -1,0 +1,21 @@
+{
+  "home": {"country": "Examplestan", "city": "Sampleville"},
+  "work": {"employer": "Example Corp", "industry": "software", "role": "engineer"},
+  "feeds": {
+    "global": ["https://news.example.com/world.xml"],
+    "home": ["https://news.example.com/examplestan.xml"],
+    "markets": ["https://news.example.com/markets.xml"],
+    "search": "https://news.example.com/search.xml?q={query}"
+  },
+  "portfolio_topics": [
+    {"name": "Example Industries", "kind": "company"},
+    {"name": "Example Finance", "kind": "issuer"},
+    {"name": "cement", "kind": "sector"}
+  ],
+  "interest_topics": [
+    {"name": "model railways", "why": "a hobby"},
+    {"name": "Example Corp", "why": "your employer"}
+  ],
+  "declined": [],
+  "updated": "2026-01-01T00:00:00Z"
+}
