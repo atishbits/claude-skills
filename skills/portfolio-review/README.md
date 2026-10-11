@@ -22,6 +22,7 @@ versus what it fetched:
 data/                              yours — the only files you provide
   broker_holdings_<date>.csv        a plain broker export, or
   broker-portfolio-<date>.md        a lot-level broker export (adds buy dates for LTCG)
+  slug-overrides.json              optional: {"SYMBOL-XX": "SLUG"} where your broker's symbol differs from the data source's
   skill-data/                      the skill's — fetched data and everything it writes
     .cache/                          the per-ticker fetch cache
     snapshot-<date>.json             the day's fundamentals snapshot

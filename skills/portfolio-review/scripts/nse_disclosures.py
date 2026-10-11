@@ -95,7 +95,7 @@ def pledge_summary(payload):
     r = rows[-1]
     # Two different numbers live in this payload and only one is the one that
     # matters. percSharesPledged counts every encumbered share in the company,
-    # including pledges by public shareholders -- one company shows 2.32% there
+    # including pledges by public shareholders -- one company shows about 2% there
     # with promoters having pledged nothing at all. The promoter figure is
     # percPromoterShares: promoter-pledged shares as a share of what promoters
     # hold. Deriving it by hand from numSharesPledged gives nonsense for a
@@ -278,7 +278,9 @@ def flags(nse):
 
 if __name__ == "__main__":
     import sys
-    for t in sys.argv[1:] or ["BAJFINANCE"]:
+    if not [a for a in sys.argv[1:] if not a.startswith("-")]:
+        sys.exit("usage: nse_disclosures.py TICKER ... [--refresh]")
+    for t in sys.argv[1:]:
         if t.startswith("-"):
             continue
         data = fetch(t.upper(), force="--refresh" in sys.argv)

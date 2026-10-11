@@ -361,5 +361,33 @@ class TestLatestHoldingsFile(unittest.TestCase):
                 ff.set_root(saved_root)
 
 
+class TestSlugOverrides(unittest.TestCase):
+    """The broker-symbol -> slug map is the user's own data/slug-overrides.json."""
+
+    def run_in(self, content):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_root = ff.ROOT
+            try:
+                ff.set_root(tmp)
+                os.makedirs(ff.DATA_DIR, exist_ok=True)
+                if content is not None:
+                    with open(os.path.join(ff.DATA_DIR, "slug-overrides.json"), "w") as fh:
+                        fh.write(content)
+                return ff.slug_overrides()
+            finally:
+                ff.set_root(saved_root)
+
+    def test_reads_the_map_and_uppercases_symbols(self):
+        self.assertEqual(self.run_in('{"examplea-rr": "EXAMPLEA"}'), {"EXAMPLEA-RR": "EXAMPLEA"})
+
+    def test_no_file_means_no_overrides(self):
+        self.assertEqual(self.run_in(None), {})
+
+    def test_unreadable_or_wrong_shape_means_no_overrides(self):
+        self.assertEqual(self.run_in("not json"), {})
+        self.assertEqual(self.run_in('["EXAMPLEA"]'), {})
+
+
 if __name__ == "__main__":
     unittest.main()

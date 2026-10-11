@@ -73,10 +73,19 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
 REQUEST_DELAY = 1.2
 BACKOFF = [5, 15, 45]
 
-# the broker symbol -> screener slug, where they disagree.
-SLUG_OVERRIDES = {
-    "EXAMPLEA-RR": "EXAMPLEA",
-}
+# Broker symbol -> screener slug, where they disagree. Which symbols need one
+# depends on what the user holds, so the map is the user's own file,
+# data/slug-overrides.json ({"SYMBOL-XX": "SLUG"}), and nothing is listed here.
+def slug_overrides():
+    try:
+        with open(os.path.join(DATA_DIR, "slug-overrides.json"), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k).upper(): str(v) for k, v in data.items()}
+
 
 # Lenders: ROCE is structurally low by the nature of the business, so quality is
 # judged on ROE alone. Screener's own sector tags are checked too, this list is
@@ -429,7 +438,7 @@ def fetch(ticker, session, stats, force=False):
         with open(cache, encoding="utf-8") as fh:
             return fh.read()
 
-    slugs = [SLUG_OVERRIDES.get(ticker, ticker)]
+    slugs = [slug_overrides().get(ticker, ticker)]
     tried_search = False
     while slugs:
         slug = slugs.pop(0)
