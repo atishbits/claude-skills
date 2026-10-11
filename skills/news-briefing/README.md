@@ -42,7 +42,12 @@ be read: export a spreadsheet instead.
 
 ## Setup
 
-1. Install the skill by linking this folder into your skills directory.
+1. Install the skill in one of three ways:
+   - As a plugin from this repository (see the repository README). It follows the repository, so
+     a new version arrives when the plugin is updated.
+   - By linking this folder into your skills directory.
+   - Where neither works, by uploading the bundle `python3 scripts/package.py` builds. A bundle
+     is a snapshot: rebuild and upload it again after each change.
 2. Ask for a briefing. With no profile, the skill runs onboarding: it fills in what it already
    knows about you, shows you that list to correct, and asks only for what is left. You can skip
    any question.

@@ -1,0 +1,19 @@
+{
+  "name": "atishbits-claude-skills",
+  "description": "Skills from this repo that work on any surface, installable as plugins",
+  "owner": {
+    "name": "Atish Kathpal"
+  },
+  "plugins": [
+    {
+      "name": "news-briefing",
+      "description": "A personal news briefing: global news, home-country news, news touching what you hold, and news on your interests, since the briefing last ran",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/news-briefing"
+      ],
+      "homepage": "https://github.com/atishbits/claude-skills"
+    }
+  ]
+}

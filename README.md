@@ -56,6 +56,17 @@ skills/
 4. Keep the invariant above: no real data in examples, and anything the skill generates from a
    user's own files belongs in `.gitignore`
 
+## Installing as a plugin
+
+`.claude-plugin/marketplace.json` makes this repository a plugin source. It lists only the skills
+that work without a local project folder; today that is `news-briefing`.
+
+    /plugin install news-briefing --marketplace atishbits/claude-skills
+
+An installed plugin follows this repository: update the plugin to get the latest commit. The
+other skills read a working folder on your own machine and are installed by symlink, as described
+above.
+
 ## License
 
 [MIT](LICENSE). Take these, fork them, adapt them.
