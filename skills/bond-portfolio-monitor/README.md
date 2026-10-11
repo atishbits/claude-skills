@@ -1,6 +1,6 @@
 # bond-portfolio-monitor
 
-Monitors a bond portfolio held on the bond platform and screens the bonds on sale there. Python scripts
+Monitors a bond portfolio held on an online bond platform and screens the bonds on sale there. Python scripts
 do the arithmetic; the skill does the credit research and gives ENTER / SKIP verdicts on new bonds
 and HOLD / REVIEW / EXIT on what you hold. It never places an order.
 
@@ -10,14 +10,20 @@ and HOLD / REVIEW / EXIT on what you hold. It never places an order.
 
 | Input | Where it comes from | Needed for |
 |---|---|---|
-| holdings report (`data/holdings-report-<date>.xlsx`) | the platform: account menu -> the reports page -> holdings report | Everything. It carries five sheets: holdings, upcoming cash flows, repayments received, purchases, sales |
+| Holdings report (`data/holdings-report-<date>.xlsx`) | The platform's reports page, as a workbook | Everything. It carries five sheets: holdings, upcoming cash flows, repayments received, purchases, sales |
 | Your limits (`data/profile.json`) | Copy `profile-template.json` and edit it: tax slab, rating floor, tenure ceiling, issuer and rating-bucket caps, whether unsecured or subordinated paper is allowed | Limit breaches and screening |
 | Optional, in the same file: `effective_tax_rate_pct` and `tax_multiplier` | Your slab plus cess and any surcharge (for example 31.2 for the 30% slab with 4% cess), and the surcharge-and-cess multiplier on its own. If you use the `advance-tax` skill, `scripts/tax_profile.py --tax-profile <your tax-profile.json> --person NAME --write` fills both from the rates you already keep there | A closer post-tax yield and exit tax; without them the bare slab is used |
 | Optional, in the same file: `annual_investment_budget` and `min_ytm_pct` | The most you will put into new bonds in a financial year (April to March), and the lowest yield worth buying | The screener rejects bonds under the yield floor, counts what you have already invested this year, and caps each purchase at what is left |
-| Optional, in the same file: `total_investable` | Everything you invest, in rupees, not only what is on the platform | Measuring the issuer and rating-bucket caps against your whole portfolio; without it they are a share of the the platform book alone, which is looser than it sounds if the platform is a small part of your money |
+| Optional, in the same file: `total_investable` | Everything you invest, in rupees, not only what is on the platform | Measuring the issuer and rating-bucket caps against your whole portfolio; without it they are a share of the bond book alone, which is looser than it sounds if the platform is a small part of your money |
 | A second holdings report, some weeks later | Same download, kept alongside the first | Checking that payments due in between actually arrived |
 
-Save the report under the name above: the name the platform gives it carries your phone number.
+Save the report under the name above: the name it downloads under can carry your phone number.
+
+The skill names no platform. Which one you use, the address of its listings page and where its
+report is downloaded go in `data/notes.md`, which is gitignored and which the skill reads at the
+start of a run (it asks, and writes the file, the first time). The workbook's sheet and column
+names are in `config.json` under `report_columns`: a platform whose report has the same five
+sheets works once those names match.
 
 **From the session Claude runs in**
 
@@ -40,7 +46,7 @@ anything.
 
 ## What you get
 
-Ask "review my the platform portfolio", "what is due this quarter", "is Alpha Finance still safe", or
+Ask "review my bond portfolio", "what is due this quarter", "is Alpha Finance still safe", or
 "what should I buy with the money coming back". A full review ends with a short summary in the
 conversation and a dated folder on disk. The example below uses invented issuers and round
 numbers.
@@ -123,8 +129,9 @@ its verdict history.
 
 data/                        gitignored: yours
   profile.json                 your limits
-  holdings-report-<date>.xlsx   the holdings report you downloaded
-  bond-listings-<time>.json        listings captures
+  notes.md                     which platform, its listings page, where its report is
+  holdings-report-<date>.xlsx  the holdings report you downloaded
+  bond-listings-<time>.json    listings captures
   skill-data/                  everything the scripts write
     snapshot-<date>.json         normalised holdings and cash flows
     listings-<time>.json         normalised listings capture
@@ -147,7 +154,7 @@ mkdir -p skills/bond-portfolio-monitor/data
 cp skills/bond-portfolio-monitor/profile-template.json skills/bond-portfolio-monitor/data/profile.json
 ```
 
-Then put the holdings report in `skills/bond-portfolio-monitor/data/` and ask Claude to review your the platform
+Then put the holdings report in `skills/bond-portfolio-monitor/data/` and ask Claude to review your bond
 portfolio, or run `/bond-portfolio-monitor`.
 
 Python 3 only; no packages. Browser capture needs Claude in Chrome.

@@ -58,7 +58,7 @@ def group_of(facts, issuer):
 
 def upsert(facts, isin=None, bond_id=None, **fields):
     if not isin and not bond_id:
-        raise ValueError("a fact needs an ISIN or a the platform bond id")
+        raise ValueError("a fact needs an ISIN or a platform bond id")
     unknown = [k for k in fields if k not in FIELDS]
     if unknown:
         raise ValueError(f"unknown fact field(s): {unknown}")

@@ -5,7 +5,7 @@
 ## Bond facts
 | | |
 |---|---|
-| ISIN / the platform bond id | <ISIN> / <id> |
+| ISIN / platform bond id | <ISIN> / <id> |
 | Rating, agency | <rating>, <agency> |
 | Rating action / outlook | <none | watch negative | outlook ... > as of <date> |
 | Secured, seniority, collateral | <...> |

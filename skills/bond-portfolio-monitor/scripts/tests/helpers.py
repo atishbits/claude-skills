@@ -1,5 +1,5 @@
 """Test helpers: build a small .xlsx in memory-free stdlib code, and a sample
-holdings report shaped like the platform's (identity preamble, header on row 8, a side
+holdings report in the expected layout (identity preamble, header on row 8, a side
 table, repeated financial-year blocks, a trailing disclaimer). Every issuer,
 ISIN and amount here is invented."""
 import zipfile
@@ -44,7 +44,7 @@ def make_xlsx(path, sheets):
             f'<Relationships xmlns="{PKG}">{"".join(rel_tags)}</Relationships>')
 
 
-PREAMBLE = [[], ["the bond platform"], ["Name", "Asha Example"], ["Phone Number", "0000000000"],
+PREAMBLE = [[], ["Example Bonds"], ["Name", "Asha Example"], ["Phone Number", "0000000000"],
             ["Email", "asha@example.com"], [" "]]
 DISCLAIMER = ["Disclaimer: The document is for informational purposes only."]
 

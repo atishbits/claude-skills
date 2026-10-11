@@ -98,7 +98,7 @@ def cap_basis(profile):
     """What the issuer and rating-bucket caps are a share of."""
     total = profile.get("total_investable")
     return (f"total investable of {total} (profile)" if total
-            else "the the platform portfolio alone (set total_investable in the profile to measure "
+            else "the bond portfolio alone (set total_investable in the profile to measure "
                  "caps against everything you invest)")
 
 

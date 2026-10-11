@@ -1,11 +1,11 @@
 ---
 name: bond-portfolio-monitor
 description: >-
-  Monitor a the bond platform bond portfolio and screen the bonds on sale there. Ingests the portal's
-  holdings report and a capture of the live listings, summarises holdings and cash flows, checks
+  Monitor a bond portfolio held on an online bond platform and screen the bonds on sale there.
+  Ingests the platform's holdings report and a capture of its live listings, summarises holdings and cash flows, checks
   that repayments arrived, shortlists new bonds against the investor's own limits, and gives
   ENTER / SKIP and HOLD / REVIEW / EXIT verdicts with sources. Use when the user asks about their
-  the bond platform bonds: what they hold, what is due, whether a bond is still safe, what to buy with
+  bonds: what they hold, what is due, whether a bond is still safe, what to buy with
   money coming back, or whether to exit.
 argument-hint: "[issuer ...] | buy | refresh"
 allowed-tools:
@@ -32,9 +32,15 @@ allowed-tools:
 
 Request for this run: **$ARGUMENTS**
 
-You are helping with a bond portfolio held on the bond platform. Everything you say is advisory.
-**Never invest, sell, sign Form 121, or change anything on the portal.** On the portal you only
-read pages and run the capture snippet below.
+You are helping with a bond portfolio held on an online bond platform. Everything you say is
+advisory. **Never invest, sell, sign Form 121, or change anything on the portal.** On the portal
+you only read pages and run the capture snippet below.
+
+**Which platform.** This file names none. Read `${CLAUDE_SKILL_DIR}/data/notes.md` before Step 1:
+it is the user's own, gitignored, and says which platform they use, the address of its listings
+page, where its holdings report is downloaded and what the download is called. If it is missing,
+ask the user for those four things and write the file before going on. Never copy what it says
+into a file outside `data/`.
 
 **Where things live.** Run every command from `${CLAUDE_SKILL_DIR}`. Everything personal sits under
 `${CLAUDE_SKILL_DIR}/data/`, which is gitignored: `data/profile.json` (the user's limits),
@@ -61,11 +67,12 @@ Do not recompute a share, a YTM, a tax amount or a date difference yourself.
 
 ## Step 1: get the data in
 
-**Holdings.** Ask the user to download the holdings report (account menu -> Reports and documents ->
-holdings report), then move it into `data/` under a name without the phone number the platform puts in it:
+**Holdings.** Ask the user to download the holdings report (`data/notes.md` says where on the
+portal), then move it into `data/` under a name that carries no phone number or account id, which
+the download's own name may:
 
 ```
-mv ~/Downloads/Holdings_Report_*.xlsx data/holdings-report-$(date +%F).xlsx
+mv ~/Downloads/<the downloaded workbook> data/holdings-report-$(date +%F).xlsx
 ```
 
 Then:
@@ -80,7 +87,8 @@ password is the user's PAN.
 
 **Listings** (only when the request needs them). With the user logged in to the platform in Chrome:
 
-1. Open `https://bonds.example/bonds/listing/` in a new tab and wait for the cards to load.
+1. Open the listings page (its address is in `data/notes.md`) in a new tab and wait for the cards
+   to load.
 2. Run the contents of `${CLAUDE_SKILL_DIR}/capture-listings.js` in that tab, once. It reads the
    cards already on the page and saves `bond-listings-<time>.json` to Downloads.
 3. `mv ~/Downloads/bond-listings-*.json data/`
@@ -123,8 +131,8 @@ Then report, briefly: totals and weighted YTM; any limit breach (issuers in one 
 together); what is due in the lookahead window; `principal_ahead` from `cashflows.py` (principal
 returning over the longer horizon, by month, and its share of the book), since that is the
 reinvestment to plan for; unrated holdings; `ratings_not_for_this_bond`; anything
-`diff_snapshots.py` flags. Say when the book is concentrated in one sector: every bond on the platform is
-lender paper, so reinvesting there does not diversify it.
+`diff_snapshots.py` flags. Say when the book is concentrated in one sector: if every bond on sale
+is lender paper, reinvesting there does not diversify it.
 
 - **`repayment_check.py` says "no baseline yet" or "nothing was checkable"**: say exactly that.
   It is not a clean result.
@@ -162,7 +170,7 @@ For each bond you take forward (at most five unless asked for more):
    collateral type, seniority (for example "Senior secured bond"), listed or not, coupon, and
    maturity date. Never click "Invest Now". Record what you find:
    `python3 scripts/bond_facts.py set --bond-id ID --isin ISIN --issuer NAME --rating R --rating-scope "this bond" --agency A --secured yes|no --seniority senior|subordinated --listed yes|no --source URL`
-   the platform's page is the seller's page: good for the bond's terms, **not a source for its credit**.
+   The platform's page is the seller's page: good for the bond's terms, **not a source for its credit**.
    It shows one agency's grade and a date; it cannot show a watch, a second agency's view, or
    asset quality, and its listing cards have been seen to disagree with the agency.
    Then **re-run `screen_listings.py`**: the recorded facts now go through the hard filters, and

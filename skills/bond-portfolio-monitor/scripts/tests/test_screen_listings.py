@@ -234,7 +234,7 @@ class TestRecordedRatingAndTaxBasis(unittest.TestCase):
 
 class TestTotalInvestable(unittest.TestCase):
     def test_caps_are_measured_against_everything_invested_when_given(self):
-        # Alpha is 80000 of a 100000 the platform book, but 8% of 1,000,000 invested overall.
+        # Alpha is 80000 of a 100000 bond book, but 8% of 1,000,000 invested overall.
         result = run([listing(issuer="Alpha Finance")], profile=profile(total_investable=1_000_000))
         row = result["shortlist"][0]
         # 15% of 1,000,000 less the 80000 already held; the base does not grow with the purchase
@@ -242,7 +242,7 @@ class TestTotalInvestable(unittest.TestCase):
         self.assertIn("1000000", result["cap_basis"])
 
     def test_without_it_the_basis_is_the_bond_book(self):
-        self.assertIn("the platform", run([listing()])["cap_basis"])
+        self.assertIn("bond portfolio alone", run([listing()])["cap_basis"])
 
 
 

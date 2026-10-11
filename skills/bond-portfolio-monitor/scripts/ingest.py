@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn what the user brings from the bond platform into the normalised files every
+"""Turn what the user brings from their bond platform into the normalised files every
 other script reads.
 
     python3 scripts/ingest.py reports  [--file REPORT.xlsx] [--root PATH] [--date YYYY-MM-DD]
@@ -8,12 +8,13 @@ other script reads.
 `listings` reads the file capture-listings.js saved from the listings page,
 checks its SHA-256 against the rows, and writes data/skill-data/listings-<time>.json.
 
-`reports` reads the holdings report workbook (the reports page -> holdings
-report on the portal) and writes data/skill-data/snapshot-<date>.json.
+`reports` reads the holdings report workbook the platform lets the user
+download and writes data/skill-data/snapshot-<date>.json.
 
 Both commands read what the user put in data/ (the newest *.xlsx, the newest
 bond-listings-*.json) unless --file says otherwise. Save the report there as
-holdings-report-<date>.xlsx: the name the platform gives it carries a phone number.
+holdings-report-<date>.xlsx: the name it downloads under can carry a phone
+number. A listing's URL is the capture's own `origin` plus the card's path.
 
 Columns are found by the header names in config.json's `report_columns`, never
 by position. A missing or renamed header stops the run and says which one; an
@@ -149,7 +150,6 @@ LISTING_KEYS = ["href", "issuer", "rating", "min", "sold", "ytm_label", "ytm", "
 MONEY = re.compile(r"₹\s*(\d[\d,]*(?:\.\d+)?)\s*(k|lakhs?|cr|crores?)?\s*$", re.IGNORECASE)
 MULTIPLIER = {"": 1, "k": 1_000, "lakh": 100_000, "lakhs": 100_000, "cr": 10_000_000,
               "crore": 10_000_000, "crores": 10_000_000}
-SITE = "https://bonds.example"
 
 
 def rows_checksum(rows):
@@ -202,7 +202,7 @@ def _percent(text):
     return common.parse_num(text) if text.endswith("%") else None
 
 
-def normalise_listing(row):
+def normalise_listing(row, origin=""):
     warnings = []
     href = row["href"]
     bond = re.search(r"-(\d+)/?(?:\?|$)", href)
@@ -215,7 +215,7 @@ def normalise_listing(row):
         "key": href,
         "bond_id": bond.group(1) if bond else None,
         "tenure_id": tenure.group(1) if tenure else None,
-        "url": SITE + href,
+        "url": origin + href,
         "issuer": row["issuer"],
         "rating": re.sub(r"\s*\(.*\)", "", row["rating"]).strip() or None,
         "rating_raw": row["rating"],
@@ -258,7 +258,7 @@ def build_listings(capture, check_sum=True, allow_partial=False):
             "Recapture, or pass --allow-partial to use it anyway.")
     listings, warnings = [], []
     for row in capture["rows"]:
-        item, row_warnings = normalise_listing(row)
+        item, row_warnings = normalise_listing(row, capture.get("origin") or "")
         listings.append(item)
         warnings.extend(row_warnings)
     if stated is not None and stated != len(listings):
@@ -269,9 +269,9 @@ def build_listings(capture, check_sum=True, allow_partial=False):
 
 
 def _find_capture(root):
-    found = glob.glob(os.path.join(root, "data", "bond-listings-*.json"))
+    found = glob.glob(os.path.join(root, "data", "*listings-*.json"))
     if not found:
-        raise IngestError("No bond-listings-*.json in data/. Run capture-listings.js on the "
+        raise IngestError("No *listings-*.json capture in data/. Run capture-listings.js on the "
                           "listings page, move the file it saves into data/, or pass --file.")
     return max(found, key=os.path.getmtime)
 
@@ -297,8 +297,8 @@ def _find_report(root):
     found = glob.glob(os.path.join(root, "data", "*.xlsx"))
     if not found:
         raise IngestError(
-            "No holdings report in data/. Download it from the reports page -> holdings "
-            "Report, move it to data/holdings-report-<date>.xlsx, or pass --file.")
+            "No holdings report in data/. Download it from the platform, move it to "
+            "data/holdings-report-<date>.xlsx, or pass --file.")
     return max(found, key=os.path.getmtime)
 
 

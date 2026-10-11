@@ -16,7 +16,7 @@ data/profile.json. Steps, in order:
      surcharge), else the bare slab. It is an approximation, good for ranking.
   4. Concentration: how much could be bought before the issuer (or its group)
      or its rating bucket goes over the profile's cap. Nothing fits -> rejected.
-     Caps are a share of the the platform portfolio, or of the profile's
+     Caps are a share of the bond portfolio, or of the profile's
      total_investable if that is set.
      The rating used throughout is the one recorded in bond-facts.json when
      there is one; the listing card's rating is only the fallback.

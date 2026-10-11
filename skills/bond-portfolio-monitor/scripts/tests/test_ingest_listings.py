@@ -54,9 +54,23 @@ class TestChecksum(unittest.TestCase):
         self.assertIn("email", str(ctx.exception))
 
 
+
+class TestOrigin(unittest.TestCase):
+    """A listing's URL is built from the origin the capture recorded, so no
+    site is named in the code."""
+
+    def test_url_uses_the_captures_origin(self):
+        doc = ingest.build_listings(capture([row()], origin="https://bonds.example"))
+        self.assertTrue(doc["listings"][0]["url"].startswith("https://bonds.example/bonds/listing/"))
+
+    def test_a_capture_without_an_origin_keeps_the_path(self):
+        doc = ingest.build_listings(capture([row()]))
+        self.assertEqual(doc["listings"][0]["url"], row()["href"])
+
+
 class TestNormalise(unittest.TestCase):
     def test_plain_card(self):
-        item, warnings = ingest.normalise_listing(row())
+        item, warnings = ingest.normalise_listing(row(), origin="https://bonds.example")
         self.assertEqual(warnings, [])
         self.assertEqual(item["key"], "/bonds/listing/Alpha-Finance-101?productTenureId=77")
         self.assertEqual(item["bond_id"], "101")

@@ -34,7 +34,7 @@ const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bo
 const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 const captured_at = new Date().toISOString();
 const payload = JSON.stringify({
-  schema: 1, captured_at, source: location.pathname,
+  schema: 1, captured_at, origin: location.origin, source: location.pathname,
   stated_live_count: live ? Number(live[1]) : null, sha256, rows,
 });
 const name = 'bond-listings-' + captured_at.replace(/[:.]/g, '-') + '.json';

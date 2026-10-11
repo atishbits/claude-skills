@@ -3,7 +3,7 @@
     "early_exit_deduction_pct": {
       "value": 1.0,
       "as_of": "2026-10-02",
-      "source": "https://bonds.example/bonds/listing/",
+      "source": "the platform's listings page",
       "note": "Portal banner: selling early carries a 1% deduction. The base it applies to is not stated; exit_cost.py treats it as 1% of current value and labels the result an estimate."
     }
   },

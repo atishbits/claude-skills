@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "captured_at": "2026-01-01T09:00:00.000Z",
+  "origin": "",
   "source": "manual",
   "stated_live_count": null,
   "sha256": "",
