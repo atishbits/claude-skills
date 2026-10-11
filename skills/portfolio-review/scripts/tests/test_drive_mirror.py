@@ -185,8 +185,8 @@ class InboxTests(DataDirCase):
         self.assertEqual(dm.pending(self.state), ["trade.md"])
 
     def test_native_document_is_saved_as_markdown(self):
-        self.drive._add(self.remote_inbox, "TESTCO decision", b"# x", dm.DOC_MIME)
-        self.assertEqual(self.pull(), ["TESTCO decision.md"])
+        self.drive._add(self.remote_inbox, "ABCD decision", b"# x", dm.DOC_MIME)
+        self.assertEqual(self.pull(), ["ABCD decision.md"])
 
     def test_remote_name_cannot_escape_the_inbox_folder(self):
         self.drive._add(self.remote_inbox, "../../PORTFOLIO.md", b"evil", "text/markdown")
@@ -217,8 +217,8 @@ class InboxTests(DataDirCase):
 
 class LocalNameTests(unittest.TestCase):
     def test_keeps_an_ordinary_name(self):
-        self.assertEqual(dm.local_name("2026-10-20 TESTCO-decision.md", "text/markdown", set()),
-                         "2026-10-20 TESTCO-decision.md")
+        self.assertEqual(dm.local_name("2026-10-20 ABCD-decision.md", "text/markdown", set()),
+                         "2026-10-20 ABCD-decision.md")
 
     def test_hidden_and_empty_names_become_visible(self):
         self.assertEqual(dm.local_name(".env", "text/plain", set()), "env")
@@ -238,7 +238,7 @@ class FolderIdTests(unittest.TestCase):
 
     def test_rejects_anything_else(self):
         with self.assertRaises(ValueError):
-            dm.folder_id_from("ROOT FOLDER/claude")
+            dm.folder_id_from("Some Folder/sub")
 
 
 class Transport:
