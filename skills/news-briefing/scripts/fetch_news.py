@@ -24,6 +24,7 @@ from email.utils import parsedate_to_datetime
 import user_profile
 from common import data_dir, format_ts, parse_ts
 
+FEED_ROOTS = ("rss", "feed", "rdf")
 TRACKING = re.compile(r"^(utm_.*|fbclid|gclid|mc_cid|mc_eid|ref|cmpid|ocid)$", re.I)
 MAX_BYTES = 5_000_000
 PER_SECTION = 40
@@ -64,8 +65,11 @@ def parse_feed(body):
         body = body.encode("utf-8")
     if b"<!ENTITY" in body:
         raise ValueError("feed declares XML entities; refused")
+    root = ET.fromstring(body)
+    if _local(root.tag) not in FEED_ROOTS:
+        raise ValueError("not an RSS or Atom document")
     items = []
-    for node in ET.fromstring(body).iter():
+    for node in root.iter():
         if _local(node.tag) not in ("item", "entry"):
             continue
         title = link = published = None
@@ -93,7 +97,12 @@ def parse_feed(body):
 
 
 def host(url):
-    name = urllib.parse.urlsplit(url).netloc.lower()
+    """The site a link points at, without any user name, password or port: this
+    is what gets printed when a source fails."""
+    try:
+        name = urllib.parse.urlsplit(url).hostname or ""
+    except ValueError:
+        return ""
     return name[4:] if name.startswith("www.") else name
 
 
@@ -128,9 +137,12 @@ def dedupe(items):
 
 
 def match_topic(title, topics):
-    """The first topic whose name appears in the title as whole words."""
+    """The first topic whose name appears in the title as whole words. A name
+    written all in capitals is an abbreviation and must match in capitals, so
+    that a two-letter one is not found in every sentence."""
     for topic in topics:
-        if re.search(r"(?<!\w)" + re.escape(topic["name"]) + r"(?!\w)", title, re.I):
+        flags = 0 if topic["name"].isupper() else re.I
+        if re.search(r"(?<!\w)" + re.escape(topic["name"]) + r"(?!\w)", title, flags):
             return topic
     return None
 

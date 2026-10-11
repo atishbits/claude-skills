@@ -160,7 +160,8 @@ Only where the user's files are on this machine.
    `python3 scripts/user_profile.py topics --holdings <path> [--kind issuer] [--column NAME]`.
    It reads the name column only. Where it returns ticker symbols, replace each with the company's
    common name, since that is what headlines use. Add the sectors that carry real weight as
-   `sector` topics.
+   `sector` topics. A name written all in capitals is matched only in capitals, so write an
+   abbreviation in capitals and an ordinary word in lower case.
 2. Interests: read the memory folders listed in `data/notes.md` and propose `interest_topics`,
    each with a short `why`. Include the employer and industry from the profile.
 3. Run Onboarding for anything still missing.

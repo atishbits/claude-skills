@@ -281,5 +281,47 @@ class TestApi(unittest.TestCase):
         self.assertNotIn("SECRETKEY", str(ctx.exception))
 
 
+class TestHostNeverCarriesCredentials(unittest.TestCase):
+    def test_userinfo_and_port_are_dropped(self):
+        self.assertEqual(fetch_news.host("https://reader:SECRETKEY@www.Example.com:8443/feed.xml"),
+                         "example.com")
+
+    def test_a_failing_feed_with_credentials_in_its_address_does_not_leak_them(self):
+        url = "https://reader:SECRETKEY@feeds.example.com/private.xml"
+        got = fetch_news.collect({"feeds": {"global": [url]}}, START, END, fetch=fake({}))
+        self.assertEqual(got["failed"], [{"source": "feeds.example.com", "error": "OSError"}])
+        self.assertNotIn("SECRETKEY", json.dumps(got))
+
+
+class TestNotAFeed(unittest.TestCase):
+    PAGE = "<html><head><title>Sign in</title></head><body><p>Please sign in</p></body></html>"
+
+    def test_a_well_formed_page_that_is_not_a_feed_raises(self):
+        with self.assertRaises(ValueError):
+            fetch_news.parse_feed(self.PAGE)
+
+    def test_collect_lists_it_as_failed_and_not_reachable(self):
+        got = fetch_news.collect({"feeds": {"global": [G]}}, START, END, fetch=fake({G: self.PAGE}))
+        self.assertEqual(got["failed"], [{"source": "news.example.com", "error": "ValueError"}])
+        self.assertFalse(got["reachable"])
+
+    def test_rdf_feeds_are_still_read(self):
+        rdf = ('<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+               'xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+               '<item><title>Story</title><link>https://news.example.com/r</link>'
+               '<dc:date>2026-10-09T10:00:00Z</dc:date></item></rdf:RDF>')
+        self.assertEqual(fetch_news.parse_feed(rdf)[0]["published"], parse_ts("2026-10-09T10:00:00Z"))
+
+
+class TestAcronymTopics(unittest.TestCase):
+    TOPICS = [{"name": "IT", "kind": "sector"}]
+
+    def test_an_all_capitals_name_does_not_match_the_ordinary_word(self):
+        self.assertIsNone(fetch_news.match_topic("Central bank says it will hold rates", self.TOPICS))
+
+    def test_an_all_capitals_name_matches_itself(self):
+        self.assertEqual(fetch_news.match_topic("IT exporters report results", self.TOPICS)["name"], "IT")
+
+
 if __name__ == "__main__":
     unittest.main()
