@@ -12,9 +12,14 @@
 The profile may hold only the fields listed here. That is deliberate: it is
 what keeps quantities, cost, values and account identifiers out of a file that
 is copied to a shared drive."""
+import argparse
+import csv
+import json
+import os
 import re
+import sys
 
-from common import parse_ts
+from common import data_dir, format_ts, now_utc, parse_ts, read_last_run
 
 ONBOARDING = ("home.country", "home.city", "work.employer", "work.industry", "work.role",
               "interest_topics")
@@ -25,6 +30,9 @@ TOP_KEYS = ("home", "work", "feeds", "portfolio_topics", "interest_topics", "dec
             "last_run", "updated")
 # An amount or an identifier that slipped into a name field looks like this.
 DIGITS = re.compile(r"\d{5,}")
+# Header names that mean "this column holds what the holding is called".
+NAME_HEADERS = ("instrument", "symbol", "ticker", "name", "company", "issuer", "security")
+SUMMARY_ROWS = ("total", "grand total", "totals")
 
 
 def _is_url(value):
@@ -114,3 +122,116 @@ def missing(profile):
         if not filled:
             out.append(field)
     return out
+
+
+def topics(paths, kind="company", column=None):
+    """Names from holdings files, and how many rows were skipped because the
+    name looked like an identifier. Only the name column is read; every other
+    column, whatever it holds, is ignored."""
+    names, skipped = set(), 0
+    for path in paths:
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            rows = list(csv.reader(fh))
+        if not rows:
+            continue
+        header = [h.strip().lower() for h in rows[0]]
+        if column:
+            if column.strip().lower() not in header:
+                raise ValueError(f"{path}: no column named {column}")
+            idx = header.index(column.strip().lower())
+        else:
+            idx = next((header.index(h) for h in NAME_HEADERS if h in header), 0)
+        for row in rows[1:]:
+            name = row[idx].strip() if idx < len(row) else ""
+            if not name or name.lower() in SUMMARY_ROWS:
+                continue
+            if DIGITS.search(name):
+                skipped += 1
+                continue
+            names.add(name)
+    return [{"name": n, "kind": kind} for n in sorted(names, key=str.lower)], skipped
+
+
+def latest(timestamps, now):
+    """The latest of the timestamps that is not after now, or None."""
+    usable = [t for t in timestamps if t <= now]
+    return max(usable) if usable else None
+
+
+def load(path, default=None):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        if default is not None:
+            return default
+        sys.exit(f"No profile at {path}. Run the skill's onboarding first.")
+    except ValueError as exc:
+        sys.exit(f"{path} is not valid JSON: {exc}")
+
+
+def _checked(path):
+    profile = load(path)
+    errors = validate(profile)
+    if errors:
+        sys.exit("Profile is not valid:\n  " + "\n  ".join(errors))
+    return profile
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--profile", default=os.path.join(data_dir(), "profile.json"))
+    ap.add_argument("--state", default=os.path.join(data_dir(), "state.json"))
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("validate")
+    sub.add_parser("missing")
+    sub.add_parser("export")
+    t = sub.add_parser("topics")
+    t.add_argument("--holdings", nargs="+", required=True)
+    t.add_argument("--kind", choices=("company", "issuer"), default="company")
+    t.add_argument("--column")
+    m = sub.add_parser("merge-state")
+    m.add_argument("timestamps", nargs="*")
+    m.add_argument("--now")
+    args = ap.parse_args(argv)
+
+    if args.cmd == "validate":
+        _checked(args.profile)
+        print("OK")
+    elif args.cmd == "missing":
+        for field in missing(load(args.profile, default={})):
+            print(field)
+    elif args.cmd == "export":
+        profile = _checked(args.profile)
+        profile.pop("last_run", None)
+        last_run = read_last_run(args.state)
+        if last_run:
+            profile["last_run"] = format_ts(last_run)
+        print(json.dumps(profile, indent=2))
+    elif args.cmd == "topics":
+        try:
+            found, skipped = topics(args.holdings, args.kind, args.column)
+        except (OSError, ValueError) as exc:
+            sys.exit(str(exc))
+        if skipped:
+            print(f"{skipped} row(s) skipped: the name looked like an identifier", file=sys.stderr)
+        print(json.dumps(found, indent=2))
+    elif args.cmd == "merge-state":
+        try:
+            given = [parse_ts(t) for t in args.timestamps]
+        except ValueError:
+            sys.exit("merge-state: every timestamp must be ISO 8601")
+        now = parse_ts(args.now) if args.now else now_utc()
+        existing = read_last_run(args.state)
+        result = latest(given + ([existing] if existing else []), now)
+        if result is None:
+            print("none")
+            return
+        os.makedirs(os.path.dirname(os.path.abspath(args.state)), exist_ok=True)
+        with open(args.state, "w", encoding="utf-8") as fh:
+            json.dump({"last_run": format_ts(result)}, fh)
+        print(format_ts(result))
+
+
+if __name__ == "__main__":
+    main()

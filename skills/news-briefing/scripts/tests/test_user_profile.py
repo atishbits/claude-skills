@@ -109,5 +109,139 @@ class TestMissing(unittest.TestCase):
         self.assertEqual(user_profile.missing(profile), ["home.country"])
 
 
+def write(text, name="book.csv"):
+    path = os.path.join(tempfile.mkdtemp(), name)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
+
+
+class TestTopics(unittest.TestCase):
+    def test_reads_only_the_name_column(self):
+        path = write("Symbol,Units,Price\nEXAMPLEB,5,500\nEXAMPLEA,10,100\n")
+        got, skipped = user_profile.topics([path])
+        self.assertEqual(got, [{"name": "EXAMPLEA", "kind": "company"},
+                               {"name": "EXAMPLEB", "kind": "company"}])
+        self.assertEqual(skipped, 0)
+
+    def test_name_column_need_not_be_first(self):
+        path = write("Units,Issuer,Price\n5,Example Finance,500\n")
+        got, _ = user_profile.topics([path], kind="issuer")
+        self.assertEqual(got, [{"name": "Example Finance", "kind": "issuer"}])
+
+    def test_unknown_header_uses_the_first_column(self):
+        path = write("Thing,Units\nEXAMPLEA,10\n")
+        got, _ = user_profile.topics([path])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA"])
+
+    def test_byte_order_mark_is_ignored(self):
+        path = write("\ufeffSymbol,Units\nEXAMPLEA,10\n")
+        got, _ = user_profile.topics([path])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA"])
+
+    def test_totals_and_blank_rows_are_dropped(self):
+        path = write("Symbol,Units\nEXAMPLEA,10\n,\nTotal,10\nGrand Total,10\n")
+        got, _ = user_profile.topics([path])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA"])
+
+    def test_identifier_like_names_are_counted_not_returned(self):
+        path = write("Symbol,Units\nEXAMPLEA,10\n9876543210,4\n")
+        got, skipped = user_profile.topics([path])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA"])
+        self.assertEqual(skipped, 1)
+
+    def test_duplicates_across_files_collapse(self):
+        a = write("Symbol,Units\nEXAMPLEA,10\n")
+        b = write("Symbol,Units\nEXAMPLEA,3\nEXAMPLEC,1\n")
+        got, _ = user_profile.topics([a, b])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA", "EXAMPLEC"])
+
+    def test_named_column_must_exist(self):
+        path = write("Symbol,Units\nEXAMPLEA,10\n")
+        with self.assertRaises(ValueError):
+            user_profile.topics([path], column="Company")
+
+    def test_empty_file(self):
+        self.assertEqual(user_profile.topics([write("")]), ([], 0))
+
+
+class TestLatest(unittest.TestCase):
+    NOW = parse_ts("2026-10-10T06:00:00Z")
+
+    def test_later_time_wins(self):
+        a, b = parse_ts("2026-10-07T06:00:00Z"), parse_ts("2026-10-09T06:00:00Z")
+        self.assertEqual(user_profile.latest([a, b], self.NOW), b)
+
+    def test_future_times_are_dropped(self):
+        a, future = parse_ts("2026-10-07T06:00:00Z"), parse_ts("2026-10-11T06:00:00Z")
+        self.assertEqual(user_profile.latest([a, future], self.NOW), a)
+
+    def test_nothing_usable(self):
+        self.assertIsNone(user_profile.latest([], self.NOW))
+
+
+class TestCli(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.profile = os.path.join(self.dir, "profile.json")
+        self.state = os.path.join(self.dir, "nested", "state.json")
+
+    def run_cli(self, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            user_profile.main(["--profile", self.profile, "--state", self.state, *argv])
+        return out.getvalue()
+
+    def save(self, profile):
+        with open(self.profile, "w", encoding="utf-8") as fh:
+            json.dump(profile, fh)
+
+    def test_validate_ok(self):
+        self.save(GOOD)
+        self.assertEqual(self.run_cli("validate").strip(), "OK")
+
+    def test_validate_reports_and_exits_nonzero(self):
+        self.save(changed(quantity=10))
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_cli("validate")
+        self.assertIn("quantity: unknown field", str(ctx.exception))
+
+    def test_missing_with_no_profile_lists_every_field(self):
+        self.assertEqual(self.run_cli("missing").split(), list(user_profile.ONBOARDING))
+
+    def test_merge_state_creates_the_folder_and_keeps_the_latest(self):
+        self.run_cli("merge-state", "--now", "2026-10-10T06:00:00Z", "2026-10-07T06:00:00Z")
+        got = self.run_cli("merge-state", "--now", "2026-10-10T06:00:00Z",
+                           "2026-10-05T06:00:00Z", "2026-10-11T06:00:00Z")
+        self.assertEqual(got.strip(), "2026-10-07T06:00:00Z")
+        with open(self.state, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), {"last_run": "2026-10-07T06:00:00Z"})
+
+    def test_merge_state_with_nothing_to_record(self):
+        self.assertEqual(self.run_cli("merge-state").strip(), "none")
+        self.assertFalse(os.path.exists(self.state))
+
+    def test_export_takes_last_run_from_state_not_the_profile(self):
+        self.save(changed(last_run="2026-10-01T00:00:00Z"))
+        self.run_cli("merge-state", "--now", "2026-10-10T06:00:00Z", "2026-10-07T06:00:00Z")
+        exported = json.loads(self.run_cli("export"))
+        self.assertEqual(exported["last_run"], "2026-10-07T06:00:00Z")
+        self.assertEqual(exported["home"], GOOD["home"])
+
+    def test_export_refuses_an_invalid_profile(self):
+        self.save(changed(quantity=10))
+        with self.assertRaises(SystemExit):
+            self.run_cli("export")
+
+    def test_topics_prints_json_and_counts_skips_on_stderr(self):
+        path = write("Symbol,Units\nEXAMPLEA,10\n9876543210,4\n")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            out = self.run_cli("topics", "--holdings", path)
+        self.assertEqual(json.loads(out), [{"name": "EXAMPLEA", "kind": "company"}])
+        self.assertIn("1 row", err.getvalue())
+        self.assertNotIn("9876543210", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
