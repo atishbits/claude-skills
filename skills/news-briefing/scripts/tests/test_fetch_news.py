@@ -1,0 +1,114 @@
+import contextlib
+import io
+import json
+import os
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import fetch_news  # noqa: E402
+from common import parse_ts  # noqa: E402
+
+RSS = """<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Example Wire</title>
+<item><title>Example Industries opens a new plant</title>
+  <link>https://news.example.com/a?utm_source=feed</link>
+  <pubDate>Fri, 09 Oct 2026 10:00:00 GMT</pubDate></item>
+<item><title>Old story</title><link>https://news.example.com/old</link>
+  <pubDate>Thu, 01 Oct 2026 10:00:00 GMT</pubDate></item>
+<item><title>No date story</title><link>https://news.example.com/nodate</link></item>
+<item><title>Rain &amp;amp; &lt;b&gt;floods&lt;/b&gt; hit Sampleville</title>
+  <link>https://news.example.com/b</link>
+  <pubDate>Thu, 08 Oct 2026 09:00:00 +0530</pubDate></item>
+</channel></rss>"""
+
+ATOM = """<feed xmlns="http://www.w3.org/2005/Atom"><title>Example Atom</title>
+<entry><title>Model railways show draws crowds</title>
+  <link rel="alternate" href="https://atom.example.org/c"/>
+  <updated>2026-10-09T12:00:00Z</updated></entry>
+<entry><title>Example Industries opens a new plant - Example Atom</title>
+  <link href="https://atom.example.org/dup"/>
+  <published>2026-10-09T11:00:00Z</published><updated>2026-10-09T13:00:00Z</updated></entry>
+</feed>"""
+
+
+class TestParseFeed(unittest.TestCase):
+    def test_rss_items(self):
+        items = fetch_news.parse_feed(RSS)
+        self.assertEqual([i["title"] for i in items], [
+            "Example Industries opens a new plant", "Old story", "No date story",
+            "Rain & floods hit Sampleville"])
+        self.assertEqual(items[0]["url"], "https://news.example.com/a?utm_source=feed")
+        self.assertEqual(items[0]["published"], parse_ts("2026-10-09T10:00:00Z"))
+
+    def test_rss_date_with_an_offset_is_converted_to_utc(self):
+        self.assertEqual(fetch_news.parse_feed(RSS)[3]["published"], parse_ts("2026-10-08T03:30:00Z"))
+
+    def test_item_without_a_date_has_none(self):
+        self.assertIsNone(fetch_news.parse_feed(RSS)[2]["published"])
+
+    def test_atom_entries(self):
+        items = fetch_news.parse_feed(ATOM.encode("utf-8"))
+        self.assertEqual(items[0]["url"], "https://atom.example.org/c")
+        self.assertEqual(items[0]["published"], parse_ts("2026-10-09T12:00:00Z"))
+
+    def test_atom_published_beats_updated(self):
+        self.assertEqual(fetch_news.parse_feed(ATOM)[1]["published"], parse_ts("2026-10-09T11:00:00Z"))
+
+    def test_broken_xml_raises(self):
+        with self.assertRaises(SyntaxError):
+            fetch_news.parse_feed("<html><body>503 Service Unavailable</body>")
+
+    def test_entity_declarations_are_refused(self):
+        bomb = '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]><rss><channel/></rss>'
+        with self.assertRaises(ValueError):
+            fetch_news.parse_feed(bomb)
+
+
+class TestNormalise(unittest.TestCase):
+    def test_tracking_parameters_host_case_and_slash(self):
+        a = fetch_news.normalise_url("http://WWW.Example.com/story/?utm_source=x&id=7&fbclid=y#top")
+        b = fetch_news.normalise_url("https://example.com/story?id=7")
+        self.assertEqual(a, b)
+
+    def test_different_stories_stay_different(self):
+        self.assertNotEqual(fetch_news.normalise_url("https://example.com/a"),
+                            fetch_news.normalise_url("https://example.com/b"))
+
+    def test_title_drops_the_outlet_suffix_and_punctuation(self):
+        self.assertEqual(fetch_news.normalise_title("Example Industries opens a new plant - Example Atom"),
+                         fetch_news.normalise_title("Example Industries opens a new plant!"))
+
+    def test_host(self):
+        self.assertEqual(fetch_news.host("https://www.News.Example.com/x?key=SECRET"), "news.example.com")
+
+
+class TestDedupe(unittest.TestCase):
+    def test_same_url_or_same_title_keeps_the_first(self):
+        items = [
+            {"title": "Plant opens", "url": "https://example.com/a?utm_medium=rss"},
+            {"title": "Something else", "url": "https://example.com/a"},
+            {"title": "Plant opens | Example Wire", "url": "https://other.example.org/z"},
+            {"title": "A different story", "url": "https://example.com/d"},
+        ]
+        self.assertEqual([i["url"] for i in fetch_news.dedupe(items)],
+                         ["https://example.com/a?utm_medium=rss", "https://example.com/d"])
+
+
+class TestMatchTopic(unittest.TestCase):
+    TOPICS = [{"name": "Tin", "kind": "sector"}, {"name": "Example Industries", "kind": "company"}]
+
+    def test_whole_word_case_insensitive(self):
+        self.assertEqual(fetch_news.match_topic("tin prices rise", self.TOPICS)["name"], "Tin")
+
+    def test_no_match_inside_a_longer_word(self):
+        self.assertIsNone(fetch_news.match_topic("Tintin sequel announced", self.TOPICS))
+
+    def test_no_match(self):
+        self.assertIsNone(fetch_news.match_topic("Rain hits Sampleville", self.TOPICS))
+
+
+if __name__ == "__main__":
+    unittest.main()
