@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+import zipfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import user_profile  # noqa: E402
@@ -241,6 +242,155 @@ class TestCli(unittest.TestCase):
         self.assertEqual(json.loads(out), [{"name": "EXAMPLEA", "kind": "company"}])
         self.assertIn("1 row", err.getvalue())
         self.assertNotIn("9876543210", err.getvalue())
+
+
+def xlsx(sheets, inline=False, name="report.xlsx"):
+    """A minimal workbook. sheets maps a sheet name to its rows; a row is a
+    list of cell values with None for an empty cell, and [] for an empty row."""
+    main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    path = os.path.join(tempfile.mkdtemp(), name)
+    strings = []
+
+    def cell(ref, value):
+        if isinstance(value, (int, float)):
+            return f'<c r="{ref}"><v>{value}</v></c>'
+        if inline:
+            return f'<c r="{ref}" t="inlineStr"><is><t>{value}</t></is></c>'
+        if value not in strings:
+            strings.append(value)
+        return f'<c r="{ref}" t="s"><v>{strings.index(value)}</v></c>'
+
+    with zipfile.ZipFile(path, "w") as z:
+        entries, rels = [], []
+        for n, (title, rows) in enumerate(sheets.items(), 1):
+            body = ""
+            for r, row in enumerate(rows, 1):
+                if row:  # an empty row is simply absent, as in a real workbook
+                    cells = "".join(cell(f"{chr(65 + c)}{r}", v)
+                                    for c, v in enumerate(row) if v is not None)
+                    body += f'<row r="{r}">{cells}</row>'
+            z.writestr(f"xl/worksheets/sheet{n}.xml",
+                       f'<worksheet xmlns="{main}"><sheetData>{body}</sheetData></worksheet>')
+            entries.append(f'<sheet name="{title}" sheetId="{n}" r:id="rId{n}"/>')
+            rels.append(f'<Relationship Id="rId{n}" Target="worksheets/sheet{n}.xml"/>')
+        z.writestr("xl/workbook.xml", f'<workbook xmlns="{main}" xmlns:r="{rel}"><sheets>'
+                   + "".join(entries) + "</sheets></workbook>")
+        z.writestr("xl/_rels/workbook.xml.rels",
+                   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   + "".join(rels) + "</Relationships>")
+        z.writestr("xl/sharedStrings.xml", f'<sst xmlns="{main}">'
+                   + "".join(f"<si><t>{s}</t></si>" for s in strings) + "</sst>")
+    return path
+
+
+PLAIN = {"Sheet1": [["Symbol", "Units", "Price"], ["EXAMPLEB", 5, 500], ["EXAMPLEA", 10, 100]]}
+# A statement as a platform exports it: a summary sheet, then lines about the
+# investor above the table itself and notes below it.
+REPORT = {
+    "Summary": [["Totals"], ["Units", 15]],
+    "Holdings": [[], ["STATEMENT OF HOLDINGS"], ["Name", "Sample Investor"],
+                 ["Account", "9876543210"], [], ["Issuer", "Units", "Rate"],
+                 ["Example Finance", 5, 9.5], ["Sample Housing", 10, 10.25], ["Total", 15],
+                 [], ["Disclaimer:"], ["This statement is for reference only."]],
+}
+
+
+class TestSpreadsheets(unittest.TestCase):
+    def test_a_plain_workbook_needs_no_options(self):
+        got, skipped = user_profile.topics([xlsx(PLAIN)])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA", "EXAMPLEB"])
+        self.assertEqual(skipped, 0)
+
+    def test_inline_strings_are_read(self):
+        got, _ = user_profile.topics([xlsx(PLAIN, inline=True)])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA", "EXAMPLEB"])
+
+    def test_sheet_and_header_row_reach_a_table_below_the_investor_details(self):
+        got, skipped = user_profile.topics([xlsx(REPORT)], kind="issuer", sheet="Holdings",
+                                           header_row=6)
+        self.assertEqual(got, [{"name": "Example Finance", "kind": "issuer"},
+                               {"name": "Sample Housing", "kind": "issuer"}])
+        self.assertEqual(skipped, 0)
+
+    def test_the_table_ends_at_the_first_empty_row(self):
+        path = write("Symbol,Units\nEXAMPLEA,10\n,\nNotes\nPrices are indicative\n")
+        got, _ = user_profile.topics([path])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA"])
+
+    def test_an_unknown_sheet_names_the_sheets_there_are(self):
+        with self.assertRaises(ValueError) as ctx:
+            user_profile.topics([xlsx(REPORT)], sheet="Positions")
+        self.assertIn("Summary, Holdings", str(ctx.exception))
+
+    def test_a_header_row_past_the_end_is_refused(self):
+        with self.assertRaises(ValueError):
+            user_profile.topics([xlsx(PLAIN)], header_row=9)
+
+    def test_cells_are_placed_by_their_column(self):
+        path = xlsx({"Sheet1": [[None, "Symbol", "Units"], [None, "EXAMPLEA", 10]]})
+        got, _ = user_profile.topics([path])
+        self.assertEqual([t["name"] for t in got], ["EXAMPLEA"])
+
+    def test_a_file_that_is_not_a_table_is_refused(self):
+        path = os.path.join(tempfile.mkdtemp(), "statement.pdf")
+        with open(path, "wb") as fh:
+            fh.write(b"%PDF-1.7\n\xff\xfe\x00")
+        with self.assertRaises(ValueError) as ctx:
+            user_profile.topics([path])
+        self.assertIn("not a CSV or .xlsx table", str(ctx.exception))
+
+    def test_a_damaged_workbook_is_refused(self):
+        with self.assertRaises(ValueError) as ctx:
+            user_profile.topics([write("not a workbook", name="report.xlsx")])
+        self.assertIn("not a readable .xlsx workbook", str(ctx.exception))
+
+
+class TestLayout(unittest.TestCase):
+    def test_lists_the_wide_rows_with_their_row_numbers(self):
+        self.assertEqual(user_profile.layout([xlsx(REPORT)]), [
+            {"file": "report.xlsx", "sheet": "Holdings", "row": 6, "cells": ["Issuer", "Units", "Rate"]},
+            {"file": "report.xlsx", "sheet": "Holdings", "row": 7, "cells": ["Example Finance", "#", "#"]},
+            {"file": "report.xlsx", "sheet": "Holdings", "row": 8, "cells": ["Sample Housing", "#", "#"]},
+        ])
+
+    def test_identifiers_and_amounts_are_masked(self):
+        path = xlsx({"Sheet1": [["Issuer", "Reference", "Amount"], ["Example Finance", "AB9876543210", 150000]]})
+        got = user_profile.layout([path])
+        self.assertEqual(got[1]["cells"], ["Example Finance", "#", "#"])
+        self.assertNotIn("98765", json.dumps(got))
+
+    def test_short_codes_small_amounts_and_dates_are_masked_too(self):
+        path = xlsx({"Sheet1": [["Issuer", "Code", "Amount", "Due"],
+                                ["Example Finance", "XX001A01AB1", 304.14, "19/11/2026"]]})
+        self.assertEqual(user_profile.layout([path])[1]["cells"], ["Example Finance", "#", "#", "#"])
+
+    def test_at_most_five_rows_a_sheet(self):
+        rows = [["Symbol", "Units", "Price"]] + [[f"EXAMPLE{c}", 1, 2] for c in "ABCDEFGH"]
+        self.assertEqual([r["row"] for r in user_profile.layout([xlsx({"Sheet1": rows})])],
+                         [1, 2, 3, 4, 5])
+
+    def test_a_csv_is_one_unnamed_table(self):
+        got = user_profile.layout([write("Symbol,Units,Price\nEXAMPLEA,10,100\n")])
+        self.assertEqual(got[0], {"file": "book.csv", "sheet": "", "row": 1,
+                                  "cells": ["Symbol", "Units", "Price"]})
+
+
+class TestSpreadsheetCli(unittest.TestCase):
+    def run_cli(self, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            user_profile.main(list(argv))
+        return json.loads(out.getvalue())
+
+    def test_topics_takes_a_sheet_and_a_header_row(self):
+        got = self.run_cli("topics", "--holdings", xlsx(REPORT), "--kind", "issuer",
+                           "--sheet", "Holdings", "--header-row", "6")
+        self.assertEqual([t["name"] for t in got], ["Example Finance", "Sample Housing"])
+
+    def test_layout_prints_the_rows(self):
+        got = self.run_cli("layout", "--holdings", xlsx(REPORT))
+        self.assertEqual([r["row"] for r in got], [6, 7, 8])
 
 
 if __name__ == "__main__":

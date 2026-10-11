@@ -38,6 +38,9 @@ work, feed choices, holdings-derived topics and interests are in a profile:
 - A shared copy named `news-briefing-profile.json` in the user's cloud file storage, which also
   carries the last-run time. It is how a surface with no local `data/` folder gets the profile.
   Find it by that exact filename with whichever file-storage connector is connected.
+- Optionally a folder named `news-briefing-holdings` in the same cloud file storage, where the
+  user keeps statements of what they hold (shares, bonds, funds). It is only read during a
+  Refresh, and only for the names in it.
 
 The profile holds names and topics only. Never put a quantity, a cost, a value or an account
 identifier in it; `user_profile.py validate` rejects unknown fields for that reason.
@@ -154,16 +157,31 @@ Runs when there is no profile, and during a refresh.
 
 ## Refresh
 
-Only where the user's files are on this machine.
+Rebuilds the topics from the user's own files. It works on any surface that can reach them.
 
-1. Holdings: for each holdings file listed in `data/notes.md`, run
-   `python3 scripts/user_profile.py topics --holdings <path> [--kind issuer] [--column NAME]`.
-   It reads the name column only. Where it returns ticker symbols, replace each with the company's
-   common name, since that is what headlines use. Add the sectors that carry real weight as
-   `sector` topics. A name written all in capitals is matched only in capitals, so write an
-   abbreviation in capitals and an ordinary word in lower case.
-2. Interests: read the memory folders listed in `data/notes.md` and propose `interest_topics`,
-   each with a short `why`. Include the employer and industry from the profile.
-3. Run Onboarding for anything still missing.
-4. Show the user what would change against the current profile. Write it, validate it and update
+1. Find the holdings files. Look first for the `news-briefing-holdings` folder in the user's cloud
+   file storage: it is the preferred place, because every surface can reach it. Save each file in
+   it to a temporary folder. Then add any local paths listed in `data/notes.md`. If there are
+   none in either place, say so and keep the portfolio topics the profile already has.
+2. Read the names with the script, never by hand:
+   `python3 scripts/user_profile.py topics --holdings <path> [--kind issuer] [--column NAME] [--sheet NAME] [--header-row N]`.
+   It reads a CSV or `.xlsx` file and takes the name column only, down to the first empty row.
+   - A plain export with its headings in the first row needs no options.
+   - A statement with several sheets, or with lines above the table, needs the sheet and the row
+     its headings are on. Run `python3 scripts/user_profile.py layout --holdings <path>` to see
+     each sheet's likely heading rows (figures are masked), then pass `--sheet`, `--header-row`
+     and, when the heading is not an obvious one, `--column`.
+   - Use `--kind issuer` for bonds and deposits, where the name is who owes the money.
+   - If a file is in a form the script cannot read (a PDF statement, say), tell the user which
+     file and ask for a spreadsheet or CSV export of it. Do not copy names out of it yourself.
+   Record in `data/notes.md`, where there is one, the options that worked for each kind of file.
+3. Tidy the names. Where the script returns ticker symbols, replace each with the company's common
+   name, since that is what headlines use. Add the sectors that carry real weight as `sector`
+   topics. A name written all in capitals is matched only in capitals, so write an abbreviation
+   in capitals and an ordinary word in lower case.
+4. Interests: read the memory folders listed in `data/notes.md` where they exist, and otherwise use
+   your own memory of the user. Propose `interest_topics`, each with a short `why`. Include the
+   employer and industry from the profile.
+5. Run Onboarding for anything still missing.
+6. Show the user what would change against the current profile. Write it, validate it and update
    the shared copy only after they agree.

@@ -6,6 +6,7 @@
     validate       check the profile; prints OK, or one line per problem
     missing        onboarding fields that are neither filled nor declined
     topics         company or issuer names from holdings files, names only
+    layout         likely header rows in a holdings file, to choose --sheet and --header-row
     merge-state    record the latest of several last-run times
     export         the profile plus the last-run time, for the shared copy
 
@@ -18,6 +19,8 @@ import json
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
+import zipfile
 
 from common import data_dir, format_ts, now_utc, parse_ts, read_last_run
 
@@ -33,6 +36,8 @@ DIGITS = re.compile(r"\d{5,}")
 # Header names that mean "this column holds what the holding is called".
 NAME_HEADERS = ("instrument", "symbol", "ticker", "name", "company", "issuer", "security")
 SUMMARY_ROWS = ("total", "grand total", "totals")
+SHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 
 
 def _is_url(value):
@@ -124,24 +129,121 @@ def missing(profile):
     return out
 
 
-def topics(paths, kind="company", column=None):
-    """Names from holdings files, and how many rows were skipped because the
-    name looked like an identifier. Only the name column is read; every other
-    column, whatever it holds, is ignored."""
+def _column_index(ref):
+    """A cell reference such as C5 -> 2, the position of column C."""
+    n = 0
+    for ch in ref:
+        if not ch.isalpha():
+            break
+        n = n * 26 + ord(ch.upper()) - 64
+    return n - 1
+
+
+def _workbook(path):
+    with zipfile.ZipFile(path) as z:
+        targets = {r.get("Id"): r.get("Target")
+                   for r in ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))}
+        strings = []
+        if "xl/sharedStrings.xml" in z.namelist():
+            for si in ET.fromstring(z.read("xl/sharedStrings.xml")).iter(SHEET_NS + "si"):
+                strings.append("".join(t.text or "" for t in si.iter(SHEET_NS + "t")))
+        out = []
+        for sheet in ET.fromstring(z.read("xl/workbook.xml")).iter(SHEET_NS + "sheet"):
+            target = targets[sheet.get(REL_ID)].lstrip("/")
+            member = target if target.startswith("xl/") else "xl/" + target
+            rows = []
+            for row in ET.fromstring(z.read(member)).iter(SHEET_NS + "row"):
+                number = int(row.get("r") or len(rows) + 1)
+                rows.extend([] for _ in range(number - 1 - len(rows)))
+                cells = []
+                for c in row.iter(SHEET_NS + "c"):
+                    idx = _column_index(c.get("r")) if c.get("r") else len(cells)
+                    cells.extend("" for _ in range(idx - len(cells)))
+                    value = c.find(SHEET_NS + "v")
+                    if c.get("t") == "inlineStr":
+                        text = "".join(t.text or "" for t in c.iter(SHEET_NS + "t"))
+                    elif c.get("t") == "s":
+                        text = strings[int(value.text)]
+                    else:
+                        text = (value.text or "") if value is not None else ""
+                    cells.append(text)
+                rows.append(cells)
+            out.append((sheet.get("name") or "", rows))
+        return out
+
+
+def tables(path):
+    """Every table in a holdings file as (sheet name, rows of text). A CSV is
+    one table with no name. Rows and cells sit where the file has them, so row
+    6 of a sheet is item 5 of its list."""
+    if path.lower().endswith(".xlsx"):
+        try:
+            return _workbook(path)
+        except (zipfile.BadZipFile, KeyError, IndexError, TypeError, SyntaxError, ValueError):
+            raise ValueError(f"{path}: not a readable .xlsx workbook") from None
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            return [("", list(csv.reader(fh)))]
+    except (UnicodeDecodeError, csv.Error):
+        raise ValueError(f"{path}: not a CSV or .xlsx table") from None
+
+
+def _table(path, sheet):
+    found = tables(path)
+    if sheet is None:
+        return found[0][1] if found else []
+    for name, rows in found:
+        if name.strip().lower() == sheet.strip().lower():
+            return rows
+    raise ValueError(f"{path}: no sheet named {sheet}; it has: " + ", ".join(n for n, _ in found))
+
+
+def layout(paths, per_sheet=5, look=50):
+    """Rows that could be a table's header, for choosing --sheet and
+    --header-row: in each sheet, the first few rows with three or more filled
+    cells. Lines about the investor above a table are narrower than that, and
+    any cell containing a digit is masked, so this shows the shape of a file
+    without its identifiers, amounts or dates."""
+    out = []
+    for path in paths:
+        for name, rows in tables(path):
+            shown = 0
+            for number, row in enumerate(rows[:look], 1):
+                cells = [c.strip() for c in row]
+                if sum(1 for c in cells if c) < 3:
+                    continue
+                out.append({"file": os.path.basename(path), "sheet": name, "row": number,
+                            "cells": ["#" if re.search(r"\d", c) else c[:30] for c in cells]})
+                shown += 1
+                if shown == per_sheet:
+                    break
+    return out
+
+
+def topics(paths, kind="company", column=None, sheet=None, header_row=1):
+    """Names from holdings files (CSV or .xlsx), and how many rows were skipped
+    because the name looked like an identifier. Only the name column is read;
+    every other column, whatever it holds, is ignored. The header is taken from
+    the row the caller names, never guessed: the lines above a table in a
+    statement are about the investor, not the holdings. The table ends at the
+    first empty row below the header; what follows is notes."""
     names, skipped = set(), 0
     for path in paths:
-        with open(path, newline="", encoding="utf-8-sig") as fh:
-            rows = list(csv.reader(fh))
+        rows = _table(path, sheet)
         if not rows:
             continue
-        header = [h.strip().lower() for h in rows[0]]
+        if not 1 <= header_row <= len(rows):
+            raise ValueError(f"{path}: no row {header_row} to use as the header")
+        header = [h.strip().lower() for h in rows[header_row - 1]]
         if column:
             if column.strip().lower() not in header:
                 raise ValueError(f"{path}: no column named {column}")
             idx = header.index(column.strip().lower())
         else:
             idx = next((header.index(h) for h in NAME_HEADERS if h in header), 0)
-        for row in rows[1:]:
+        for row in rows[header_row:]:
+            if not any(cell.strip() for cell in row):
+                break
             name = row[idx].strip() if idx < len(row) else ""
             if not name or name.lower() in SUMMARY_ROWS:
                 continue
@@ -190,6 +292,10 @@ def main(argv=None):
     t.add_argument("--holdings", nargs="+", required=True)
     t.add_argument("--kind", choices=("company", "issuer"), default="company")
     t.add_argument("--column")
+    t.add_argument("--sheet")
+    t.add_argument("--header-row", type=int, default=1)
+    lay = sub.add_parser("layout")
+    lay.add_argument("--holdings", nargs="+", required=True)
     m = sub.add_parser("merge-state")
     m.add_argument("timestamps", nargs="*")
     m.add_argument("--now")
@@ -210,12 +316,18 @@ def main(argv=None):
         print(json.dumps(profile, indent=2))
     elif args.cmd == "topics":
         try:
-            found, skipped = topics(args.holdings, args.kind, args.column)
+            found, skipped = topics(args.holdings, args.kind, args.column, args.sheet,
+                                    args.header_row)
         except (OSError, ValueError) as exc:
             sys.exit(str(exc))
         if skipped:
             print(f"{skipped} row(s) skipped: the name looked like an identifier", file=sys.stderr)
         print(json.dumps(found, indent=2))
+    elif args.cmd == "layout":
+        try:
+            print(json.dumps(layout(args.holdings), indent=2))
+        except (OSError, ValueError) as exc:
+            sys.exit(str(exc))
     elif args.cmd == "merge-state":
         try:
             given = [parse_ts(t) for t in args.timestamps]
