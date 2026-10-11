@@ -142,6 +142,65 @@ def default_fetch(url):
         return response.read(MAX_BYTES)
 
 
+def dig(obj, path):
+    """Follow a dotted path through nested objects; None if it leaves them."""
+    for part in (p for p in path.split(".") if p):
+        if not isinstance(obj, dict):
+            return None
+        obj = obj.get(part)
+    return obj
+
+
+def parse_api(body, cfg):
+    """Items from a news API's JSON reply, read through the field paths in cfg."""
+    rows = dig(json.loads(body), cfg.get("items_path", ""))
+    if not isinstance(rows, list):
+        raise ValueError("API reply has no list at items_path")
+    fields, items = cfg["fields"], []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = clean(str(dig(row, fields["title"]) or ""))
+        url = str(dig(row, fields["url"]) or "").strip()
+        if not title or not url:
+            continue
+        source = dig(row, fields["source"]) if fields.get("source") else ""
+        items.append({"title": title, "url": url, "source": clean(str(source or "")),
+                      "published": parse_date(str(dig(row, fields["published"]) or ""))})
+    return items
+
+
+def api_url(cfg, query, start):
+    return (cfg["url_template"]
+            .replace("{key}", urllib.parse.quote(str(cfg.get("key", "")), safe=""))
+            .replace("{query}", urllib.parse.quote_plus(query))
+            .replace("{start_date}", start.strftime("%Y-%m-%d")))
+
+
+def load_api(path):
+    """The news API description in data/, or None when there is none. Problems
+    are reported by field name; the key itself is never printed."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except FileNotFoundError:
+        return None
+    except ValueError:
+        sys.exit(f"{path} is not valid JSON")
+    problems = []
+    template = cfg.get("url_template") if isinstance(cfg, dict) else None
+    if not (isinstance(template, str) and template.startswith(("http://", "https://"))
+            and "{query}" in template):
+        problems.append("url_template (an http(s) URL containing {query})")
+    fields = cfg.get("fields") if isinstance(cfg, dict) else None
+    if not (isinstance(fields, dict) and all(isinstance(fields.get(k), str)
+                                             for k in ("title", "url", "published"))):
+        problems.append("fields (title, url and published)")
+    if problems:
+        sys.exit(f"{path} is missing: " + "; ".join(problems))
+    return cfg
+
+
 def _for_topic(item, section, topic):
     extra = {"kind": topic["kind"]} if section == "portfolio" else {"why": topic["why"]}
     return dict(item, section=section, topic=topic["name"], **extra)
@@ -187,6 +246,12 @@ def collect(profile, start, end, fetch=default_fetch, api=None, per_section=PER_
             for item in pull(url, parse_feed):
                 found.append(_for_topic(item, section, topic))
 
+    if api:
+        for topic, section in queries[: api.get("max_queries", 10)]:
+            url = api_url(api, topic["name"], start)
+            for item in pull(url, lambda body: parse_api(body, api)):
+                found.append(_for_topic(item, section, topic))
+
     undated = sum(1 for item in found if item["published"] is None)
     kept = [i for i in found if i["published"] is not None and start <= i["published"] <= end]
     kept.sort(key=lambda i: (SECTION_ORDER[i["section"]], -i["published"].timestamp()))
@@ -216,7 +281,7 @@ def main(argv=None):
     if errors:
         sys.exit("Profile is not valid; nothing was fetched:\n  " + "\n  ".join(errors))
     result = collect(profile, parse_ts(args.start), parse_ts(args.end),
-                     fetch=default_fetch, per_section=args.limit)
+                     fetch=default_fetch, api=load_api(args.api), per_section=args.limit)
     print(json.dumps(result, indent=2))
 
 

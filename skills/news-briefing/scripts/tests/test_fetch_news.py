@@ -215,5 +215,71 @@ class TestMain(unittest.TestCase):
         called.assert_not_called()
 
 
+API = {
+    "url_template": "https://api.example.com/v1?apikey={key}&q={query}&from={start_date}",
+    "key": "SECRETKEY",
+    "items_path": "data.results",
+    "fields": {"title": "title", "url": "link", "published": "pubDate", "source": "outlet.name"},
+}
+API_BODY = json.dumps({"data": {"results": [
+    {"title": "Example Industries wins an order", "link": "https://wire.example.net/o",
+     "pubDate": "2026-10-09 08:00:00", "outlet": {"name": "Example Net"}},
+    {"title": "", "link": "https://wire.example.net/blank", "pubDate": "2026-10-09 08:00:00"},
+    "not an object",
+]}})
+API_URL = "https://api.example.com/v1?apikey=SECRETKEY&q=Example+Industries&from=2026-10-03"
+
+
+class TestApi(unittest.TestCase):
+    def test_url_is_built_from_the_template(self):
+        self.assertEqual(fetch_news.api_url(API, "Example Industries", START), API_URL)
+
+    def test_response_is_read_through_the_field_paths(self):
+        items = fetch_news.parse_api(API_BODY, API)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["source"], "Example Net")
+        self.assertEqual(items[0]["published"], parse_ts("2026-10-09T08:00:00Z"))
+
+    def test_response_without_the_list_raises(self):
+        with self.assertRaises(ValueError):
+            fetch_news.parse_api('{"status": "error"}', API)
+
+    def test_collect_tags_api_items_with_their_topic(self):
+        profile = {"portfolio_topics": PROFILE["portfolio_topics"]}
+        got = fetch_news.collect(profile, START, END, fetch=fake({API_URL: API_BODY}), api=API)
+        self.assertEqual(got["candidates"][0]["topic"], "Example Industries")
+        self.assertEqual(got["candidates"][0]["section"], "portfolio")
+
+    def test_a_failing_api_never_leaks_the_key(self):
+        profile = {"portfolio_topics": PROFILE["portfolio_topics"]}
+        got = fetch_news.collect(profile, START, END, fetch=fake({}), api=API)
+        self.assertEqual(got["failed"], [{"source": "api.example.com", "error": "OSError"}])
+        self.assertNotIn("SECRETKEY", json.dumps(got))
+
+    def test_max_queries_limits_the_calls(self):
+        topics = [{"name": f"Topic {n}", "kind": "sector"} for n in range(5)]
+        calls = []
+
+        def fetch(url):
+            calls.append(url)
+            return API_BODY.encode("utf-8")
+
+        fetch_news.collect({"portfolio_topics": topics}, START, END, fetch=fetch,
+                           api=dict(API, max_queries=2))
+        self.assertEqual(len(calls), 2)
+
+    def test_load_api_absent_file_means_no_api(self):
+        self.assertIsNone(fetch_news.load_api("/nonexistent/api.json"))
+
+    def test_load_api_names_the_missing_part_without_printing_the_key(self):
+        path = os.path.join(tempfile.mkdtemp(), "api.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"url_template": "https://api.example.com/v1?q={query}", "key": "SECRETKEY"}, fh)
+        with self.assertRaises(SystemExit) as ctx:
+            fetch_news.load_api(path)
+        self.assertIn("fields", str(ctx.exception))
+        self.assertNotIn("SECRETKEY", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
