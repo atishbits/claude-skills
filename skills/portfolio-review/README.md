@@ -27,6 +27,8 @@ data/                              yours — the only files you provide
     snapshot-<date>.json             the day's fundamentals snapshot
     stocks/<TICKER>.md               one note per holding
     PORTFOLIO.md                     generated summary table
+    from-cowork/                     files fetched from the cloud mirror's inbox (optional, below)
+  drive-mirror/                    the optional cloud mirror's OAuth client, sign-in token and state
 ```
 
 The root is chosen, in order, by `--root PATH`, then `$PORTFOLIO_ROOT`, then the working directory —
@@ -96,6 +98,44 @@ Everything is cached per day afterwards, so later runs that day rebuild in under
 
 Yahoo Finance and stooq are not used: neither returns usable data for NSE symbols from a plain
 script.
+
+## Optional: a copy in Google Drive
+
+The skill's data lives on one machine, so a Claude session elsewhere (Cowork, the mobile app)
+cannot see it. `scripts/drive_mirror.py` keeps a copy of the outputs in a Drive folder of your
+choosing, and brings back what another session leaves for it. The skill works without this.
+
+- **Pushed** on every run, changed files only, each overwritten in place: `PORTFOLIO.md`,
+  `stocks/*.md`, `ratings-ledger.jsonl`, `entry-budgets.json`, `calendar.md`, and a `README.md`
+  that tells the reader how the folder works. `--with-snapshot` adds the newest snapshot as
+  `snapshot-latest.json`. This machine stays the source of truth; an edit made to a mirrored file
+  is overwritten by the next run.
+- **Pulled** on every run: new files in the folder's `from-cowork/` subfolder, saved to
+  `data/skill-data/from-cowork/`. That subfolder is where another session writes — a trade, a
+  decision, some research — as new files. The next review reads them, folds them into the notes
+  and budgets, and marks them merged (SKILL.md 3a.4). A trade reported there does not change share
+  counts: those still come only from a broker export.
+
+Setup, once:
+
+1. In Google Cloud Console, create a project, enable the **Google Drive API**, and configure the
+   OAuth consent screen (user type External, yourself as the only user). Set its publishing status
+   to **In production**: left in Testing, Google expires the sign-in every seven days.
+2. Create an OAuth client ID of type **Desktop app**, download its JSON, and save it as
+   `data/drive-mirror/client.json`.
+3. `python3 scripts/drive_mirror.py set-folder <folder id or link>` — the Drive folder to mirror
+   into. Create it first.
+4. `python3 scripts/drive_mirror.py auth` — opens a browser to sign in. Google shows an
+   "unverified app" warning for a personal client; that is expected.
+
+Then `python3 scripts/drive_mirror.py sync` runs at the start and end of every review.
+
+Two things to know before you turn it on. The sign-in asks for full Drive access, because the
+narrower per-file scope cannot see files another session created; the script only ever writes
+inside the folder you set. And `data/drive-mirror/token.json` is a credential that can reach your
+whole Drive: it is written owner-only and sits under the gitignored `data/` folder, so keep that
+folder out of any backup or sync you do not control. To revoke it, remove the app under *Third-party
+access* in your Google account and delete the file.
 
 ## Keep your data out of git
 
