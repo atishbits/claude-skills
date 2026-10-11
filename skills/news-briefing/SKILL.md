@@ -180,8 +180,10 @@ Rebuilds the topics from the user's own files. It works on any surface that can 
    topics. A name written all in capitals is matched only in capitals, so write an abbreviation
    in capitals and an ordinary word in lower case.
 4. Interests: read the memory folders listed in `data/notes.md` where they exist, and otherwise use
-   your own memory of the user. Propose `interest_topics`, each with a short `why`. Include the
-   employer and industry from the profile.
+   your own memory of the user. Each surface knows different things about the user, so start from
+   the interests the profile already has: another surface may have added them. Propose additions,
+   and removals only where you have a reason, each topic with a short `why`. Include the employer
+   and industry from the profile.
 5. Run Onboarding for anything still missing.
 6. Show the user what would change against the current profile. Write it, validate it and update
    the shared copy only after they agree.
