@@ -204,7 +204,7 @@ class TestParseTaxPosition(unittest.TestCase):
 ## Tax position FY 2026-27 (broker tax P&L, Q1-Q2)
 
 - Realised STCG: ₹0 · Realised LTCG: ₹1,500 · Charges ₹100
-- the broker tax-loss harvesting page: unrealised STCL ₹12.5k, unrealised LTCL ₹7.5k (includes MFs); 'save up to' ₹200
+- Broker's tax-loss harvesting page: unrealised STCL ₹12.5k, unrealised LTCL ₹7.5k (includes MFs); 'save up to' ₹200
 - Stocks only (lot-level, this file): unrealised LT gains ₹40,000 · LT losses ₹-60,000 · ST gains ₹10,000 · ST losses ₹-20,000
 - Rates: STCG 20%, LTCG 12.5% above ₹1.25L/yr exemption.
 

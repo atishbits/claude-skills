@@ -20,8 +20,8 @@ versus what it fetched:
 ~/.claude/skills/portfolio-review -> <this folder>      installed once, for every project
 
 data/                              yours — the only files you provide
-  broker_holdings_<date>.csv        a plain broker export, or
-  broker-portfolio-<date>.md        a lot-level broker export (adds buy dates for LTCG)
+  broker_holdings_<date>.csv         a plain broker export, or
+  broker-portfolio-<date>.md         a lot-level broker export (adds buy dates for LTCG)
   slug-overrides.json              optional: {"SYMBOL-XX": "SLUG"} where your broker's symbol differs from the data source's
   skill-data/                      the skill's — fetched data and everything it writes
     .cache/                          the per-ticker fetch cache
@@ -71,8 +71,8 @@ simply do not apply, and the skill says so rather than inventing a book.
 Instrument,Qty.,Avg. cost,LTP,Invested,Cur. val,P&L,Net chg.
 ```
 
-`holdings-template.csv` in this folder is a working example — the broker's own export already matches,
-and other brokers need the headers renamed. Only `Instrument` is truly required: with just
+`holdings-template.csv` in this folder is a working example. A broker export with these columns
+works as it is; any other needs its headers renamed to match. Only `Instrument` is truly required: with just
 `Instrument` and `Qty.` you still get every rating, minus P&L and position weights.
 
 If you want lot-level LTCG awareness (which quantity is already long-term, when the next lot turns

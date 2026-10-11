@@ -1,18 +1,18 @@
-# the broker portfolio snapshot
+# Broker portfolio snapshot
 
 - **Fetched:** 2026-01-15 (Thursday), from the broker's reports page by Claude
 - **Prices:** LTP = last close as of Wednesday 2026-01-14. Not live.
-- **Buy dates:** from the broker tradebook, NSE/BSE equity, 2024-01-01 to 2026-01-15.
+- **Buy dates:** from the broker's tradebook, NSE/BSE equity, 2024-01-01 to 2026-01-15.
 - **Long term** = held more than 12 months as of 2026-01-15 (lot bought on or before 2025-01-14).
 - Lot quantities and costs are adjusted for splits/bonuses/renames listed under Notes. Totals use
   the broker's own average cost; lot costs are indicative.
 
-## Account summary (the broker, 2026-01-15)
+## Account summary (broker, 2026-01-15)
 
 | | Invested (₹) | Current (₹) | P&L |
 |---|--:|--:|--:|
 | Direct stocks (2) | 3,000 | 3,200 | +200 (+6.67%) |
-| **Total (the broker)** | **3,000** | **3,200** | **+200 (+6.67%)** |
+| **Total (broker)** | **3,000** | **3,200** | **+200 (+6.67%)** |
 
 ## Tax position FY 2025-26 (broker tax P&L, Q1-Q3)
 

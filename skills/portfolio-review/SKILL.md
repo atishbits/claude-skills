@@ -1,7 +1,7 @@
 ---
 name: portfolio-review
 description: >-
-  Review a long-term Indian equity portfolio from a broker export (the broker's by default). Refreshes
+  Review a long-term Indian equity portfolio from a broker export. Refreshes
   fundamentals from screener.in, places each stock in the P/E vs ROE/ROCE signal rows, rates
   BUY / HOLD / SELL-trim, and writes stocks/<TICKER>.md notes. Use when the user asks
   about their holdings or a named stock: whether to buy, add, hold, trim or sell; a
@@ -30,7 +30,7 @@ allowed-tools:
 
 Request for this run: **$ARGUMENTS**
 
-You are helping with a long-term Indian equity portfolio held on the broker. The goal is long-term
+You are helping with a long-term Indian equity portfolio held with a broker. The goal is long-term
 compounding: hold quality names, average down where something is genuinely undervalued, and avoid
 value traps. Ratings are advisory only — never place or suggest placing an order.
 
@@ -556,8 +556,8 @@ Everything else below is weighed together, not ranked against each other by a fi
   entirely, on exactly the position most likely to get a trim call.
   For the portfolio-wide view — realised gains this FY, LTCG exemption headroom, and which lots
   across every holding are the best gain-booking or loss-harvesting candidates — run
-  `python3 ${CLAUDE_SKILL_DIR}/scripts/tax_lots.py --harvest` instead. It reads the broker export's
-  own "Tax position" section (present only in a lot-level `.md` export, not a plain CSV) for this
+  `python3 ${CLAUDE_SKILL_DIR}/scripts/tax_lots.py --harvest` instead. It reads the lot-level broker
+  export's own "Tax position" section (present only in a lot-level `.md` export, not a plain CSV) for this
   FY's realised STCG/LTCG and the broker's own loss-harvesting estimate, so it isn't guessing at
   exemption headroom the way a single-ticker run has to. Realised gains are usually small early in
   the FY, which means loss-harvesting has little current-year value (it mostly creates a carry-
@@ -600,8 +600,8 @@ Everything else below is weighed together, not ranked against each other by a fi
   a month away, is the case this rule exists for.
 - **Materiality.** If the position is under ~0.5% of the book, the Action must say whether to build
   it toward a named target weight or leave it as it is. A one-share add to a 0.2% position is not a
-  recommendation. the broker delivery has no brokerage, so this is about the position mattering, not
-  cost.
+  recommendation. Where delivery trades carry no brokerage, this is about the position mattering,
+  not cost.
 - **Say exactly what the number says.** Write "debt-free" only when borrowings are nil; otherwise
   write "effectively debt-free (₹800 Cr, D/E 0.04)". Label trailing figures as trailing. Never put
   a percentage in a note that you computed across two different bases.

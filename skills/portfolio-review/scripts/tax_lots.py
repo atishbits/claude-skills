@@ -12,13 +12,13 @@ exemption, 20% flat) are current as of the FY24 Budget change -- these are
 published law, not personal, but verify against the current Finance Act
 before relying on them.
 
---harvest reads the snapshot's tax_position block (parsed from the the broker
+--harvest reads the snapshot's tax_position block (parsed from the broker
 export's own "Tax position" section, if the input is a lot-level .md rather
 than a plain CSV) for this FY's realised gains and the broker's own
 loss-harvesting estimate, and lists every holding's LT-gain lots (candidates
 for tax-free gain booking against the Rs 1.25L exemption) and loss lots
 (candidates for harvesting) across the whole portfolio, not one ticker at a
-time. Without a tax_position block (CSV-only input, or an older the broker
+time. Without a tax_position block (CSV-only input, or an older
 export), it says so and falls back to per-lot figures alone, without a
 realised-gains baseline to size a harvest against."""
 import argparse
@@ -112,7 +112,7 @@ def run_single(snap, path, ticker, near_lt_days):
     lots = stock.get("lots") or []
     if not lots:
         print(f"{ticker}: no per-lot data on file (holdings CSV without a lot-level "
-              f"broker export, or this ticker has none in the tradebook).")
+              f"lot-level broker export, or this ticker has none in the tradebook).")
         return
     if price is None:
         sys.exit(f"{ticker}: no current price in the snapshot.")
@@ -187,7 +187,7 @@ def run_harvest(snap):
               f"realised LTCG {realised_ltcg:,.0f}. LTCG exemption headroom this FY: "
               f"{headroom:,.0f} of {LTCG_EXEMPTION_PER_FY:,}.")
         if tax_position.get("broker_harvest_savings") is not None:
-            print(f"the broker's own current-year loss-harvesting estimate (all realised gains, "
+            print(f"The broker's own current-year loss-harvesting estimate (all realised gains, "
                   f"stocks + MFs): save up to {tax_position['broker_harvest_savings']:,.0f} -- "
                   f"this is the authoritative figure for what harvesting a loss is worth *this "
                   f"year*; it will be small whenever realised gains are small, same as here "

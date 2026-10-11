@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch fundamentals from screener.in for every holding in the latest the broker export.
+"""Fetch fundamentals from screener.in for every holding in the latest broker export.
 
 Emits data/snapshot-<date>.json with ratios, quarterly trend, a signal-row
 classification and a technical read (DMAs, RSI, momentum, volume). Deliberately
@@ -179,16 +179,16 @@ ROW_TEXT = {
 
 def latest_holdings_file(required=True):
     """The newest holdings input under data/: either a broker CSV export
-    (broker_holdings_*.csv, or any *holdings*.csv with the same columns) or a
-    lot-level broker export (broker-portfolio-<date>.md).
+    (broker_holdings_<date>.csv, or any *holdings*.csv with the same columns) or a
+    lot-level broker export (broker-portfolio-<date>.md, or any *-portfolio-*.md
+    in the template's layout).
 
     Returns None when there is none and the caller can live without it: a
     --screen run rates stocks nobody owns, so it should not need a portfolio."""
-    csvs = (glob.glob(os.path.join(DATA_DIR, "broker_holdings_*.csv"))
-            + glob.glob(os.path.join(DATA_DIR, "*holdings*.csv")))
-    csvs = [f for f in set(csvs) if not os.path.basename(f).startswith("holdings-template")]
-    mds = [f for f in glob.glob(os.path.join(DATA_DIR, "broker-portfolio-*.md"))
-           if not os.path.basename(f).startswith("broker-portfolio-template")]
+    csvs = [f for f in glob.glob(os.path.join(DATA_DIR, "*holdings*.csv"))
+            if not os.path.basename(f).startswith("holdings-template")]
+    mds = [f for f in glob.glob(os.path.join(DATA_DIR, "*-portfolio-*.md"))
+           if "-portfolio-template" not in os.path.basename(f)]
     files = csvs + mds
     if len(files) > 1:
         # Pick by the date embedded in the filename, not file mtime: a fresh
@@ -318,7 +318,7 @@ def parse_tax_position(text):
     in the account (stocks and MFs), not just what this file tracks. Nobody
     read this section before tax_lots.py --harvest: it sat in the file,
     generated every time, unused. Returns None if the section is absent (a
-    plain CSV input, or an older broker export predating this section)."""
+    plain CSV input, or an older export predating this section)."""
     m = re.search(r"## Tax position (FY [\d-]+)[^\n]*\n(.+?)(?:\n##|\Z)", text, re.S)
     if not m:
         return None
