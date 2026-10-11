@@ -110,5 +110,110 @@ class TestMatchTopic(unittest.TestCase):
         self.assertIsNone(fetch_news.match_topic("Rain hits Sampleville", self.TOPICS))
 
 
+G = "https://news.example.com/world.xml"
+H = "https://atom.example.org/home.xml"
+START = parse_ts("2026-10-03T06:00:00Z")
+END = parse_ts("2026-10-10T06:00:00Z")
+PROFILE = {
+    "feeds": {"global": [G], "home": [H], "markets": []},
+    "portfolio_topics": [{"name": "Example Industries", "kind": "company"}],
+    "interest_topics": [{"name": "model railways", "why": "a hobby"}],
+}
+
+
+def fake(pages):
+    def fetch(url):
+        if url not in pages:
+            raise OSError("unreachable")
+        return pages[url].encode("utf-8")
+    return fetch
+
+
+class TestCollect(unittest.TestCase):
+    def test_filters_tags_and_dedupes(self):
+        got = fetch_news.collect(PROFILE, START, END, fetch=fake({G: RSS, H: ATOM}))
+        by_section = {c["section"]: c for c in got["candidates"]}
+        self.assertEqual(len(got["candidates"]), 3)
+        self.assertEqual(by_section["portfolio"]["topic"], "Example Industries")
+        self.assertEqual(by_section["portfolio"]["kind"], "company")
+        self.assertEqual(by_section["interests"]["topic"], "model railways")
+        self.assertEqual(by_section["interests"]["why"], "a hobby")
+        self.assertEqual(by_section["global"]["title"], "Rain & floods hit Sampleville")
+        self.assertEqual(by_section["global"]["published"], "2026-10-08T03:30:00Z")
+        self.assertEqual(by_section["global"]["source"], "news.example.com")
+        self.assertEqual(got["undated_dropped"], 1)
+        self.assertEqual((got["reachable"], got["sources_ok"], got["failed"]), (True, 2, []))
+
+    def test_one_feed_failing_does_not_stop_the_others(self):
+        got = fetch_news.collect(PROFILE, START, END, fetch=fake({G: RSS}))
+        self.assertTrue(got["reachable"])
+        self.assertEqual(got["failed"], [{"source": "atom.example.org", "error": "OSError"}])
+        self.assertEqual({c["section"] for c in got["candidates"]}, {"portfolio", "global"})
+
+    def test_an_error_page_counts_as_a_failed_source(self):
+        pages = {G: RSS, H: "<html><body>503 Service Unavailable</body>"}
+        got = fetch_news.collect(PROFILE, START, END, fetch=fake(pages))
+        self.assertEqual(got["failed"], [{"source": "atom.example.org", "error": "ParseError"}])
+        self.assertTrue(got["candidates"])
+
+    def test_nothing_reachable(self):
+        got = fetch_news.collect(PROFILE, START, END, fetch=fake({}))
+        self.assertEqual((got["reachable"], got["candidates"]), (False, []))
+
+    def test_no_feeds_configured_is_not_reachable(self):
+        got = fetch_news.collect({}, START, END, fetch=fake({}))
+        self.assertEqual((got["reachable"], got["failed"]), (False, []))
+
+    def test_search_feed_is_fetched_per_topic_and_failures_listed_once(self):
+        profile = dict(PROFILE, feeds={"search": "https://search.example.com/rss?q={query}"})
+        hit = RSS.replace("Example Industries opens a new plant", "New plant announced")
+        pages = {"https://search.example.com/rss?q=Example+Industries": hit}
+        got = fetch_news.collect(profile, START, END, fetch=fake(pages))
+        titles = {c["title"]: c for c in got["candidates"]}
+        self.assertEqual(titles["New plant announced"]["section"], "portfolio")
+        self.assertEqual(titles["New plant announced"]["topic"], "Example Industries")
+        self.assertEqual(got["failed"], [{"source": "search.example.com", "error": "OSError"}])
+
+    def test_per_section_cap_keeps_the_newest(self):
+        items = "".join(
+            f"<item><title>Story {n}</title><link>https://news.example.com/s{n}</link>"
+            f"<pubDate>0{n} Oct 2026 12:00:00 GMT</pubDate></item>" for n in range(4, 9))
+        rss = f'<rss version="2.0"><channel>{items}</channel></rss>'
+        got = fetch_news.collect({"feeds": {"global": [G]}}, START, END, fetch=fake({G: rss}),
+                                 per_section=2)
+        self.assertEqual([c["title"] for c in got["candidates"]], ["Story 8", "Story 7"])
+
+
+class TestMain(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.profile = os.path.join(self.dir, "profile.json")
+
+    def save(self, profile):
+        with open(self.profile, "w", encoding="utf-8") as fh:
+            json.dump(profile, fh)
+
+    def args(self):
+        return ["--profile", self.profile, "--start", "2026-10-03T06:00:00Z",
+                "--end", "2026-10-10T06:00:00Z", "--api", os.path.join(self.dir, "api.json")]
+
+    def test_prints_the_collection(self):
+        self.save(PROFILE)
+        out = io.StringIO()
+        with mock.patch.object(fetch_news, "default_fetch", fake({G: RSS, H: ATOM})), \
+                contextlib.redirect_stdout(out):
+            fetch_news.main(self.args())
+        self.assertEqual(len(json.loads(out.getvalue())["candidates"]), 3)
+
+    def test_invalid_profile_stops_before_any_fetch(self):
+        self.save(dict(PROFILE, quantity=10))
+        called = mock.Mock(side_effect=AssertionError("network was used"))
+        with mock.patch.object(fetch_news, "default_fetch", called):
+            with self.assertRaises(SystemExit) as ctx:
+                fetch_news.main(self.args())
+        self.assertIn("quantity: unknown field", str(ctx.exception))
+        called.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
