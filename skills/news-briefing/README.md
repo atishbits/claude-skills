@@ -29,10 +29,15 @@ queries.
 
 ## Telling it what you hold
 
-Put your holdings statements (shares, bonds, funds) in a folder named `news-briefing-holdings` in
-the same cloud file storage, as CSV or `.xlsx` files. That is the preferred place, because the
-skill can then rebuild your topics from any surface. Files that live only on this machine work
-too: list their paths in `data/notes.md`.
+Keep your holdings statements (shares, bonds, funds), as CSV or `.xlsx` files, in the same cloud
+folder as `news-briefing-profile.json` or anywhere below it. No folder name or layout is required:
+the skill treats that folder as your context folder, looks through it and picks out what is
+relevant. That is the preferred place, because the skill can then rebuild your topics from any
+surface. Files that live only on this machine work too: list their paths in `data/notes.md`.
+
+The skill never looks outside that folder. After each refresh it leaves a one-page summary there,
+`news-briefing-context.md`, saying which files it used and how it read them, so the next run
+starts informed. The summary names files and holdings; it carries no amounts or account numbers.
 
 Only the column holding each holding's name is read. Quantities, prices and values are ignored,
 and a name that looks like an account or security number is dropped. A statement with several
