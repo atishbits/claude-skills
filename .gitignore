@@ -21,6 +21,11 @@ sbi-tt-rates.json
 
 !skills/*/*-template.*
 
+# The names hooks/pre-commit must never let in: brokers, platforms, banks,
+# tickers actually held. One term or extended regex per line. The list is as
+# private as what it guards, so it stays out of git.
+.private-terms
+
 # Design specs and implementation plans written by the superpowers
 # brainstorming / writing-plans workflow — working scratch for a session, not
 # something this repo needs to track.
