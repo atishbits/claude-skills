@@ -159,6 +159,20 @@ class TestConflicts(Root):
             self.run_cli("conflict-copy", N, "skill-data/stocks/TESTCO.conflict-2026-10-18.md")
 
 
+class TestUploadedSize(Root):
+    def test_size_mismatch_is_refused_and_not_recorded(self):
+        self.write(N, "hello")
+        self.run_cli("init", "--root-id", "R0")
+        with self.assertRaises(ValueError):
+            self.run_cli("uploaded", N, "--id", "x", "--modified", "t", "--size", "4")
+        self.assertNotIn(N, ds.load_base(os.path.join(self.data, ".sync-base.json"))["files"])
+
+    def test_matching_size_is_recorded(self):
+        self.write(N, "hello")
+        self.run_cli("uploaded", N, "--id", "x", "--modified", "t", "--size", "5")
+        self.assertEqual(ds.load_base(os.path.join(self.data, ".sync-base.json"))["files"][N]["id"], "x")
+
+
 class TestLedgerScope(unittest.TestCase):
     def test_ledger_files_are_pulled_only_for_full_passes(self):
         path = "skill-data/ratings-ledger/2026-10-01-abcdef.jsonl"

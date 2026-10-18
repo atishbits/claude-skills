@@ -16,7 +16,8 @@ Commands (all print JSON):
   folder PATH --id ID               register a folder the model just created
   put PATH B64FILE --id ID --modified TS     write a downloaded file, record it
                                     (PATH .manifest-in.json for the manifest: written, not recorded)
-  uploaded PATH --id ID --modified TS        record a file the model just uploaded
+  uploaded PATH --id ID --modified TS [--size N]  record a file the model just uploaded;
+                                    with --size, refuse if it differs from the local file
   resolve-local PATH --id ID --modified TS  after a conflict kept the local copy: the next
                                     plan uploads it over the remote one
   conflict-copy PATH COPY           move the local losing copy aside
@@ -362,6 +363,7 @@ def main(argv=None, data_dir=None):
     s.add_argument("path")
     s.add_argument("--id", required=True)
     s.add_argument("--modified", required=True)
+    s.add_argument("--size", type=int, help="the uploaded file's size from the connector's result")
     s = sub.add_parser("resolve-local")
     s.add_argument("path")
     s.add_argument("--id", required=True)
@@ -407,6 +409,12 @@ def main(argv=None, data_dir=None):
         with open(a.b64file, encoding="ascii") as fh:
             out = {"path": a.path, "sha": put(data_dir, base, a.path, fh.read(), a.id, a.modified)}
     elif a.cmd == "uploaded":
+        # The model retypes a file to upload it; a size that differs from the
+        # local file means the cloud copy is not this file, so it is not recorded.
+        local_size = os.path.getsize(_safe_path(data_dir, a.path))
+        if a.size is not None and a.size != local_size:
+            raise ValueError(f"{a.path}: uploaded {a.size} bytes, local file is {local_size}; "
+                             "bin the upload and upload again")
         record_upload(data_dir, base, a.path, a.id, a.modified)
         out = {"path": a.path, "id": a.id}
     elif a.cmd == "resolve-local":

@@ -794,8 +794,9 @@ The last tool step of every run that wrote anything:
    session may have written while this one ran), then plan again.
 4. For each `upload`: read the local file and create it in `parent` with the connector (content
    type `mime`, no conversion to a native document type), then
-   `python3 scripts/drive_sync.py uploaded PATH --id NEWID --modified TS` from the result; then
-   move `old_id`, if any, to the bin.
+   `python3 scripts/drive_sync.py uploaded PATH --id NEWID --modified TS --size BYTES` from the
+   result. If it refuses (the size differs), bin the new file and upload again; otherwise move
+   `old_id`, if any, to the bin.
 5. `python3 scripts/drive_sync.py manifest`; upload the file it names as `portfolio-review-sync.json`
    in the root, then move its `old_id`, if any, to the bin.
 6. One line for the user: how many files went up, and any conflict copies.
