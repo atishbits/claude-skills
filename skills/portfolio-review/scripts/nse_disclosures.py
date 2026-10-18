@@ -29,11 +29,10 @@ from datetime import date, datetime, timedelta
 
 import requests
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Fallback only: callers pass their own cache_dir. This file is often a symlink
-# into a skills repo, and Python resolves symlinks when it sets the import path,
-# so ROOT here can be the repo checkout rather than the portfolio project --
-# which would drop the cache next to the source instead of next to the data.
+# Same rule as every other script: $PORTFOLIO_ROOT, else the working
+# directory. Never the script's own folder, which in a plugin install is
+# replaced on every update. Callers may still pass their own cache_dir.
+ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 CACHE_DIR = os.path.join(ROOT, "data", "skill-data", ".cache")
 CACHE_DAYS = 7
 WINDOW_DAYS = 365          # how far back a dealing counts as recent
