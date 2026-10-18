@@ -27,15 +27,16 @@ class TestNormaliseRating(unittest.TestCase):
 class TestAppendAndLoadLedger(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        self.ledger_path = os.path.join(self.tmpdir.name, "ratings-ledger.jsonl")
+        self.ledger_dir = os.path.join(self.tmpdir.name, "ratings-ledger")
+        self.root = self.tmpdir.name
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
     def test_append_then_load_round_trips(self):
         rating_ledger.append_entry("testco", "buy", "3150.5", "clears the Nifty hurdle, thinly",
-                                    asof="2026-09-27", ledger_path=self.ledger_path)
-        entries = rating_ledger.load_ledger(ledger_path=self.ledger_path)
+                                    asof="2026-09-27", ledger_dir=self.ledger_dir, root=self.root)
+        entries = rating_ledger.load_ledger(ledger_dir=self.ledger_dir)
         self.assertEqual(len(entries), 1)
         e = entries[0]
         self.assertEqual(e["ticker"], "TESTCO")
@@ -45,30 +46,32 @@ class TestAppendAndLoadLedger(unittest.TestCase):
 
     def test_filters_by_ticker(self):
         rating_ledger.append_entry("TESTCO", "HOLD", 3000, "x", asof="2026-09-01",
-                                    ledger_path=self.ledger_path)
+                                    ledger_dir=self.ledger_dir, root=self.root)
         rating_ledger.append_entry("ITEMCO", "BUY", 400, "y", asof="2026-09-02",
-                                    ledger_path=self.ledger_path)
-        one_only = rating_ledger.load_ledger(ticker="testco", ledger_path=self.ledger_path)
+                                    ledger_dir=self.ledger_dir, root=self.root)
+        one_only = rating_ledger.load_ledger(ticker="testco", ledger_dir=self.ledger_dir)
         self.assertEqual([e["ticker"] for e in one_only], ["TESTCO"])
 
     def test_sorted_by_ticker_then_date(self):
         rating_ledger.append_entry("TESTCO", "HOLD", 3000, "later", asof="2026-09-10",
-                                    ledger_path=self.ledger_path)
+                                    ledger_dir=self.ledger_dir, root=self.root)
         rating_ledger.append_entry("TESTCO", "BUY", 2900, "earlier", asof="2026-08-01",
-                                    ledger_path=self.ledger_path)
-        entries = rating_ledger.load_ledger(ledger_path=self.ledger_path)
+                                    ledger_dir=self.ledger_dir, root=self.root)
+        entries = rating_ledger.load_ledger(ledger_dir=self.ledger_dir)
         self.assertEqual([e["date"] for e in entries], ["2026-08-01", "2026-09-10"])
 
     def test_rejects_non_positive_price(self):
         with self.assertRaises(ValueError):
-            rating_ledger.append_entry("TESTCO", "BUY", 0, "x", ledger_path=self.ledger_path)
+            rating_ledger.append_entry("TESTCO", "BUY", 0, "x", ledger_dir=self.ledger_dir, root=self.root)
 
     def test_appends_are_newline_delimited_jsonl(self):
         rating_ledger.append_entry("TESTCO", "BUY", 100, "a", asof="2026-01-01",
-                                    ledger_path=self.ledger_path)
-        rating_ledger.append_entry("TESTCO", "HOLD", 110, "b", asof="2026-02-01",
-                                    ledger_path=self.ledger_path)
-        with open(self.ledger_path, encoding="utf-8") as fh:
+                                    ledger_dir=self.ledger_dir, root=self.root)
+        rating_ledger.append_entry("TESTCO", "HOLD", 110, "b", asof="2026-01-01",
+                                    ledger_dir=self.ledger_dir, root=self.root)
+        files = os.listdir(self.ledger_dir)
+        self.assertEqual(len(files), 1)
+        with open(os.path.join(self.ledger_dir, files[0]), encoding="utf-8") as fh:
             lines = [line for line in fh.read().splitlines() if line.strip()]
         self.assertEqual(len(lines), 2)
         for line in lines:

@@ -41,15 +41,15 @@ class TestNormaliseOutcome(unittest.TestCase):
 class TestAppendAndLoadHistory(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        self.ledger_path = os.path.join(self.tmpdir.name, "scan-history.jsonl")
+        self.ledger_path = os.path.join(self.tmpdir.name, "scan-history")
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
     def test_append_then_load_round_trips(self):
         scan_history.append_entry("TESTCO", "mechanical", "pass", "passed thresholds",
-                                  asof="2026-09-27", ledger_path=self.ledger_path)
-        entries = scan_history.load_history(ledger_path=self.ledger_path)
+                                  asof="2026-09-27", ledger_dir=self.ledger_path, root=self.tmpdir.name)
+        entries = scan_history.load_history(ledger_dir=self.ledger_path)
         self.assertEqual(len(entries), 1)
         e = entries[0]
         self.assertEqual(e["ticker"], "TESTCO")
@@ -62,46 +62,48 @@ class TestAppendAndLoadHistory(unittest.TestCase):
     def test_append_with_next_checkin_round_trips(self):
         scan_history.append_entry("TESTCO", "mechanical", "borderline", "needs review",
                                   asof="2026-09-27", next_checkin="2026-10-15",
-                                  ledger_path=self.ledger_path)
-        entries = scan_history.load_history(ledger_path=self.ledger_path)
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
+        entries = scan_history.load_history(ledger_dir=self.ledger_path)
         e = entries[0]
         self.assertEqual(e["next_checkin"], "2026-10-15")
 
     def test_rejects_blank_reason(self):
         with self.assertRaises(ValueError) as ctx:
-            scan_history.append_entry("TESTCO", "mechanical", "pass", "", ledger_path=self.ledger_path)
+            scan_history.append_entry("TESTCO", "mechanical", "pass", "", ledger_dir=self.ledger_path, root=self.tmpdir.name)
         self.assertIn("reason must be non-empty", str(ctx.exception))
 
     def test_rejects_whitespace_only_reason(self):
         with self.assertRaises(ValueError) as ctx:
-            scan_history.append_entry("TESTCO", "mechanical", "pass", "   ", ledger_path=self.ledger_path)
+            scan_history.append_entry("TESTCO", "mechanical", "pass", "   ", ledger_dir=self.ledger_path, root=self.tmpdir.name)
         self.assertIn("reason must be non-empty", str(ctx.exception))
 
     def test_filters_by_ticker(self):
         scan_history.append_entry("TESTCO", "mechanical", "pass", "x", asof="2026-09-01",
-                                  ledger_path=self.ledger_path)
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
         scan_history.append_entry("ITEMCO", "judgment", "fail", "y", asof="2026-09-02",
-                                  ledger_path=self.ledger_path)
-        one_only = scan_history.load_history(ticker="testco", ledger_path=self.ledger_path)
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
+        one_only = scan_history.load_history(ticker="testco", ledger_dir=self.ledger_path)
         self.assertEqual([e["ticker"] for e in one_only], ["TESTCO"])
 
     def test_sorted_by_ticker_then_date(self):
         scan_history.append_entry("TESTCO", "mechanical", "pass", "later", asof="2026-09-10",
-                                  ledger_path=self.ledger_path)
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
         scan_history.append_entry("TESTCO", "judgment", "fail", "earlier", asof="2026-08-01",
-                                  ledger_path=self.ledger_path)
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
         scan_history.append_entry("ABC", "deep-dive", "borderline", "first_ticker", asof="2026-09-05",
-                                  ledger_path=self.ledger_path)
-        entries = scan_history.load_history(ledger_path=self.ledger_path)
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
+        entries = scan_history.load_history(ledger_dir=self.ledger_path)
         tickers_dates = [(e["ticker"], e["date"]) for e in entries]
         self.assertEqual(tickers_dates, [("ABC", "2026-09-05"), ("TESTCO", "2026-08-01"), ("TESTCO", "2026-09-10")])
 
     def test_appends_are_newline_delimited_jsonl(self):
         scan_history.append_entry("TESTCO", "mechanical", "pass", "a", asof="2026-01-01",
-                                  ledger_path=self.ledger_path)
-        scan_history.append_entry("TESTCO", "judgment", "fail", "b", asof="2026-02-01",
-                                  ledger_path=self.ledger_path)
-        with open(self.ledger_path, encoding="utf-8") as fh:
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
+        scan_history.append_entry("TESTCO", "judgment", "fail", "b", asof="2026-01-01",
+                                  ledger_dir=self.ledger_path, root=self.tmpdir.name)
+        files = os.listdir(self.ledger_path)
+        self.assertEqual(len(files), 1)
+        with open(os.path.join(self.ledger_path, files[0]), encoding="utf-8") as fh:
             lines = [line for line in fh.read().splitlines() if line.strip()]
         self.assertEqual(len(lines), 2)
         for line in lines:
@@ -164,14 +166,14 @@ class TestOverdueCheckins(unittest.TestCase):
         """Same bug scenario end to end through append_entry/load_history, so the
         file-order tie-break is exercised on real ledger output."""
         with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "scan-history.jsonl")
+            path = os.path.join(tmp, "scan-history")
             scan_history.append_entry("ZENTRO", "mechanical", "pass", "quality pass; near local low",
-                                      asof="2026-06-01", ledger_path=path)
+                                      asof="2026-06-01", ledger_dir=path, root=tmp)
             scan_history.append_entry("ZENTRO", "judgment", "pass", "long runway",
-                                      asof="2026-06-01", ledger_path=path)
+                                      asof="2026-06-01", ledger_dir=path, root=tmp)
             scan_history.append_entry("ZENTRO", "deep-dive", "pass", "rated BUY, see rating_ledger",
-                                      asof="2026-06-01", next_checkin="2026-09-01", ledger_path=path)
-            overdue = scan_history.overdue_checkins(scan_history.load_history(ledger_path=path),
+                                      asof="2026-06-01", next_checkin="2026-09-01", ledger_dir=path, root=tmp)
+            overdue = scan_history.overdue_checkins(scan_history.load_history(ledger_dir=path),
                                                     today="2026-09-20")
         self.assertEqual([e["stage"] for e in overdue], ["DEEP-DIVE"])
 
@@ -223,7 +225,7 @@ class TestOverdueCheckins(unittest.TestCase):
 class TestRecordShortlist(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        self.ledger_path = os.path.join(self.tmpdir.name, "scan-history.jsonl")
+        self.ledger_path = os.path.join(self.tmpdir.name, "scan-history")
         self.shortlist_path = os.path.join(self.tmpdir.name, "multibagger-shortlist-2026-06-01.json")
 
     def tearDown(self):
@@ -244,10 +246,10 @@ class TestRecordShortlist(unittest.TestCase):
              "reason": "pe_growth over by 12.0%; cash_conversion short 5.0%; not near a local low"},
         ])
         returned = scan_history.record_shortlist(self.shortlist_path, asof="2026-06-01",
-                                                 ledger_path=self.ledger_path)
+                                                 ledger_dir=self.ledger_path, root=self.tmpdir.name)
         self.assertEqual(len(returned), 3)
-        with open(self.ledger_path, encoding="utf-8") as fh:
-            written = [json.loads(l) for l in fh if l.strip()]
+        written = scan_history.load_history(ledger_dir=self.ledger_path)
+        written.sort(key=lambda e: ["ZENTRO", "QORVIK", "MALBEX"].index(e["ticker"]))
         self.assertEqual(
             [(e["ticker"], e["stage"], e["outcome"], e["reason"], e["date"]) for e in written],
             [("ZENTRO", "MECHANICAL", "PASS", "quality pass; near local low", "2026-06-01"),
@@ -260,7 +262,7 @@ class TestRecordShortlist(unittest.TestCase):
     def test_stage_override(self):
         self.write_shortlist([{"ticker": "ZENTRO", "quality_verdict": "pass", "reason": "quality pass"}])
         entries = scan_history.record_shortlist(self.shortlist_path, stage="judgment",
-                                                ledger_path=self.ledger_path)
+                                                ledger_dir=self.ledger_path, root=self.tmpdir.name)
         self.assertEqual(entries[0]["stage"], "JUDGMENT")
 
     def test_missing_reason_raises_and_writes_nothing(self):
@@ -269,7 +271,7 @@ class TestRecordShortlist(unittest.TestCase):
             {"ticker": "QORVIK", "quality_verdict": "fail"},
         ])
         with self.assertRaises(ValueError):
-            scan_history.record_shortlist(self.shortlist_path, ledger_path=self.ledger_path)
+            scan_history.record_shortlist(self.shortlist_path, ledger_dir=self.ledger_path, root=self.tmpdir.name)
         self.assertFalse(os.path.exists(self.ledger_path))
 
     def test_bad_verdict_raises_and_writes_nothing(self):
@@ -278,7 +280,7 @@ class TestRecordShortlist(unittest.TestCase):
             {"ticker": "QORVIK", "quality_verdict": "maybe", "reason": "x"},
         ])
         with self.assertRaises(ValueError):
-            scan_history.record_shortlist(self.shortlist_path, ledger_path=self.ledger_path)
+            scan_history.record_shortlist(self.shortlist_path, ledger_dir=self.ledger_path, root=self.tmpdir.name)
         self.assertFalse(os.path.exists(self.ledger_path))
 
     def test_missing_ticker_or_verdict_raises_value_error(self):
@@ -287,14 +289,14 @@ class TestRecordShortlist(unittest.TestCase):
                       {"ticker": "ZENTRO", "reason": "x"}):
             self.write_shortlist([stock])
             with self.assertRaises(ValueError):
-                scan_history.record_shortlist(self.shortlist_path, ledger_path=self.ledger_path)
+                scan_history.record_shortlist(self.shortlist_path, ledger_dir=self.ledger_path, root=self.tmpdir.name)
         self.assertFalse(os.path.exists(self.ledger_path))
 
     def test_not_a_shortlist_file_raises(self):
         with open(self.shortlist_path, "w", encoding="utf-8") as fh:
             json.dump({"something": "else"}, fh)
         with self.assertRaises(ValueError):
-            scan_history.record_shortlist(self.shortlist_path, ledger_path=self.ledger_path)
+            scan_history.record_shortlist(self.shortlist_path, ledger_dir=self.ledger_path, root=self.tmpdir.name)
 
     def test_cli_record_shortlist_is_one_invocation(self):
         """End to end through main(): one CLI call records every stock."""
@@ -304,17 +306,17 @@ class TestRecordShortlist(unittest.TestCase):
         ])
         import io
         from contextlib import redirect_stdout
-        saved_argv, saved_path = sys.argv, scan_history.LEDGER_PATH
+        saved_argv, saved_path, saved_root = sys.argv, scan_history.LOG_DIR, scan_history.ROOT
         sys.argv = ["scan_history.py", "record-shortlist", self.shortlist_path, "--date", "2026-06-01"]
-        scan_history.LEDGER_PATH = self.ledger_path
+        scan_history.LOG_DIR, scan_history.ROOT = self.ledger_path, self.tmpdir.name
         try:
             out = io.StringIO()
             with redirect_stdout(out):
                 scan_history.main()
         finally:
-            sys.argv, scan_history.LEDGER_PATH = saved_argv, saved_path
+            sys.argv, scan_history.LOG_DIR, scan_history.ROOT = saved_argv, saved_path, saved_root
         self.assertIn("Recorded 2 MECHANICAL entries", out.getvalue())
-        entries = scan_history.load_history(ledger_path=self.ledger_path)
+        entries = scan_history.load_history(ledger_dir=self.ledger_path)
         self.assertEqual({(e["ticker"], e["outcome"]) for e in entries},
                          {("ZENTRO", "PASS"), ("QORVIK", "FAIL")})
 
@@ -375,7 +377,7 @@ class TestCmdReport(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        self.ledger_path = os.path.join(self.tmpdir.name, "scan-history.jsonl")
+        self.ledger_path = os.path.join(self.tmpdir.name, "scan-history")
 
     def tearDown(self):
         self.tmpdir.cleanup()
@@ -388,10 +390,10 @@ class TestCmdReport(unittest.TestCase):
         # Create two entries: one PASS with past next_checkin, one BORDERLINE with future
         scan_history.append_entry("TESTCO", "MECHANICAL", "PASS", "cheap",
                                  asof="2026-09-01", next_checkin="2026-09-10",
-                                 ledger_path=self.ledger_path)
+                                 ledger_dir=self.ledger_path, root=self.tmpdir.name)
         scan_history.append_entry("ITEMCO", "MECHANICAL", "BORDERLINE", "review",
                                  asof="2026-09-05", next_checkin="2026-10-15",
-                                 ledger_path=self.ledger_path)
+                                 ledger_dir=self.ledger_path, root=self.tmpdir.name)
 
         # Mock args for report with --borderline (filters out TESTCO)
         class Args:
@@ -400,7 +402,7 @@ class TestCmdReport(unittest.TestCase):
 
         # Monkey-patch load_history to use our test ledger
         original_load = scan_history.load_history
-        scan_history.load_history = lambda ticker=None, ledger_path=None: original_load(ledger_path=self.ledger_path)
+        scan_history.load_history = lambda ticker=None, ledger_dir=None: original_load(ledger_dir=self.ledger_path)
 
         try:
             # Capture output
@@ -433,7 +435,7 @@ class TestCmdReport(unittest.TestCase):
 
         # Monkey-patch load_history to use empty ledger
         original_load = scan_history.load_history
-        scan_history.load_history = lambda ticker=None, ledger_path=None: []
+        scan_history.load_history = lambda ticker=None, ledger_dir=None: []
 
         try:
             import io
@@ -453,7 +455,7 @@ class TestCmdReport(unittest.TestCase):
     def test_report_calls_build_report_not_inline_formatting(self):
         """Verify cmd_report uses build_report for formatting (not reimplemented)."""
         scan_history.append_entry("TESTCO", "MECHANICAL", "PASS", "cheap",
-                                 asof="2026-09-01", ledger_path=self.ledger_path)
+                                 asof="2026-09-01", ledger_dir=self.ledger_path, root=self.tmpdir.name)
 
         class Args:
             tickers = []
@@ -469,7 +471,7 @@ class TestCmdReport(unittest.TestCase):
             build_report_called.append(True)
             return original_build(entries, today)
 
-        scan_history.load_history = lambda ticker=None, ledger_path=None: original_load(ledger_path=self.ledger_path)
+        scan_history.load_history = lambda ticker=None, ledger_dir=None: original_load(ledger_dir=self.ledger_path)
         scan_history.build_report = mock_build_report
 
         try:

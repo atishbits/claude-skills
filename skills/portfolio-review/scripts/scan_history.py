@@ -41,9 +41,12 @@ import os
 import sys
 from datetime import date, datetime
 
+import logdir
+
 ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 DATA_DIR = os.path.join(ROOT, "data", "skill-data")
-LEDGER_PATH = os.path.join(DATA_DIR, "scan-history.jsonl")
+LOG_DIR = os.path.join(DATA_DIR, "scan-history")
+LEGACY_PATH = os.path.join(DATA_DIR, "scan-history.jsonl")
 
 VALID_STAGES = {"MECHANICAL", "JUDGMENT", "DEEP-DIVE"}
 VALID_OUTCOMES = {"PASS", "FAIL", "BORDERLINE"}
@@ -67,10 +70,10 @@ def normalise_outcome(outcome):
     return o
 
 
-def append_entry(ticker, stage, outcome, reason, asof=None, next_checkin=None, ledger_path=None):
+def append_entry(ticker, stage, outcome, reason, asof=None, next_checkin=None, ledger_dir=None, root=None):
     """Append one entry to the ledger. Reason must be non-empty after stripping.
     Returns the entry dict."""
-    ledger_path = ledger_path or LEDGER_PATH
+    ledger_dir = ledger_dir or LOG_DIR
     asof = asof or date.today().isoformat()
     reason = reason.strip()
     if not reason:
@@ -84,13 +87,11 @@ def append_entry(ticker, stage, outcome, reason, asof=None, next_checkin=None, l
     }
     if next_checkin is not None:
         entry["next_checkin"] = next_checkin
-    os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
-    with open(ledger_path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    logdir.append(ledger_dir, entry, root or ROOT, asof)
     return entry
 
 
-def record_shortlist(shortlist_path, stage="mechanical", asof=None, ledger_path=None):
+def record_shortlist(shortlist_path, stage="mechanical", asof=None, ledger_dir=None, root=None):
     """Append one entry per stock in a multibagger_screen.py shortlist file
     (multibagger-shortlist-*.json): outcome is the stock's quality_verdict
     (pass/fail/borderline), reason is its mechanical "reason" string.
@@ -124,26 +125,18 @@ def record_shortlist(shortlist_path, stage="mechanical", asof=None, ledger_path=
         normalise_outcome(verdict)
         rows.append((ticker, verdict, reason))
 
-    return [append_entry(t, stage, v, r, asof=asof, ledger_path=ledger_path) for t, v, r in rows]
+    return [append_entry(t, stage, v, r, asof=asof, ledger_dir=ledger_dir, root=root) for t, v, r in rows]
 
 
-def load_history(ticker=None, ledger_path=None):
-    """Load all entries from the ledger, optionally filtered to one ticker.
+def load_history(ticker=None, ledger_dir=None):
+    """Load all entries from the log folder, optionally filtered to one ticker.
     Sorted by (ticker, date). The sort is stable, so entries sharing a
-    ticker and date keep their file (append) order -- overdue_checkins
-    relies on that to break same-day ties."""
-    ledger_path = ledger_path or LEDGER_PATH
-    if not os.path.exists(ledger_path):
-        return []
-    entries = []
-    with open(ledger_path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            entry = json.loads(line)
-            if ticker is None or entry["ticker"] == ticker.strip().upper():
-                entries.append(entry)
+    ticker and date keep their read order (files by name, lines in append
+    order) -- overdue_checkins relies on that to break same-day ties."""
+    ledger_dir = ledger_dir or LOG_DIR
+    legacy = LEGACY_PATH if ledger_dir == LOG_DIR else None
+    entries = [e for e in logdir.read(ledger_dir, legacy)
+               if ticker is None or e["ticker"] == ticker.strip().upper()]
     entries.sort(key=lambda e: (e["ticker"], e["date"]))
     return entries
 
@@ -286,6 +279,9 @@ def main():
     rep.add_argument("--borderline", action="store_true",
                     help="restrict to BORDERLINE outcomes")
     rep.set_defaults(func=cmd_report)
+
+    mig = sub.add_parser("migrate", help="move scan-history.jsonl into the scan-history/ folder")
+    mig.set_defaults(func=lambda a: print(logdir.migrate(LEGACY_PATH, LOG_DIR, ROOT) or "nothing to migrate"))
 
     args = p.parse_args()
     try:

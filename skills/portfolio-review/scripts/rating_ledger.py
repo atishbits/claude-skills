@@ -26,6 +26,10 @@ Two jobs:
      the time, today's price from the newest snapshot, the realised return
      and days held, and the deciding sentence recorded then.
 
+The ledger is a folder, data/skill-data/ratings-ledger/, of one file per
+writer per day (logdir.py), so copies kept in cloud storage never conflict.
+`rating_ledger.py migrate` moves an old single ratings-ledger.jsonl into it.
+
 The ledger is intentionally just a fact log. Whether a thesis actually held
 up is a judgment call against real news and the next result, the same as
 everything else in SKILL.md 3d -- this script does not grade itself, it only
@@ -40,9 +44,12 @@ import os
 import sys
 from datetime import date, datetime
 
+import logdir
+
 ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 DATA_DIR = os.path.join(ROOT, "data", "skill-data")
-LEDGER_PATH = os.path.join(DATA_DIR, "ratings-ledger.jsonl")
+LOG_DIR = os.path.join(DATA_DIR, "ratings-ledger")
+LEGACY_PATH = os.path.join(DATA_DIR, "ratings-ledger.jsonl")
 
 VALID_RATINGS = {"BUY", "HOLD", "SELL"}
 TRIM_ALIASES = {"SELL/TRIM", "SELL / TRIM", "TRIM"}
@@ -59,8 +66,8 @@ def normalise_rating(rating):
     return r
 
 
-def append_entry(ticker, rating, price, thesis, asof=None, ledger_path=None):
-    ledger_path = ledger_path or LEDGER_PATH
+def append_entry(ticker, rating, price, thesis, asof=None, ledger_dir=None, root=None):
+    ledger_dir = ledger_dir or LOG_DIR
     asof = asof or date.today().isoformat()
     price = float(price)
     if price <= 0:
@@ -72,25 +79,15 @@ def append_entry(ticker, rating, price, thesis, asof=None, ledger_path=None):
         "price": price,
         "thesis": thesis.strip(),
     }
-    os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
-    with open(ledger_path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    logdir.append(ledger_dir, entry, root or ROOT, asof)
     return entry
 
 
-def load_ledger(ticker=None, ledger_path=None):
-    ledger_path = ledger_path or LEDGER_PATH
-    if not os.path.exists(ledger_path):
-        return []
-    entries = []
-    with open(ledger_path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            entry = json.loads(line)
-            if ticker is None or entry["ticker"] == ticker.strip().upper():
-                entries.append(entry)
+def load_ledger(ticker=None, ledger_dir=None):
+    ledger_dir = ledger_dir or LOG_DIR
+    legacy = LEGACY_PATH if ledger_dir == LOG_DIR else None
+    entries = [e for e in logdir.read(ledger_dir, legacy)
+               if ticker is None or e["ticker"] == ticker.strip().upper()]
     entries.sort(key=lambda e: (e["ticker"], e["date"]))
     return entries
 
@@ -184,6 +181,9 @@ def main():
     rep = sub.add_parser("report", help="score the ledger against today's snapshot prices")
     rep.add_argument("tickers", nargs="*")
     rep.set_defaults(func=cmd_report)
+
+    mig = sub.add_parser("migrate", help="move ratings-ledger.jsonl into the ratings-ledger/ folder")
+    mig.set_defaults(func=lambda a: print(logdir.migrate(LEGACY_PATH, LOG_DIR, ROOT) or "nothing to migrate"))
 
     args = p.parse_args()
     try:
