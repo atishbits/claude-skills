@@ -23,7 +23,7 @@ research steps.
 2. **Screen them, never pick from memory:**
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py --screen TICKER ...
+   python3 scripts/fetch_fundamentals.py --screen TICKER ...
    ```
 
    It uses the same signal rows, technicals and one-off flags as the holdings, writes

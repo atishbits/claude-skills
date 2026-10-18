@@ -7,7 +7,7 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
 0. **Before anything else, check the scan history:**
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py report
+   python3 scripts/scan_history.py report
    ```
 
    Run it with no tickers so it surfaces the "Overdue re-checks" section regardless of what
@@ -16,7 +16,7 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
    anything in the history, also run
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py report TICKER ...
+   python3 scripts/scan_history.py report TICKER ...
    ```
 
    and say plainly if a ticker was rejected before, at which stage and why — and say plainly if
@@ -28,7 +28,7 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
    `"NIFTY MIDCAP 150"`):
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_fundamentals.py --scan "NIFTY 500"
+   python3 scripts/fetch_fundamentals.py --scan "NIFTY 500"
    ```
 
    A full-index scan can take 30+ minutes on tickers not already cached (each one costs a
@@ -45,7 +45,7 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
 2. **Stage 2 — mechanical pre-filter (cheap, deterministic).** Run
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/multibagger_screen.py
+   python3 scripts/multibagger_screen.py
    ```
 
    The defaults (`--roce-min 18.0 --profit-growth-min 15.0 --pe-growth-multiple 2.5
@@ -57,7 +57,7 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
    line):
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py record-shortlist data/skill-data/multibagger-shortlist-<today>.json --stage mechanical
+   python3 scripts/scan_history.py record-shortlist data/skill-data/multibagger-shortlist-<today>.json --stage mechanical
    ```
 
    Each stock is logged with its `quality_verdict` (pass/fail/borderline) as the outcome and the
@@ -72,7 +72,7 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
    verdict:
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py record TICKER judgment <pass|fail> "<why>"
+   python3 scripts/scan_history.py record TICKER judgment <pass|fail> "<why>"
    ```
 
    Say plainly if nothing survives this stage — that is a valid, expected outcome of a strict bar,
@@ -86,7 +86,7 @@ narrower "what else is worth buying" with named candidates goes to `new-ideas.md
    `scan_history.py`:
 
    ```
-   python3 ${CLAUDE_SKILL_DIR}/scripts/scan_history.py record TICKER deep-dive <pass|fail> "rated BUY/HOLD/SELL, see rating_ledger" [--next-checkin YYYY-MM-DD]
+   python3 scripts/scan_history.py record TICKER deep-dive <pass|fail> "rated BUY/HOLD/SELL, see rating_ledger" [--next-checkin YYYY-MM-DD]
    ```
 
    Outcome is `pass` for BUY or HOLD (still worth tracking) and `fail` for SELL (done with it for
