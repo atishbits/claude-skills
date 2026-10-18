@@ -6,7 +6,9 @@ skill-data/digest.json instead of opening every note, so a session that has
 to pull notes from cloud storage pulls only the ones it will re-rate.
 
     python3 scripts/digest.py          # writes data/skill-data/digest.json
+    python3 scripts/digest.py --merge  # a partial copy: keep tickers whose notes were not pulled
 """
+import argparse
 import json
 import os
 import re
@@ -50,7 +52,7 @@ def _calendar(path):
     return rows
 
 
-def build(skill_data_dir, today):
+def build(skill_data_dir, today, previous=None):
     stocks = os.path.join(skill_data_dir, "stocks")
     budgets_path = os.path.join(skill_data_dir, "entry-budgets.json")
     budgets = {}
@@ -77,12 +79,31 @@ def build(skill_data_dir, today):
         entry["ledger"] = [{"date": e["date"], "rating": e["rating"], "price": e["price"]}
                            for e in ledger if e["ticker"] == ticker]
         out["tickers"][ticker] = entry
+    if previous:
+        # A copy that pulled only some notes keeps the rest of the summary as it
+        # was, and keeps ledger rows recorded elsewhere for the notes it has.
+        for ticker, old in previous.get("tickers", {}).items():
+            if ticker not in out["tickers"]:
+                out["tickers"][ticker] = old
+                continue
+            rows = {(e["date"], e["rating"], e["price"]) for e in old.get("ledger", [])}
+            rows |= {(e["date"], e["rating"], e["price"]) for e in out["tickers"][ticker]["ledger"]}
+            out["tickers"][ticker]["ledger"] = [{"date": d, "rating": r, "price": pr}
+                                                for d, r, pr in sorted(rows)]
     return out
 
 
 def main():
-    data = build(SKILL_DATA, date.today())
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--merge", action="store_true",
+                   help="keep entries for tickers whose notes are not in this copy")
+    args = p.parse_args()
     path = os.path.join(SKILL_DATA, "digest.json")
+    previous = None
+    if args.merge and os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            previous = json.load(fh)
+    data = build(SKILL_DATA, date.today(), previous=previous)
     os.makedirs(SKILL_DATA, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=1, ensure_ascii=False, sort_keys=True)

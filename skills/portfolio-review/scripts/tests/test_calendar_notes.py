@@ -122,3 +122,20 @@ class TestWriteCalendarMd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCalendarMerge(unittest.TestCase):
+    def test_named_tickers_replace_only_their_own_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "calendar.md")
+            calendar_notes.write_calendar_md(
+                [{"ticker": "EXAMPLEA", "kind": "price-level", "detail": "200 DMA 500"},
+                 {"ticker": "TESTCO", "kind": "price-level", "detail": "old"}], path)
+            rows = calendar_notes.merge_rows(
+                calendar_notes.read_calendar_rows(path),
+                [{"ticker": "TESTCO", "kind": "price-level", "detail": "new"}], ["TESTCO"])
+            self.assertEqual([(r["ticker"], r["detail"]) for r in rows],
+                             [("EXAMPLEA", "200 DMA 500"), ("TESTCO", "new")])
+
+    def test_missing_file_reads_as_no_rows(self):
+        self.assertEqual(calendar_notes.read_calendar_rows("/nonexistent/calendar.md"), [])

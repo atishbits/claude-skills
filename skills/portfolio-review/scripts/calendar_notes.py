@@ -142,6 +142,28 @@ def write_calendar_md(rows, path=None):
     return path
 
 
+def read_calendar_rows(path=None):
+    """The rows of an existing calendar.md, or [] if there is none."""
+    path = path or CALENDAR_PATH
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if (line.startswith("|") and len(cells) == 3 and cells[0] != "Ticker"
+                    and not set(cells[0]) <= set("-")):
+                rows.append({"ticker": cells[0], "kind": cells[1], "detail": cells[2]})
+    return rows
+
+
+def merge_rows(existing, new_rows, tickers):
+    """Named tickers replace only their own rows; everyone else's stay. A run
+    about one stock must not wipe the calendar it shares with every other copy."""
+    wanted = {t.upper() for t in tickers}
+    return [r for r in existing if r["ticker"].upper() not in wanted] + new_rows
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("tickers", nargs="*")
@@ -150,7 +172,8 @@ def main():
     if not data:
         raise SystemExit("No snapshot found -- run fetch_fundamentals.py first.")
     rows = build_rows(data.get("stocks", []), args.tickers or None)
-    path = write_calendar_md(rows)
+    written = merge_rows(read_calendar_rows(), rows, args.tickers) if args.tickers else rows
+    path = write_calendar_md(written)
     due_now = sum(1 for r in rows if r.get("due_now"))
     print(f"Wrote {len(rows)} calendar candidate(s) ({due_now} due now) to {path}, "
           f"from {os.path.basename(snapshot_file)}.")

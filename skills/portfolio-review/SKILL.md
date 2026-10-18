@@ -87,30 +87,39 @@ would cost far more tokens than fetching again.
 ## Step 0 — sync in
 
 Every file moved through the connector costs tokens, and every decision about what to move is
-made by `drive_sync.py`, never by eye.
+made by `drive_sync.py`, never by eye. Its working files (`.listing-N.json`, `.manifest-in.json`)
+live in the working root's `data/` folder, which `drive_sync.py` reads by default.
 
-1. Find the cloud folder: the id in `data/notes.md`, else search for the exact name
+1. **Find the cloud folder**: the id in `data/notes.md`, else search for the exact name
    `portfolio-review-sync.json`; the folder holding it is the root. Download the manifest
    (base64), write it to a temp file, and run
-   `python3 scripts/drive_sync.py put .manifest-in.json TEMPFILE --id ID --modified TS`.
+   `python3 scripts/drive_sync.py put .manifest-in.json TEMPFILE --id ID --modified TS`. That
+   also tells a fresh working root where every folder is.
    Not found anywhere: first run. Ask the user which folder to use, run
    `python3 scripts/drive_sync.py init --root-id ID`, and upload the local copy in Step 5.
-2. `python3 scripts/drive_sync.py listing-query` prints one search query. Run it with the
-   connector, page through every result, and save each raw page as `data/.listing-N.json`.
-3. `python3 scripts/drive_sync.py plan --listing data/.listing-1.json [...] --manifest
-   data/.manifest-in.json --scope S [TICKER ...]`, with S from the route: `ticker` for named
-   stocks, `sweep` for a portfolio-wide pass or a filter, `scan` for a market scan, `all` when the
-   working root keeps a full copy (always so in Claude Code).
-4. Carry out the plan:
+2. **List.** `python3 scripts/drive_sync.py listing-query` prints one search query and where to
+   save the results. Run it with the connector asking for metadata only (no content snippets),
+   page through every result, and save each raw page as `.listing-1.json`, `.listing-2.json`, …
+   in the working root's `data/` folder.
+3. **Plan.** `python3 scripts/drive_sync.py plan --scope S [TICKER ...]`, with S from the route:
+   `ticker` for named stocks, `sweep` for a portfolio-wide pass or a filter, `scan` for a market
+   scan, `all` when the working root keeps a full copy (always so in Claude Code). If the output's
+   `relist` is not empty, go back to step 2: the listing found folders its query did not cover.
+4. **Carry out the plan**:
    - `mkdir`: create the folder with the connector, then
      `python3 scripts/drive_sync.py folder PATH --id ID`.
    - `download`: fetch the file's content (base64), write it to a temp file, then
      `python3 scripts/drive_sync.py put PATH TEMPFILE --id ID --modified TS`.
-   - `conflict`: if `keep` is `remote`, run `python3 scripts/drive_sync.py conflict-copy PATH COPY`
-     and then download PATH; if `local`, download the remote copy into COPY with `put COPY ...`.
-     Tell the user about every conflict copy.
+   - `conflict` (changed both here and in the cloud since the last sync):
+     if `keep` is `remote`, run `python3 scripts/drive_sync.py conflict-copy PATH COPY`, then
+     download PATH as above. If `keep` is `local`, download the remote file into COPY
+     (`put COPY TEMPFILE --id ID --modified TS`), then
+     `python3 scripts/drive_sync.py resolve-local PATH --id ID --modified TS`; Step 5 uploads the
+     local copy. Tell the user about every conflict copy.
+   - `duplicate` (two cloud files on one path): download the older one into its `copy` with
+     `put`, then move that file id to the bin. Tell the user.
    - `upload` items are left for Step 5.
-5. Read `data/skill-data/digest.json` (run `python3 scripts/digest.py` if it is absent). Open a
+5. **Read** `data/skill-data/digest.json` (run `python3 scripts/digest.py` if it is absent). Open a
    full note only for a ticker this run re-rates.
 
 If the connector is unavailable: with a full local copy, say so and carry on; the next run's plan
@@ -778,14 +787,17 @@ Close with: *Not investment advice — verify prices and figures before acting.*
 
 The last tool step of every run that wrote anything:
 
-1. `python3 scripts/digest.py`.
-2. List again (`listing-query`, save the pages) and run `drive_sync.py plan` as in Step 0.
-3. For each `upload`: read the local file and create it in `parent` with the connector (content
+1. `python3 scripts/digest.py`, with `--merge` unless the scope was `all` or `sweep`, so a copy
+   holding only some notes does not shrink the shared summary.
+2. List and plan again exactly as in Step 0 steps 2–3, re-listing while `relist` is not empty.
+3. Handle any `mkdir`, `download`, `conflict` or `duplicate` the same way as in Step 0 (another
+   session may have written while this one ran), then plan again.
+4. For each `upload`: read the local file and create it in `parent` with the connector (content
    type `mime`, no conversion to a native document type), then
    `python3 scripts/drive_sync.py uploaded PATH --id NEWID --modified TS` from the result; then
-   move `old_id`, if any, to the bin. For each `mkdir`, as in Step 0, then plan again.
-4. `python3 scripts/drive_sync.py manifest`, upload `data/.manifest-out.json` as
-   `portfolio-review-sync.json` in the root, and move the previous manifest to the bin.
-5. One line for the user: how many files went up, and any conflict copies.
+   move `old_id`, if any, to the bin.
+5. `python3 scripts/drive_sync.py manifest`; upload the file it names as `portfolio-review-sync.json`
+   in the root, then move its `old_id`, if any, to the bin.
+6. One line for the user: how many files went up, and any conflict copies.
 
 A failure here never blocks the summary; report it. The next run uploads what is left.

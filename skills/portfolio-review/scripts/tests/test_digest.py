@@ -79,6 +79,15 @@ class TestDigest(unittest.TestCase):
         self.assertIsNone(t["rating"])
         self.assertIsNone(t["days_since_analysis"])
 
+    def test_merge_keeps_tickers_whose_notes_were_not_pulled(self):
+        previous = {"generated_on": "2026-10-10", "conflicts": [], "tickers": {
+            "EXAMPLEA": {"rating": "HOLD", "ledger": []},
+            "TESTCO": {"rating": "HOLD", "ledger": [{"date": "2026-09-01", "rating": "HOLD", "price": 900.0}]}}}
+        d = digest.build(self.sd, date(2026, 10, 18), previous=previous)
+        self.assertEqual(d["tickers"]["EXAMPLEA"], {"rating": "HOLD", "ledger": []})
+        self.assertEqual(d["tickers"]["TESTCO"]["rating"], "BUY")
+        self.assertEqual([e["date"] for e in d["tickers"]["TESTCO"]["ledger"]], ["2026-09-01", "2026-10-01"])
+
     def test_empty_folder(self):
         with tempfile.TemporaryDirectory() as empty:
             self.assertEqual(digest.build(empty, date(2026, 10, 18))["tickers"], {})
