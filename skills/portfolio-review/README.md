@@ -23,14 +23,19 @@ data/                              yours — the only files you provide
   broker_holdings_<date>.csv         a plain broker export, or
   broker-portfolio-<date>.md         a lot-level broker export (adds buy dates for LTCG)
   slug-overrides.json              optional: {"SYMBOL-XX": "SLUG"} where your broker's symbol differs from the data source's
+  notes.md                         local only: where the cloud copy lives
+  .sync-base.json, .writer-id      local only: the last sync, and this copy's name in the logs
   skill-data/                      the skill's — fetched data and everything it writes
-    .cache/                          the per-ticker fetch cache
-    snapshot-<date>.json             the day's fundamentals snapshot
+    .cache/                          local only: the per-ticker fetch cache
+    snapshot-<date>.json             local only: the day's fundamentals snapshot
+    digest.json                      a small per-ticker summary runs read before any note
     stocks/<TICKER>.md               one note per holding
     PORTFOLIO.md                     generated summary table
-    from-cowork/                     files fetched from the cloud mirror's inbox (optional, below)
-  drive-mirror/                    the optional cloud mirror's OAuth client, sign-in token and state
+    entry-budgets.json, calendar.md
+    ratings-ledger/, scan-history/   append-only logs, one file per copy per day
 ```
+
+Everything not marked local only is also kept in cloud storage (below).
 
 The root is chosen, in order, by `--root PATH`, then `$PORTFOLIO_ROOT`, then the working directory —
 `SKILL.md` tells Claude to run from this checkout, so the working-directory default is what applies
@@ -100,43 +105,40 @@ Everything is cached per day afterwards, so later runs that day rebuild in under
 Yahoo Finance and stooq are not used: neither returns usable data for NSE symbols from a plain
 script.
 
-## Optional: a copy in Google Drive
+## Cloud storage is the master copy
 
-The skill's data lives on one machine, so a Claude session elsewhere (Cowork, the mobile app)
-cannot see it. `scripts/drive_mirror.py` keeps a copy of the outputs in a Drive folder of your
-choosing, and brings back what another session leaves for it. The skill works without this.
+The skill's memory lives in a `portfolio-review/` folder in your cloud file storage, so Claude Code
+on this machine and a Cowork session see the same notes, ratings, budgets and logs. The folder is
+found by its marker file, `portfolio-review-sync.json`; keeping it below the folder that holds
+`news-briefing-profile.json` lets news-briefing read the same broker export.
 
-- **Pushed** on every run, changed files only, each overwritten in place: `PORTFOLIO.md`,
-  `stocks/*.md`, `ratings-ledger.jsonl`, `entry-budgets.json`, `calendar.md`, and a `README.md`
-  that tells the reader how the folder works. `--with-snapshot` adds the newest snapshot as
-  `snapshot-latest.json`. This machine stays the source of truth; an edit made to a mirrored file
-  is overwritten by the next run.
-- **Pulled** on every run: new files in the folder's `from-cowork/` subfolder, saved to
-  `data/skill-data/from-cowork/`. That subfolder is where another session writes — a trade, a
-  decision, some research — as new files. The next review reads them, folds them into the notes
-  and budgets, and marks them merged (SKILL.md 3a.4). A trade reported there does not change share
-  counts: those still come only from a broker export.
+- **How it moves.** Claude moves files with the file-storage connector; `scripts/drive_sync.py`,
+  which never touches the network, decides what moves. It compares each file's local copy, its
+  cloud copy and the state at the last sync, so an unchanged file is never transferred and an edit
+  made in the cloud is pulled rather than overwritten. Each run starts with a sync in (SKILL.md
+  Step 0) and ends with a sync out (Step 5).
+- **Conflicts.** A file changed in both places since the last sync: the newer copy wins and the
+  other is kept beside it as `<name>.conflict-<date>.<ext>` for you to reconcile. The logs are one
+  file per copy per day, so they never conflict.
+- **What never goes up.** The fetch cache, snapshots, screens and shortlists. Scripts regenerate
+  them, and moving files through the connector costs tokens on every byte.
+- **Cheap on purpose.** A run reads `digest.json` instead of every note, pulls a full note only
+  for a stock it re-rates, and `scripts/freshness.py` keeps research found in the last weeks
+  (consensus, guidance, peers) from being searched again.
+- **Deletions are not synced.** Remove a file in both places if you mean it.
 
-Setup, once:
+First run on a machine: Step 0 finds no marker file, asks which folder to use, and uploads the
+local copy.
 
-1. In Google Cloud Console, create a project, enable the **Google Drive API**, and configure the
-   OAuth consent screen (user type External, yourself as the only user). Set its publishing status
-   to **In production**: left in Testing, Google expires the sign-in every seven days.
-2. Create an OAuth client ID of type **Desktop app**, download its JSON, and save it as
-   `data/drive-mirror/client.json`.
-3. `python3 scripts/drive_mirror.py set-folder <folder id or link>` — the Drive folder to mirror
-   into. Create it first.
-4. `python3 scripts/drive_mirror.py auth` — opens a browser to sign in. Google shows an
-   "unverified app" warning for a personal client; that is expected.
+### Installing in Cowork
 
-Then `python3 scripts/drive_mirror.py sync` runs at the start and end of every review.
+Add this repository's marketplace (`atishbits/claude-skills`) under the plugin settings, install
+`portfolio-review`, and connect your file-storage connector. If Cowork offers to work in a folder
+on your computer, grant one: the skill keeps a full copy there and transfers only what changed.
+Without one it works in a temporary folder and pulls only what each request needs.
 
-Two things to know before you turn it on. The sign-in asks for full Drive access, because the
-narrower per-file scope cannot see files another session created; the script only ever writes
-inside the folder you set. And `data/drive-mirror/token.json` is a credential that can reach your
-whole Drive: it is written owner-only and sits under the gitignored `data/` folder, so keep that
-folder out of any backup or sync you do not control. To revoke it, remove the app under *Third-party
-access* in your Google account and delete the file.
+Cowork runs the fetch scripts itself. If its sandbox cannot reach screener.in or NSE, it says so
+and falls back to web search for figures.
 
 ## Keep your data out of git
 
