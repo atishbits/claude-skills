@@ -43,6 +43,12 @@ only.>
 
 **Guidance:** <what management guided, source and date. Prior guidance: met | missed | pending | none recorded.>
 
+**Research:**
+- consensus: avg TP ₹N, N of M post-result — <source url> — as of YYYY-MM-DD
+- guidance: <one line> — <source url> — as of YYYY-MM-DD, until <next results date, YYYY-MM-DD>
+- peers: <PEER P/E N, PEER P/E N> — as of YYYY-MM-DD
+- recheck: ₹N (<200 DMA | 60-day low | consensus low>) — as of YYYY-MM-DD
+
 **Notes:** <why this rating and not the adjacent one, what the market is pricing in, and what would
 change the call. Name the re-look price anchored on a real level: the 200 DMA, the 60-day low, or
 the consensus low estimate, not a round number picked by feel.>
@@ -73,4 +79,8 @@ the consensus low estimate, not a round number picked by feel.>
 - **3-Year case** and **Tax** were added later still, are conditional (BUY/SELL and SELL/trim
   respectively, not every rating), and are not in the required-field check for that reason. Omit
   the line entirely for a rating it doesn't apply to, rather than writing "not applicable."
+- The **Research** block is what other sessions reuse instead of searching again. Keep each line's
+  date the day the fact was found, not the day the note was rewritten: carrying a still-fresh line
+  forward unchanged is correct, re-dating it is not. `freshness.py` reads these lines, so keep the
+  format exact. An item you could not find is left out, which makes it due next time.
 - The disclaimer footer is part of the template, not optional.
