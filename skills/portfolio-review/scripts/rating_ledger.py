@@ -85,7 +85,7 @@ def append_entry(ticker, rating, price, thesis, asof=None, ledger_dir=None, root
 
 def load_ledger(ticker=None, ledger_dir=None):
     ledger_dir = ledger_dir or LOG_DIR
-    legacy = LEGACY_PATH if ledger_dir == LOG_DIR else None
+    legacy = ledger_dir.rstrip(os.sep) + ".jsonl"  # an unmigrated single-file log beside the folder
     entries = [e for e in logdir.read(ledger_dir, legacy)
                if ticker is None or e["ticker"] == ticker.strip().upper()]
     entries.sort(key=lambda e: (e["ticker"], e["date"]))

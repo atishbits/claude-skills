@@ -134,7 +134,7 @@ def load_history(ticker=None, ledger_dir=None):
     ticker and date keep their read order (files by name, lines in append
     order) -- overdue_checkins relies on that to break same-day ties."""
     ledger_dir = ledger_dir or LOG_DIR
-    legacy = LEGACY_PATH if ledger_dir == LOG_DIR else None
+    legacy = ledger_dir.rstrip(os.sep) + ".jsonl"  # an unmigrated single-file log beside the folder
     entries = [e for e in logdir.read(ledger_dir, legacy)
                if ticker is None or e["ticker"] == ticker.strip().upper()]
     entries.sort(key=lambda e: (e["ticker"], e["date"]))
