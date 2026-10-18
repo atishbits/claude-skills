@@ -17,6 +17,7 @@ class TestSyncedSet(unittest.TestCase):
     def test_rules(self):
         self.assertTrue(ds.synced("broker_holdings_2026-10-01.csv"))
         self.assertTrue(ds.synced("skill-data/stocks/TESTCO.md"))
+        self.assertTrue(ds.synced("examplebroker-portfolio-2026-09-27.md"))  # same rule as fetch_fundamentals
         self.assertTrue(ds.synced("skill-data/ratings-ledger/2026-10-18-abcdef.jsonl"))
         self.assertFalse(ds.synced("skill-data/snapshot-2026-10-18.json"))
         self.assertFalse(ds.synced("skill-data/.cache/x.json"))

@@ -44,7 +44,7 @@ MANIFEST_OUT = os.path.join(DATA_DIR, ".manifest-out.json")
 MANIFEST_NAME = "portfolio-review-sync.json"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
-SHARED = ["*holdings*.csv", "broker-portfolio-*.md", "slug-overrides.json",
+SHARED = ["*holdings*.csv", "*-portfolio-*.md", "slug-overrides.json",
           "skill-data/digest.json", "skill-data/PORTFOLIO.md",
           "skill-data/entry-budgets.json", "skill-data/calendar.md",
           "*.conflict-*", "skill-data/*.conflict-*"]
