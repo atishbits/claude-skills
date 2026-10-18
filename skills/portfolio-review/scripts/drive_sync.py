@@ -197,3 +197,144 @@ def _need_folder(path, folders, mkdirs):
                 if item not in mkdirs:
                     mkdirs.append(item)
             return
+def load_base(path):
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    return {"root_id": None, "folders": {}, "files": {}}
+
+
+def save_base(base, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(base, fh, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+
+
+MANIFEST_IN = ".manifest-in.json"
+
+
+def _safe_path(data_dir, rel):
+    if not synced(rel) and rel != MANIFEST_IN:
+        raise ValueError(f"not a synced path: {rel}")
+    full = os.path.abspath(os.path.join(data_dir, rel))
+    if not full.startswith(os.path.abspath(data_dir) + os.sep):
+        raise ValueError(f"path escapes the data folder: {rel}")
+    return full
+
+
+def put(data_dir, base, rel, b64_text, file_id, modified):
+    full = _safe_path(data_dir, rel)
+    raw = base64.b64decode("".join(b64_text.split()), validate=True)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "wb") as fh:
+        fh.write(raw)
+    sha = sha256(full)
+    if rel != MANIFEST_IN:  # the manifest describes the sync; it is not one of the synced files
+        base.setdefault("files", {})[rel] = {"sha": sha, "id": file_id, "modified": modified}
+    return sha
+
+
+def record_upload(data_dir, base, rel, file_id, modified):
+    full = _safe_path(data_dir, rel)
+    base.setdefault("files", {})[rel] = {"sha": sha256(full), "id": file_id, "modified": modified}
+
+
+def apply_adopt(base, data_dir, adopts):
+    for a in adopts:
+        record_upload(data_dir, base, a["path"], a["id"], a["modified"])
+
+
+def build_manifest(base):
+    return {"schema": 1, "root_id": base.get("root_id"), "folders": base.get("folders", {}),
+            "files": {rel: {"sha": v["sha"], "id": v["id"], "modified": v["modified"]}
+                      for rel, v in base.get("files", {}).items()}}
+
+
+def listing_query(folders):
+    return " or ".join(f"parentId = '{fid}'" for _, fid in sorted(folders.items()))
+
+
+def _load_json(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def main(argv=None, data_dir=None):
+    data_dir = data_dir or DATA_DIR
+    base_path = os.path.join(data_dir, ".sync-base.json")
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("init")
+    s.add_argument("--root-id", required=True)
+    sub.add_parser("listing-query")
+    s = sub.add_parser("plan")
+    s.add_argument("--listing", action="append", default=[])
+    s.add_argument("--manifest")
+    s.add_argument("--scope", choices=["ticker", "sweep", "scan", "all"], required=True)
+    s.add_argument("tickers", nargs="*")
+    s = sub.add_parser("folder")
+    s.add_argument("path")
+    s.add_argument("--id", required=True)
+    s = sub.add_parser("put")
+    s.add_argument("path")
+    s.add_argument("b64file")
+    s.add_argument("--id", required=True)
+    s.add_argument("--modified", required=True)
+    s = sub.add_parser("uploaded")
+    s.add_argument("path")
+    s.add_argument("--id", required=True)
+    s.add_argument("--modified", required=True)
+    s = sub.add_parser("conflict-copy")
+    s.add_argument("path")
+    s.add_argument("copy")
+    sub.add_parser("manifest")
+    a = p.parse_args(argv)
+
+    base = load_base(base_path)
+    if a.cmd == "init":
+        base.update({"root_id": a.root_id})
+        base.setdefault("folders", {})[""] = a.root_id
+        out = {"root_id": a.root_id}
+    elif a.cmd == "listing-query":
+        out = {"query": listing_query(base.get("folders", {}))}
+    elif a.cmd == "plan":
+        manifest = _load_json(a.manifest) if a.manifest else {}
+        if manifest.get("folders"):
+            merged = dict(manifest["folders"])
+            merged.update(base.get("folders", {}))
+            base["folders"] = merged
+            base["root_id"] = base.get("root_id") or manifest.get("root_id")
+        remote, base["folders"] = parse_listings([_load_json(f) for f in a.listing], base.get("folders", {}))
+        local = local_files(data_dir)
+        out = plan(local, remote, base, manifest.get("files", {}), a.scope, a.tickers,
+                   local_mtimes=local_mtimes(data_dir, local))
+        apply_adopt(base, data_dir, out["adopt"])
+    elif a.cmd == "folder":
+        base.setdefault("folders", {})[a.path] = a.id
+        out = {"folder": a.path, "id": a.id}
+    elif a.cmd == "put":
+        with open(a.b64file, encoding="ascii") as fh:
+            out = {"path": a.path, "sha": put(data_dir, base, a.path, fh.read(), a.id, a.modified)}
+    elif a.cmd == "uploaded":
+        record_upload(data_dir, base, a.path, a.id, a.modified)
+        out = {"path": a.path, "id": a.id}
+    elif a.cmd == "conflict-copy":
+        src, dst = _safe_path(data_dir, a.path), _safe_path(data_dir, a.copy)
+        os.replace(src, dst)
+        base.get("files", {}).pop(a.path, None)
+        out = {"moved": a.path, "to": a.copy}
+    else:  # manifest
+        with open(os.path.join(data_dir, ".manifest-out.json"), "w", encoding="utf-8") as fh:
+            json.dump(build_manifest(base), fh, indent=1, sort_keys=True)
+        out = {"manifest": os.path.join(data_dir, ".manifest-out.json"), "name": MANIFEST_NAME,
+               "parent": base.get("root_id")}
+    save_base(base, base_path)
+    if argv is None:
+        print(json.dumps(out, indent=1))
+    return out
+
+
+if __name__ == "__main__":
+    main()
