@@ -27,7 +27,7 @@
     },
     {
       "name": "pdf-unlock",
-      "description": "Remove the open password from a password-protected PDF, given the correct password. Needs the pypdf Python package, which it installs if missing.",
+      "description": "Remove the open password from a password-protected PDF, given the correct password. Needs Python with pypdf[crypto], which it installs if missing, or the qpdf command.",
       "source": "./",
       "strict": false,
       "skills": [
