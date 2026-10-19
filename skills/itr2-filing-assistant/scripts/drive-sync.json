@@ -1,0 +1,13 @@
+{
+ "marker": "itr2-filing-assistant-sync.json",
+ "root_env": "ITR_WORKDIR",
+ "data_dir": ".",
+ "kinds": {
+  "work": {"patterns": ["ITR2_*.md", "00_Document_Review*.md",
+                        "sbi-tt-rates.json", "sbi-tt-rates.conflict-*.json"]},
+  "document": {"patterns": ["*.pdf", "*.json", "*.csv", "*.xlsx", "*.xls", "*.txt",
+                            "*/*.pdf", "*/*.json", "*/*.csv", "*/*.xlsx", "*/*.xls", "*/*.txt"],
+               "upload": false}
+ },
+ "_comment": "The working folder is one assessee's folder for one AY. Documents the user puts in the cloud folder come down; only the skill's own files go up."
+}

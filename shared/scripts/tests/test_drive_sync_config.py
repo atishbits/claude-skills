@@ -76,6 +76,10 @@ class TestKinds(WithConfig):
         self.assertIsNone(ds.scope_of(".listing-1.json"))
         self.assertIsNone(ds.scope_of("sub/form16.pdf"))  # depth must match
 
+    def test_the_manifest_is_never_a_synced_file(self):
+        self.assertEqual(ds.scope_of("other-sync.json"), "document")
+        self.assertIsNone(ds.scope_of("example-sync.json"))
+
     def test_download_only_kind_is_never_uploaded(self):
         base = {"root_id": "R0", "folders": {"": "R0"},
                 "files": {"form16.pdf": {"sha": "s1", "id": "d", "modified": "t"}}}

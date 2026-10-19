@@ -103,8 +103,9 @@ def _match(rel, patterns):
 
 def scope_of(rel):
     """The kind a path belongs to, or None if it is not synced. Hidden files
-    (this script's own .sync-base.json, listing pages) never are."""
-    if os.path.basename(rel).startswith("."):
+    (this script's own .sync-base.json, listing pages) never are, nor is the
+    manifest: it has its own commands."""
+    if os.path.basename(rel).startswith(".") or rel == _cfg()["marker"]:
         return None
     for kind, spec in _cfg()["kinds"].items():
         if _match(rel, spec["patterns"]):

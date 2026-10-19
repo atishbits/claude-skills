@@ -44,18 +44,29 @@ nothing is sent to any other service or shared.
 
 ## Where it runs
 
-It works in Claude Code and in Cowork. The two places it can keep its working folder:
+It works in Claude Code and in Cowork. Its working files always live in a local folder:
 
-- **On your computer.** In Claude Code, any path, e.g. `~/Documents/itr/AY2026-27/`. In Cowork, a
-  folder inside the one you shared with the session.
-- **In your cloud file storage**, through a file-storage connector. Use this when the session has no
-  folder of yours, or to resume on another device. Each conclusions file is uploaded as soon as its
-  phase finishes, to a folder you name, and the skill never changes that folder's sharing.
+- **Claude Code:** any path, e.g. `~/Documents/itr/AY2026-27/<assessee>/`.
+- **Cowork:** a folder inside the one you shared with the session. With no folder shared, a
+  temporary one, which does not outlast the session.
+
+**A copy in your cloud storage, on request.** With a file-storage connector you can keep one
+cloud folder per assessee per AY. Drop your documents into it from any device. Say "pull" and the
+skill copies new or changed documents down. Say "sync" and it uploads the conclusions files and
+the worksheet. It never touches cloud storage otherwise, never uploads your documents, and never
+changes a folder's sharing. With a temporary folder it pulls at the start and syncs after every
+phase, because nothing else would survive the session.
+
+What moves is decided by `scripts/drive_sync.py`, which compares each file's local copy, its cloud
+copy and the last sync, so an unchanged file is never moved and an edit on one side is never
+overwritten by the other; a file changed on both sides is kept twice for you to reconcile. The
+script is shared with other skills: its master copy is `shared/scripts/drive_sync.py` at the top of
+this repository, and `scripts/drive-sync.json` sets what this skill syncs.
 
 Either way, a later session resumes from the conclusions files already in the folder. The skill
-needs Python (standard library only) for its calculator; it stops if the environment has none.
-Password-protected PDFs (the AIS and 26AS usually are) need an unlocked copy, or a PDF-unlocking
-skill installed alongside.
+needs Python (standard library only); it stops if the environment has none. Password-protected
+PDFs (the AIS and 26AS usually are) need an unlocked copy, or a PDF-unlocking skill installed
+alongside.
 
 Install it as a plugin (see the repository README) or by symlinking this folder into
 `~/.claude/skills/`.

@@ -37,7 +37,7 @@
     },
     {
       "name": "itr2-filing-assistant",
-      "description": "Prepare an Indian ITR-2 return end to end: document intake, reconciliation, schedule-by-schedule computation, regime comparison and a pre-submission check. You supply the documents; it writes its working files to a folder you choose.",
+      "description": "Prepare an Indian ITR-2 return end to end: document intake, reconciliation, schedule-by-schedule computation, regime comparison and a pre-submission check. It keeps its working files in a local folder, with an optional copy in your cloud storage that syncs when you ask.",
       "source": "./",
       "strict": false,
       "skills": [

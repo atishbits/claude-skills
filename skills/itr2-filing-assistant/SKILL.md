@@ -63,30 +63,37 @@ that variable is set); run every command in this skill from the folder holding t
 `python3 scripts/tax_calc.py --selftest` once. If this environment cannot run Python, say so and
 stop: rule 4 forbids computing without the scripts.
 
-**Working folder.** Ask the user where the working files should live. This must be somewhere that
-outlasts the session, because the next session resumes from it:
+**Working folder.** The working files always live in a local folder; the scripts work on it. Ask
+the user where:
 
-- **A folder on their computer** — any path in Claude Code (e.g. `~/Documents/itr/AY2026-27/`), or
-  a folder inside the one they shared with the session in a desktop app. Write files there directly.
-- **A folder in their cloud file storage**, reached with whichever file-storage connector is
-  connected — for a session that has no folder of theirs, or if they prefer it. Write each file
-  into a temporary folder first (never this skill's folder), then upload it to that folder under the same name: update the existing file
-  rather than creating a second one with the same name. Upload a phase's conclusions file as soon
-  as it is written, not at the end. Never change its sharing.
+- **Claude Code:** any path, e.g. `~/Documents/itr/AY2026-27/<assessee>/`.
+- **A desktop app with a folder shared to the session:** a folder inside it.
+- **Neither** (nothing written here outlasts the session): a temporary folder, with a cloud copy as
+  the only lasting one (below).
 
-If the session has neither — no folder of theirs and no file-storage connector — say that nothing
-will survive the session, and offer to carry on anyway with the files given back at the end of each
-phase for them to keep.
+**Cloud storage.** The user can keep a copy of the working folder in their cloud file storage, to
+drop documents into from anywhere and to carry on from another device. With a local folder from the
+first two cases, touch cloud storage **only when the user asks**:
 
-If more than one person is being helped, use one subfolder per assessee.
+- "pull", "get my documents from the cloud" and the like: sync down.
+- "sync", "push", "upload the results" and the like: sync up.
 
-**Prior state.** If conclusions files already exist in the working folder, read them (download them,
-for a cloud folder) and resume from the first phase that has no file, rather than starting over.
+With a temporary folder, sync down during Setup and sync both ways after every phase's conclusions
+file is written; otherwise the work is lost. To sync, read `references/11_cloud_sync.md` and follow
+it. If the session has a temporary folder and no file-storage connector, say that nothing will
+survive the session, and offer to carry on anyway, handing the files back at the end of each phase.
 
-**Documents.** The user's documents may be in the working folder, in their cloud storage, or
-attached to the chat; record where each one is in the Phase 1 inventory. A password-protected PDF
-(the AIS and 26AS usually are) that will not open: if a PDF-unlocking skill is available, use it with
-the password the user gives; otherwise ask the user for an unlocked copy.
+If more than one person is being helped, give each assessee their own working folder (and cloud
+folder); never one shared between them.
+
+**Prior state.** If conclusions files already exist in the working folder (after the Setup sync,
+with a temporary folder), read them and resume from the first phase that has no file, rather than
+starting over.
+
+**Documents.** The user's documents may be in the working folder, in its cloud copy (pulled on
+request), or attached to the chat; record where each one is in the Phase 1 inventory. A
+password-protected PDF (the AIS and 26AS usually are) that will not open: if a PDF-unlocking skill
+is available, use it with the password the user gives; otherwise ask the user for an unlocked copy.
 
 ## Phases
 

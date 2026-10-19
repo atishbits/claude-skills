@@ -1,12 +1,13 @@
 # Output templates
 
-Everything written goes to **the user's working folder** (local or in their cloud storage — see
-*Setup* in `SKILL.md`), never into this skill directory — it lives in a public repo.
+Everything written goes to **the user's working folder** (a local folder, optionally with a copy in
+their cloud storage — see *Setup* in `SKILL.md`), never into this skill directory — it lives in a
+public repo.
 
 ## 1. One file per schedule
 
-If more than one person is being helped, use one subfolder per assessee and never let figures cross
-between them.
+If more than one person is being helped, use one working folder per assessee and never let figures
+cross between them.
 
 ```
 00_Document_Review_and_Data_Inventory.md
