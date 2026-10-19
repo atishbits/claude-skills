@@ -1,0 +1,10 @@
+{
+ "marker": "advance-tax-sync.json",
+ "root_env": "ADVANCE_TAX_DIR",
+ "data_dir": ".",
+ "kinds": {
+  "state": {"patterns": ["tax-profile.json", "ledger.md", "notes.md", "bond-interest.json",
+                         "*.conflict-*"]}
+ },
+ "_comment": "The working folder holds the skill's state, all of which goes both ways. Not synced: the backups and any spreadsheet kept beside it."
+}

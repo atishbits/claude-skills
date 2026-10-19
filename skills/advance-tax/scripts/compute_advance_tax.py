@@ -18,7 +18,9 @@ netted off to give the amount due now, per Sec 208/211 (renumbered
 
     Advance tax due now = cum_pct x estimated annual tax - tax already paid this FY
 
-Run `python3 compute_advance_tax.py --help` for all options.
+Run `python3 compute_advance_tax.py --help` for all options, and
+`python3 compute_advance_tax.py --where` (alone) to print the working folder
+the skill keeps its personal files in, as JSON.
 """
 import argparse
 import json
@@ -31,9 +33,13 @@ from pathlib import Path
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "tax-profile-template.json"
 PROFILE_NAME = "tax-profile.json"
-# The skill's own data/ folder is gitignored; it is where personal files sit by
-# default, the same layout the other skills in this repo use.
+# The working folder holds the personal files. $ADVANCE_TAX_DIR names it; without
+# that, the skill's own data/ folder, gitignored, when the skill runs from a
+# checkout of the repo and that folder already exists.
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DIR_ENV = "ADVANCE_TAX_DIR"
+# What the skill keeps in the working folder, and syncs with its cloud copy.
+STATE_FILES = (PROFILE_NAME, "ledger.md", "notes.md", "bond-interest.json")
 
 PERSON_KEYS = ("fd_interest_rate", "fd_tax_pct", "savings_interest_rate",
                "other_tax_pct", "surcharge_multiplier")
@@ -44,13 +50,37 @@ def load_config():
         return json.load(f)
 
 
+def working_folder():
+    """(folder, where it came from): $ADVANCE_TAX_DIR, else the skill's data/
+    folder if it already exists, else (None, None). The skill never creates
+    data/ itself: installed as a plugin, its folder is replaced on update, so
+    a folder made there would be lost. With None the user names a folder."""
+    env = os.environ.get(DIR_ENV)
+    if env:
+        return Path(env).expanduser(), DIR_ENV
+    if DATA_DIR.is_dir():
+        return DATA_DIR, "skill data/"
+    return None, None
+
+
+def where():
+    """What --where prints: the working folder and which state files it has."""
+    folder, source = working_folder()
+    out = {"folder": str(folder) if folder else None, "from": source,
+           "exists": bool(folder and folder.is_dir()), "files": []}
+    if out["exists"]:
+        out["files"] = [n for n in STATE_FILES if (folder / n).is_file()]
+    return out
+
+
 def find_profile(explicit=None):
     """--profile PATH, else $TAX_PROFILE, else tax-profile.json in the working
-    directory, else the one in the skill's data/ folder. Returns None when
-    there is none: the rates can also be passed as flags, and a missing file
-    is only fatal if neither is given."""
+    directory, else the one in the working folder (see working_folder).
+    Returns None when there is none: the rates can also be passed as flags,
+    and a missing file is only fatal if neither is given."""
+    folder, _ = working_folder()
     for candidate in (explicit, os.environ.get("TAX_PROFILE"), Path.cwd() / PROFILE_NAME,
-                      DATA_DIR / PROFILE_NAME):
+                      folder and folder / PROFILE_NAME):
         if candidate and Path(candidate).is_file():
             return Path(candidate)
     return None
@@ -85,8 +115,8 @@ def load_person(args, statutory):
         raise SystemExit(
             f"Missing rate(s) for {args.person!r}: {', '.join(missing)}.\n"
             f"These are personal and are never stored with the skill. Either:\n"
-            f"  - copy {TEMPLATE_PATH} to {DATA_DIR / PROFILE_NAME} (or anywhere, and pass\n"
-            f"    --profile or set $TAX_PROFILE) and fill it in from last year's ITR, a\n"
+            f"  - copy {TEMPLATE_PATH} to {PROFILE_NAME} in your working folder (${DIR_ENV}),\n"
+            f"    or anywhere and pass --profile or set $TAX_PROFILE, and fill it in from last year's ITR, a\n"
             f"    salary slip or an FD receipt, or\n"
             f"  - pass them for this run: "
             + " ".join(f"--{k.replace('_', '-')} N" for k in missing))
@@ -144,6 +174,10 @@ def compute(person_cfg, fdr_total, savings_balance, dividends_total, house_rent_
 
 
 def main(argv=None):
+    if (sys.argv[1:] if argv is None else argv) == ["--where"]:
+        json.dump(where(), sys.stdout, indent=2)
+        print()
+        return
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--person", default="self",
                    help="Key under 'people' in your tax profile (default: self)")

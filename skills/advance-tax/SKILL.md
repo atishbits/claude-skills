@@ -8,7 +8,9 @@ description: >-
 argument-hint: "[person] [due date | Q1-Q4] [FDR total] [savings balance] [dividends] [house rent] [already paid]"
 allowed-tools:
   - Bash(python3 *compute_advance_tax.py*)
+  - Bash(python3 *drive_sync.py*)
   - Read
+  - Write
   - Edit
   - Glob
 ---
@@ -32,16 +34,47 @@ the Income Tax Act, 1961 (renumbered 424/425 under the Income Tax Act 2025):
 **Where the personal numbers live.** The skill ships statutory constants only — the due-date
 schedule, the Section 24(a) standard deduction and the 4% cess. Every rate that depends on the
 person (slab, FD and savings rates, surcharge band) comes from *their* `tax-profile.json`, which
-is personal and is never committed. By default it sits in this skill's own `data/` folder
-(`${CLAUDE_SKILL_DIR}/data/tax-profile.json` once installed), which is gitignored, together with
-anything else personal the skill keeps: a payment ledger (`data/ledger.md`), a working spreadsheet,
-`data/bond-interest.json` when the user holds bonds, and `data/notes.md`, the skill's local
-memory. **Read `data/notes.md` first if it exists**: it is where the user's own sources for each
-input are written down (which account, platform or tool a figure comes from and how to refresh
-it), and where you record anything of that kind you learn. Nothing specific to a person, a
-platform they use or another tool of theirs belongs in this file. The script looks for the profile in this
-order: `--profile PATH`, `$TAX_PROFILE`, `tax-profile.json` in the working directory, then
-`data/tax-profile.json`. If a rate is missing the script says exactly which, and it
+is personal and is never committed. It sits in a **working folder** (WORKDIR below) with the rest
+of the skill's state: a payment ledger (`ledger.md`), `bond-interest.json` when the user holds
+bonds, and `notes.md`, the skill's local memory. **Read `WORKDIR/notes.md` first if it exists**: it
+is where the user's own sources for each input are written down (which account, platform or tool a
+figure comes from and how to refresh it), and where you record anything of that kind you learn.
+Nothing specific to a person, a platform they use or another tool of theirs belongs in this file.
+
+## Step 0 — working folder
+
+Run every command in this skill from the folder holding this file (`${CLAUDE_SKILL_DIR}` where that
+variable is set). First run `python3 scripts/compute_advance_tax.py --where`. It prints the working
+folder as JSON: `$ADVANCE_TAX_DIR`, else this skill's own `data/` folder if it already exists (the
+skill installed from a checkout of its repo, where `data/` is gitignored).
+
+- **`folder` is set:** that is WORKDIR. Create it if `exists` is false.
+- **`folder` is null:** ask the user where to keep the files.
+  - **Claude Code:** any path, e.g. `~/Documents/advance-tax/`. Offer to set `ADVANCE_TAX_DIR` to
+    it in the `env` block of their Claude Code settings, so later runs find it.
+  - **A desktop app with a folder shared to the session:** a folder inside it.
+  - **Neither** (nothing written here outlasts the session): a temporary folder, with the cloud
+    copy as the only lasting one (below).
+
+Never create `data/` or any other file inside this skill's folder: when the skill is installed as
+a plugin, an update replaces that folder.
+
+**Cloud storage.** The user can keep a copy of the working folder in their cloud file storage, so a
+run on another device or in another app carries on from the same ledger. To sync, read
+`references/cloud_sync.md` and follow it.
+
+- **A lasting working folder** (the first two cases above): touch cloud storage **only when the
+  user asks**. "pull", "get my files from the cloud" and the like sync down; "sync", "push",
+  "upload" and the like sync up.
+- **A temporary folder:** sync down now, before Step 1, and sync up once at the end of the run,
+  after Step 5, so only the final ledger, notes and profile go back. If there is no file-storage
+  connector, say that nothing will survive the session, carry on, and give the user the updated
+  ledger lines to keep themselves.
+
+The script finds the profile in this order: `--profile PATH`, `$TAX_PROFILE`, `tax-profile.json` in
+the current directory, then the one in the working folder from `--where`. With a working folder
+`--where` did not report (a temporary folder, or one the user named this session), pass
+`--profile WORKDIR/tax-profile.json`. If a rate is missing the script says exactly which, and it
 accepts them as flags for a one-off run that saves nothing.
 
 ## Step 1 — identify who and which due date
@@ -73,10 +106,10 @@ Ask for (or take from the user's message):
 
 5. **Bond interest** — only if the user holds bonds. It is the gross interest for the full FY
    (already received plus still scheduled) and the TDS on it; the script taxes the interest at
-   the slab and takes the TDS off. Do not add it up yourself. If `data/notes.md` says how the
-   user's bond figures are produced, follow it to refresh `data/bond-interest.json` and pass
-   `--bond-interest-file ${CLAUDE_SKILL_DIR}/data/bond-interest.json`; say which date the file is
-   as of, and that bonds bought after it are not counted. Otherwise ask for the two numbers (the
+   the slab and takes the TDS off. Do not add it up yourself. If `notes.md` says how the
+   user's bond figures are produced, follow it to refresh `WORKDIR/bond-interest.json` where this
+   environment can, and pass `--bond-interest-file WORKDIR/bond-interest.json`; say which date the
+   file is as of, and that bonds bought after it are not counted. Otherwise ask for the two numbers (the
    bond platform's tax or interest statement has them) and pass `--bond-interest-total` and
    `--bond-tds`. Bond TDS goes in here, never also in `--already-paid`.
 
@@ -90,26 +123,25 @@ assume 0 and say so (this will overstate what's due now).
 
 ## Step 3 — compute
 
-The profile is found in the skill's `data/` folder; pass `--profile` only if the user keeps it
-elsewhere:
+Pass `--profile` as Step 0 says:
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/compute_advance_tax.py \
+python3 scripts/compute_advance_tax.py \
   --person <key from their profile> \
   --installment <Q1|Q2|Q3|Q4> \
   --fdr-total <N> \
   --savings-balance <N> \
   --dividends-total <N> \
   --house-rent-total <N> \
-  --bond-interest-file ${CLAUDE_SKILL_DIR}/data/bond-interest.json \
+  --bond-interest-file WORKDIR/bond-interest.json \
   --already-paid <N>
 ```
 
 Never do this arithmetic yourself — always run the script. If the rates were gathered in Step 1
 rather than read from a profile, pass them as flags (`--fd-tax-pct`, `--other-tax-pct`,
 `--surcharge-multiplier`, `--fd-interest-rate`, `--savings-interest-rate`) and offer to save them
-into `data/tax-profile.json` for next time. Never anywhere else in the skill folder: only `data/`
-is gitignored, the rest is a public repo, and a slab rate is personal information.
+into `WORKDIR/tax-profile.json` for next time. Never into the skill folder: it is a public repo,
+and a slab rate is personal information.
 
 ## Step 4 — report
 
@@ -120,3 +152,11 @@ shortfalls against this cumulative schedule — mention it only if the computed 
 being paid late or the user asks about a past due date.
 
 Close with: *Not tax advice — verify figures with your CA before paying.*
+
+## Step 5 — record
+
+Offer to record the run in `WORKDIR/ledger.md`, keeping its existing layout: the date, the basis
+(the inputs above), the estimated annual tax and the cumulative amount required, and any payment
+the user reports with its date. Copy every figure from the script's output; never retype or round
+one by hand. Write any new source of an input that you learned into `notes.md`. With a temporary
+working folder, sync up now (Step 0).

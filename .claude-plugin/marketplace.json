@@ -44,6 +44,16 @@
         "./skills/itr2-filing-assistant"
       ],
       "homepage": "https://github.com/atishbits/claude-skills"
+    },
+    {
+      "name": "advance-tax",
+      "description": "Compute the Indian advance tax instalment due on a given date from FD interest, savings, dividends, house rent and bond interest. It keeps your rates and payment ledger in a local folder, with an optional copy in your cloud storage that syncs when you ask.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/advance-tax"
+      ],
+      "homepage": "https://github.com/atishbits/claude-skills"
     }
   ]
 }

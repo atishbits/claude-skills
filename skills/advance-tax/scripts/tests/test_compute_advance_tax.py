@@ -72,8 +72,46 @@ class TestFindProfile(unittest.TestCase):
             (Path(d) / cat.PROFILE_NAME).write_text("{}")
             explicit = Path(other) / "mine.json"
             explicit.write_text("{}")
-            with mock.patch.object(cat, "DATA_DIR", Path(d)):
+            with mock.patch.object(cat, "DATA_DIR", Path(d)), \
+                    mock.patch.dict(os.environ, {}, clear=True):
                 self.assertEqual(cat.find_profile(str(explicit)), explicit)
+
+
+class TestWorkingFolder(unittest.TestCase):
+    def test_the_variable_wins_over_the_data_folder(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as work:
+            (Path(work) / cat.PROFILE_NAME).write_text("{}")
+            (Path(work) / "ledger.md").write_text("")
+            with mock.patch.object(cat, "DATA_DIR", Path(d)), \
+                    mock.patch.dict(os.environ, {cat.DIR_ENV: work}, clear=True):
+                self.assertEqual(cat.working_folder(), (Path(work), cat.DIR_ENV))
+                self.assertEqual(cat.where()["files"], [cat.PROFILE_NAME, "ledger.md"])
+                with mock.patch.object(Path, "cwd", return_value=Path(d)):
+                    self.assertEqual(cat.find_profile(), Path(work) / cat.PROFILE_NAME)
+
+    def test_a_missing_data_folder_is_not_made_up(self):
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.object(cat, "DATA_DIR", Path(d) / "data"), \
+                    mock.patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(cat.working_folder(), (None, None))
+                self.assertEqual(cat.where(), {"folder": None, "from": None,
+                                               "exists": False, "files": []})
+                self.assertFalse((Path(d) / "data").exists())
+
+    def test_a_named_folder_not_yet_made(self):
+        with tempfile.TemporaryDirectory() as d:
+            new = str(Path(d) / "advance-tax")
+            with mock.patch.dict(os.environ, {cat.DIR_ENV: new}, clear=True):
+                self.assertEqual(cat.where(), {"folder": new, "from": cat.DIR_ENV,
+                                               "exists": False, "files": []})
+
+    def test_where_alone_prints_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            buf = io.StringIO()
+            with mock.patch.dict(os.environ, {cat.DIR_ENV: d}, clear=True), \
+                    contextlib.redirect_stdout(buf):
+                cat.main(["--where"])
+            self.assertEqual(json.loads(buf.getvalue())["folder"], d)
 
 
 class TestMain(unittest.TestCase):
