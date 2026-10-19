@@ -25,6 +25,7 @@ data/                              yours — the only files you provide
   slug-overrides.json              optional: {"SYMBOL-XX": "SLUG"} where your broker's symbol differs from the data source's
   notes.md                         local only: where the cloud copy lives
   .sync-base.json, .writer-id      local only: the last sync, and this copy's name in the logs
+  old-data/                        local only: superseded exports; never synced or read
   skill-data/                      the skill's — fetched data and everything it writes
     .cache/                          local only: the per-ticker fetch cache
     snapshot-<date>.json             local only: the day's fundamentals snapshot

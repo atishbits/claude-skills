@@ -23,6 +23,8 @@ class TestSyncedSet(unittest.TestCase):
         self.assertFalse(ds.synced("skill-data/.cache/x.json"))
         self.assertFalse(ds.synced("notes.md"))
         self.assertFalse(ds.synced(".sync-base.json"))
+        self.assertFalse(ds.synced("old-data/broker_holdings_2026-09-30.csv"))  # local archive
+        self.assertFalse(ds.synced("old-data/examplebroker-portfolio-2026-09-27.md"))
         self.assertTrue(ds.synced("skill-data/calendar.conflict-2026-10-18.md"))
 
 
