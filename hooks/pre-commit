@@ -169,9 +169,32 @@ MSG
   exit 1
 fi
 
+# Shared scripts have one master copy under shared/scripts/; each skill that
+# uses one ships an identical copy so it works wherever it is installed. The
+# copies are compared as staged (the index), not as they sit on disk.
+copy_fail=0
+while IFS= read -r cfg; do
+  copy="$(dirname "$cfg")/drive_sync.py"
+  if [ "$(git rev-parse -q --verify ":$copy" 2>/dev/null)" != \
+       "$(git rev-parse -q --verify ":shared/scripts/drive_sync.py" 2>/dev/null)" ]; then
+    echo "  ✗ $copy differs from shared/scripts/drive_sync.py, or is not staged"
+    copy_fail=1
+  fi
+done < <(git ls-files ':(glob)skills/*/scripts/drive-sync.json')
+if [ "$copy_fail" -ne 0 ]; then
+  cat <<'MSG'
+
+Commit blocked: a skill's copy of a shared script is out of step.
+
+Edit only shared/scripts/drive_sync.py, then run shared/sync-copies.sh and stage
+the copies it updates.
+MSG
+  exit 1
+fi
+
 # Every skill's scripts should be deterministic enough to unit test (see
-# CLAUDE.md). If any .py file is staged, run every skill's own test suite --
-# not just the one touched, since a shared helper (fetch_fundamentals.py is
+# CLAUDE.md). If any .py file is staged, run every skill's own test suite and
+# shared/scripts' suite -- not just the one touched, since a shared helper (fetch_fundamentals.py is
 # imported by three_year_case.py and tax_lots.py) can break a sibling script
 # without a change appearing in that script's own diff.
 if printf '%s\n' "$staged" | grep -q '\.py$'; then
@@ -185,7 +208,7 @@ if printf '%s\n' "$staged" | grep -q '\.py$'; then
       test_fail=1
     fi
     rm -f /tmp/pretest.$$
-  done < <(find skills -type d -name tests -path '*/scripts/tests')
+  done < <(find skills shared -type d -name tests -path '*/scripts/tests')
 
   if [ "$test_fail" -ne 0 ]; then
     cat <<'MSG'

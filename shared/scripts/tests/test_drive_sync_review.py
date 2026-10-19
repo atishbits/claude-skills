@@ -10,6 +10,8 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import drive_sync as ds  # noqa: E402
 
+ds.configure(ds.load_config(os.path.join(os.path.dirname(__file__), "fixture-config.json")))
+
 FOLDERS = {"": "R0", "skill-data": "F1", "skill-data/stocks": "F2"}
 N = "skill-data/stocks/TESTCO.md"
 

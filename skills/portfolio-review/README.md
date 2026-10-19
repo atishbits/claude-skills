@@ -123,7 +123,9 @@ found by its marker file, `portfolio-review-sync.json`; keeping it below the fol
   which never touches the network, decides what moves. It compares each file's local copy, its
   cloud copy and the state at the last sync, so an unchanged file is never transferred and an edit
   made in the cloud is pulled rather than overwritten. Each run starts with a sync in (SKILL.md
-  Step 0) and ends with a sync out (Step 5).
+  Step 0) and ends with a sync out (Step 5). The script is shared with other skills: its master
+  copy is `shared/scripts/drive_sync.py` at the top of this repository, and what this skill syncs
+  is set in `scripts/drive-sync.json`.
 - **Conflicts.** A file changed in both places since the last sync: the newer copy wins and the
   other is kept beside it as `<name>.conflict-<date>.<ext>` for you to reconcile. The logs are one
   file per copy per day, so they never conflict.

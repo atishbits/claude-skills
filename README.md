@@ -71,6 +71,9 @@ skills/
     ...
 ```
 
+Scripts used by more than one skill live once in `shared/` and are copied into each skill that
+uses them; see `shared/README.md`.
+
 ## Adding a new skill
 
 1. Create `skills/<skill-name>/SKILL.md`

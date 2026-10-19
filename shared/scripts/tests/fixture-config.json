@@ -1,0 +1,20 @@
+{
+ "marker": "portfolio-review-sync.json",
+ "root_env": "PORTFOLIO_ROOT",
+ "data_dir": "data",
+ "kinds": {
+  "note": {"patterns": ["skill-data/stocks/*.md"]},
+  "scan": {"patterns": ["skill-data/scan-history/*.jsonl"]},
+  "ledger": {"patterns": ["skill-data/ratings-ledger/*.jsonl"]},
+  "shared": {"patterns": ["*holdings*.csv", "*-portfolio-*.md", "slug-overrides.json",
+                          "skill-data/digest.json", "skill-data/PORTFOLIO.md",
+                          "skill-data/entry-budgets.json", "skill-data/calendar.md",
+                          "*.conflict-*", "skill-data/*.conflict-*"]}
+ },
+ "scopes": {
+  "ticker": ["shared", "note:named"],
+  "sweep": ["shared", "note", "ledger"],
+  "scan": ["shared", "scan"]
+ },
+ "_comment": "The ledger is pulled only for a sweep: the digest already carries each ticker's ledger."
+}

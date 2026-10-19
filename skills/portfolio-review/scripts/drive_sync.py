@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
-"""Plans the two-way sync between the local data folder and its master copy
-in cloud file storage. It never touches the network: the model lists the
-cloud folder and moves files with the file-storage connector, and this
-script decides every action and keeps the record of the last sync.
+"""Plans the two-way sync between a local data folder and its copy in cloud
+file storage. It never touches the network: the model lists the cloud folder
+and moves files with the file-storage connector, and this script decides
+every action and keeps the record of the last sync.
+
+Shared by several skills. The master copy is shared/scripts/drive_sync.py in
+the skills repo; each skill that uses it ships an identical copy beside its
+own drive-sync.json, which says what that skill syncs (see load_config).
+Edit the master, then run shared/sync-copies.sh.
 
 Why a script: which file goes which way, and what is a conflict, has one
 right answer given the listing, the local files and the last sync. A model
 deciding that by eye would re-upload unchanged files (tokens) or overwrite
 an edit made elsewhere (data).
 
+Global options, before the command:
+  --root DIR      the working root (default: the config's root_env variable, else the
+                  working directory); the data folder is the config's data_dir inside it
+  --config F      the skill's drive-sync.json (default: the one beside this script)
+
 Commands (all print JSON):
   init --root-id ID                 first sync on a machine whose cloud folder exists
   listing-query                     the one search query that lists every known folder
-  plan --listing F [--listing F...] [--manifest F] --scope ticker|sweep|scan|all [TICKER ...]
+  plan --listing F [--listing F...] [--manifest F] [--scope S] [NAME ...]
+       [--direction both|down|up]   down: only what comes from the cloud; up: only what goes
        [--adopt-same-size]          once, after a first upload by hand: adopt same-size files
   folder PATH --id ID               register a folder the model just created
   put PATH B64FILE --id ID --modified TS     write a downloaded file, record it
@@ -38,22 +49,51 @@ import os
 import sys
 from datetime import date, datetime, timezone
 
-ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
-DATA_DIR = os.path.join(ROOT, "data")
-BASE_PATH = os.path.join(DATA_DIR, ".sync-base.json")
-MANIFEST_OUT = os.path.join(DATA_DIR, ".manifest-out.json")
-MANIFEST_NAME = "portfolio-review-sync.json"
 FOLDER_MIME = "application/vnd.google-apps.folder"
-
-SHARED = ["*holdings*.csv", "*-portfolio-*.md", "slug-overrides.json",
-          "skill-data/digest.json", "skill-data/PORTFOLIO.md",
-          "skill-data/entry-budgets.json", "skill-data/calendar.md",
-          "*.conflict-*", "skill-data/*.conflict-*"]
-LEDGER = ["skill-data/ratings-ledger/*.jsonl"]
-NOTES = ["skill-data/stocks/*.md"]
-SCANS = ["skill-data/scan-history/*.jsonl"]
 MIME = {".md": "text/markdown", ".json": "application/json", ".csv": "text/csv",
-        ".jsonl": "text/plain"}
+        ".jsonl": "text/plain", ".txt": "text/plain", ".pdf": "application/pdf"}
+CONFIG_NAME = "drive-sync.json"
+
+# The skill's drive-sync.json:
+#   marker    the manifest's file name in the cloud folder, found by exact name
+#   root_env  environment variable naming the working root
+#   data_dir  the synced folder, relative to the working root ("." for the root)
+#   kinds     {kind: {"patterns": [glob, ...], "upload": true}}, checked in order;
+#             a path is synced if a pattern of some kind matches it at the same
+#             depth. "upload": false makes a kind download-only (documents the
+#             user puts in the cloud; never retyped back up).
+#   scopes    {scope: [kind, ...]}: which kinds a plan downloads in that scope;
+#             "kind:named" limits that kind to files whose name, before the first
+#             dot, is one of the plan's NAME arguments. "all" always exists and
+#             covers every kind.
+CFG = None
+
+
+def load_config(path):
+    with open(path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    for key in ("marker", "kinds"):
+        if key not in cfg:
+            raise ValueError(f"{path}: missing {key!r}")
+    cfg.setdefault("root_env", None)
+    cfg.setdefault("data_dir", ".")
+    cfg.setdefault("scopes", {})
+    for kinds in cfg["scopes"].values():
+        for k in kinds:
+            if k.split(":")[0] not in cfg["kinds"]:
+                raise ValueError(f"{path}: scope names unknown kind {k!r}")
+    return cfg
+
+
+def configure(cfg):
+    global CFG
+    CFG = cfg
+
+
+def _cfg():
+    if CFG is None:
+        configure(load_config(os.path.join(os.path.dirname(os.path.abspath(__file__)), CONFIG_NAME)))
+    return CFG
 
 
 def _match(rel, patterns):
@@ -62,14 +102,13 @@ def _match(rel, patterns):
 
 
 def scope_of(rel):
-    if _match(rel, NOTES):
-        return "note"
-    if _match(rel, SCANS):
-        return "scan"
-    if _match(rel, LEDGER):
-        return "ledger"
-    if _match(rel, SHARED):
-        return "shared"
+    """The kind a path belongs to, or None if it is not synced. Hidden files
+    (this script's own .sync-base.json, listing pages) never are."""
+    if os.path.basename(rel).startswith("."):
+        return None
+    for kind, spec in _cfg()["kinds"].items():
+        if _match(rel, spec["patterns"]):
+            return kind
     return None
 
 
@@ -77,23 +116,23 @@ def synced(rel):
     return scope_of(rel) is not None
 
 
-def in_scope(rel, scope, tickers):
+def uploads(rel):
+    return _cfg()["kinds"][scope_of(rel)].get("upload", True)
+
+
+def in_scope(rel, scope, names):
     kind = scope_of(rel)
-    if scope == "all" or kind == "shared":
+    if scope == "all":
         return True
-    if kind == "note":
-        if scope == "sweep":
+    for entry in _cfg()["scopes"].get(scope, []):
+        k, _, qual = entry.partition(":")
+        if k != kind:
+            continue
+        if qual != "named":
             return True
-        if scope == "ticker":
-            stem = os.path.basename(rel).split(".")[0].upper()
-            return stem in {t.upper() for t in tickers}
-        return False
-    if kind == "scan":
-        return scope == "scan"
-    if kind == "ledger":
-        # The digest already carries each ticker's ledger; the files themselves
-        # are needed only where the whole book is being looked at.
-        return scope == "sweep"
+        stem = os.path.basename(rel).split(".")[0].upper()
+        if stem in {t.upper() for t in names}:
+            return True
     return False
 
 
@@ -188,7 +227,7 @@ def _conflict_copy(rel, today, taken):
     return name
 
 
-def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None, today=None,
+def plan(local, remote, base, manifest_files, scope, names, local_mtimes=None, today=None,
          local_sizes=None, adopt_same_size=False):
     """adopt_same_size: a first upload done by hand (drag and drop) has no base
     entry and no manifest hash, so it would read as a conflict. With the flag,
@@ -199,7 +238,8 @@ def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None,
     local_sizes = local_sizes or {}
     folders = base.get("folders", {})
     bfiles = base.get("files", {})
-    out = {k: [] for k in ("download", "upload", "mkdir", "conflict", "duplicate", "unchanged", "adopt")}
+    out = {k: [] for k in ("download", "upload", "mkdir", "conflict", "duplicate", "unchanged", "adopt",
+                           "local_only")}
     taken = set(local) | set(remote)
     for rel in sorted(set(local) | set(remote)):
         L, B, M = local.get(rel), bfiles.get(rel), manifest_files.get(rel)
@@ -215,6 +255,9 @@ def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None,
         if M:
             M = dict(M, modified=norm_ts(M.get("modified")))
         if R is None:
+            if not uploads(rel):
+                out["local_only"].append(rel)
+                continue
             parent_path = os.path.dirname(rel)
             if parent_path in folders:
                 out["upload"].append({"path": rel, "old_id": None, "parent": folders[parent_path],
@@ -223,7 +266,7 @@ def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None,
                 _need_folder(parent_path, folders, out["mkdir"])
             continue
         if L is None:
-            if in_scope(rel, scope, tickers):
+            if in_scope(rel, scope, names):
                 out["download"].append({"path": rel, **R})
             continue
         remote_sha = (M["sha"] if M and M.get("id") == R["id"] and M.get("modified") == R["modified"]
@@ -242,15 +285,27 @@ def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None,
         remote_changed = not B or R["id"] != B.get("id") or R["modified"] != B.get("modified")
         if not local_changed and not remote_changed:
             out["unchanged"].append(rel)
+        elif local_changed and not remote_changed and not uploads(rel):
+            out["local_only"].append(rel)
         elif local_changed and not remote_changed:
             out["upload"].append({"path": rel, "old_id": R["id"], "parent": folders.get(os.path.dirname(rel)),
                                   "mime": MIME.get(os.path.splitext(rel)[1], "text/plain")})
         elif remote_changed and not local_changed:
-            if in_scope(rel, scope, tickers):
+            if in_scope(rel, scope, names):
                 out["download"].append({"path": rel, **R})
         else:
             keep = "remote" if (R["modified"] or "") > local_mtimes.get(rel, "") else "local"
             out["conflict"].append({"path": rel, "keep": keep, "copy": _conflict_copy(rel, today, taken), **R})
+    return out
+
+
+def by_direction(out, direction):
+    """down: only what the cloud sends here; up: only what goes to the cloud.
+    Conflicts and duplicates stay in both: either way they need resolving."""
+    if direction == "down":
+        out["upload"], out["mkdir"] = [], []
+    elif direction == "up":
+        out["download"] = []
     return out
 
 
@@ -354,9 +409,9 @@ def _load_json(path):
 
 
 def main(argv=None, data_dir=None):
-    data_dir = data_dir or DATA_DIR
-    base_path = os.path.join(data_dir, ".sync-base.json")
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--root")
+    p.add_argument("--config")
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("init")
     s.add_argument("--root-id", required=True)
@@ -364,11 +419,12 @@ def main(argv=None, data_dir=None):
     s = sub.add_parser("plan")
     s.add_argument("--listing", action="append", default=[])
     s.add_argument("--manifest")
-    s.add_argument("--scope", choices=["ticker", "sweep", "scan", "all"], required=True)
+    s.add_argument("--scope", default="all")
+    s.add_argument("--direction", choices=["both", "down", "up"], default="both")
     s.add_argument("--adopt-same-size", action="store_true",
                    help="once, after a first upload done by hand: adopt never-synced files "
                         "the listing reports at the local file's size")
-    s.add_argument("tickers", nargs="*")
+    s.add_argument("names", nargs="*")
     s = sub.add_parser("folder")
     s.add_argument("path")
     s.add_argument("--id", required=True)
@@ -392,6 +448,17 @@ def main(argv=None, data_dir=None):
     sub.add_parser("manifest")
     a = p.parse_args(argv)
 
+    if a.config:
+        configure(load_config(a.config))
+    cfg = _cfg()
+    if data_dir is None:
+        root = a.root or (cfg["root_env"] and os.environ.get(cfg["root_env"])) or os.getcwd()
+        data_dir = os.path.normpath(os.path.join(os.path.abspath(os.path.expanduser(root)),
+                                                 cfg["data_dir"]))
+    base_path = os.path.join(data_dir, ".sync-base.json")
+    if a.cmd == "plan" and a.scope != "all" and a.scope not in cfg["scopes"]:
+        p.error("--scope must be " + " or ".join(["all", *cfg["scopes"]]))
+
     base = load_base(base_path)
     if a.cmd == "init":
         base.update({"root_id": a.root_id})
@@ -414,10 +481,11 @@ def main(argv=None, data_dir=None):
         listed = set(base.get("folders", {}).values())
         remote, base["folders"] = parse_listings([_load_json(f) for f in pages], base.get("folders", {}))
         local = local_files(data_dir)
-        out = plan(local, remote, base, manifest.get("files", {}), a.scope, a.tickers,
+        out = plan(local, remote, base, manifest.get("files", {}), a.scope, a.names,
                    local_mtimes=local_mtimes(data_dir, local),
                    local_sizes={rel: os.path.getsize(os.path.join(data_dir, rel)) for rel in local},
                    adopt_same_size=a.adopt_same_size)
+        by_direction(out, a.direction)
         apply_adopt(base, data_dir, out["adopt"])
         # Folders found in this listing were not in its query, so their files
         # are missing from it: list again before acting on the plan.
@@ -450,7 +518,7 @@ def main(argv=None, data_dir=None):
     else:  # manifest
         with open(os.path.join(data_dir, ".manifest-out.json"), "w", encoding="utf-8") as fh:
             json.dump(build_manifest(base), fh, indent=1, sort_keys=True)
-        out = {"manifest": os.path.join(data_dir, ".manifest-out.json"), "name": MANIFEST_NAME,
+        out = {"manifest": os.path.join(data_dir, ".manifest-out.json"), "name": cfg["marker"],
                "parent": base.get("root_id"), "old_id": base.get("manifest_id")}
     save_base(base, base_path)
     if argv is None:
