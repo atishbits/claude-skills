@@ -82,11 +82,14 @@ skills/
 ## Installing as a plugin
 
 `.claude-plugin/marketplace.json` makes this repository a plugin source. It lists the skills that
-work without a local project folder: `news-briefing` and `portfolio-review`. In Cowork, add the
-marketplace `atishbits/claude-skills` once and install each plugin; in Claude Code:
+work without a local project folder: `news-briefing`, `portfolio-review`, `pdf-unlock` and
+`itr2-filing-assistant`. In Cowork, add the marketplace `atishbits/claude-skills` once and install
+each plugin; in Claude Code:
 
     /plugin install news-briefing --marketplace atishbits/claude-skills
     /plugin install portfolio-review --marketplace atishbits/claude-skills
+    /plugin install pdf-unlock --marketplace atishbits/claude-skills
+    /plugin install itr2-filing-assistant --marketplace atishbits/claude-skills
 
 An installed plugin follows this repository: update the plugin to get the latest commit. The
 other skills read a working folder on your own machine and are installed by symlink, as described
