@@ -76,5 +76,21 @@ class TestCli(unittest.TestCase):
         self.assertEqual(out["upload"][0]["path"], "skill-data/calendar.md")
 
 
+    def test_plan_adopts_hand_upload_by_size_and_records_it(self):
+        os.makedirs(os.path.join(self.data, "skill-data"))
+        with open(os.path.join(self.data, "skill-data", "calendar.md"), "w") as fh:
+            fh.write("abc\n")
+        ds.save_base({"root_id": "R0", "folders": {"": "R0", "skill-data": "F1"}, "files": {}},
+                     self.base_path)
+        listing = os.path.join(self.tmp.name, "l.json")
+        with open(listing, "w") as fh:
+            json.dump({"files": [{"id": "c1", "title": "calendar.md", "parentId": "F1", "mimeType": "text/markdown",
+                                  "fileSize": "4", "modifiedTime": "2026-10-19T01:00:00.000Z"}]}, fh)
+        out = ds.main(["plan", "--listing", listing, "--scope", "all", "--adopt-same-size"],
+                      data_dir=self.data)
+        self.assertEqual([a["path"] for a in out["adopt"]], ["skill-data/calendar.md"])
+        again = ds.main(["plan", "--listing", listing, "--scope", "all"], data_dir=self.data)
+        self.assertEqual(again["unchanged"], ["skill-data/calendar.md"])
+
 if __name__ == "__main__":
     unittest.main()

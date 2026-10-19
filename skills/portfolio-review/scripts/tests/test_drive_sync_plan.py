@@ -45,6 +45,13 @@ class TestListings(unittest.TestCase):
         self.assertEqual(files["skill-data/scan-history/x.jsonl"]["id"], "b")
         self.assertEqual(len(files), 2)
 
+    def test_size_kept_when_listed(self):
+        files, _ = ds.parse_listings([{"files": [{"id": "a", "title": "TESTCO.md", "parentId": "F2",
+                                                   "mimeType": "text/markdown", "fileSize": "120",
+                                                   "modifiedTime": "2026-10-18T05:00:00Z"}]}],
+                                     dict(FOLDERS))
+        self.assertEqual(files["skill-data/stocks/TESTCO.md"], dict(rem("a"), size=120))
+
     def test_unknown_parent_ignored(self):
         files, _ = ds.parse_listings([{"files": [{"id": "z", "title": "y.md", "parentId": "ZZ",
                                                    "mimeType": "text/markdown", "modifiedTime": "t"}]}],
@@ -85,6 +92,37 @@ class TestPlan(unittest.TestCase):
         out = self.p({self.N: "s1"}, {self.N: rem("a")}, manifest={self.N: {"sha": "s1", "id": "a",
                                                               "modified": "2026-10-18T05:00:00Z"}})
         self.assertEqual(out["adopt"], [{"path": self.N, "id": "a", "modified": "2026-10-18T05:00:00Z"}])
+
+    # A first upload done by hand (drag and drop): never synced, no manifest
+    # hash, but the same bytes on both sides. Opt-in only.
+    def test_hand_upload_same_size_is_adopted_when_asked(self):
+        out = ds.plan({self.N: "s1"}, {self.N: dict(rem("a"), size=120)},
+                      {"root_id": "R0", "folders": dict(FOLDERS), "files": {}}, {}, "all", [],
+                      local_sizes={self.N: 120}, adopt_same_size=True, today="2026-10-18")
+        self.assertEqual(out["adopt"], [{"path": self.N, "id": "a", "modified": "2026-10-18T05:00:00Z"}])
+        self.assertEqual(out["conflict"], [])
+
+    def test_hand_upload_same_size_is_a_conflict_without_the_flag(self):
+        out = ds.plan({self.N: "s1"}, {self.N: dict(rem("a"), size=120)},
+                      {"root_id": "R0", "folders": dict(FOLDERS), "files": {}}, {}, "all", [],
+                      local_sizes={self.N: 120}, today="2026-10-18")
+        self.assertEqual(out["adopt"], [])
+        self.assertEqual(len(out["conflict"]), 1)
+
+    def test_hand_upload_different_size_is_a_conflict(self):
+        out = ds.plan({self.N: "s1"}, {self.N: dict(rem("a"), size=121)},
+                      {"root_id": "R0", "folders": dict(FOLDERS), "files": {}}, {}, "all", [],
+                      local_sizes={self.N: 120}, adopt_same_size=True, today="2026-10-18")
+        self.assertEqual(out["adopt"], [])
+        self.assertEqual(len(out["conflict"]), 1)
+
+    def test_same_size_never_overrides_a_synced_file(self):
+        base = {self.N: {"sha": "s0", "id": "a", "modified": "2026-10-18T05:00:00Z"}}
+        out = ds.plan({self.N: "s1"}, {self.N: dict(rem("a"), size=120)},
+                      {"root_id": "R0", "folders": dict(FOLDERS), "files": base}, {}, "all", [],
+                      local_sizes={self.N: 120}, adopt_same_size=True, today="2026-10-18")
+        self.assertEqual(out["adopt"], [])
+        self.assertEqual(out["upload"][0]["old_id"], "a")
 
     def test_unchanged(self):
         base = {self.N: {"sha": "s1", "id": "a", "modified": "2026-10-18T05:00:00Z"}}

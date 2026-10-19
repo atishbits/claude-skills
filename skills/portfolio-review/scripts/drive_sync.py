@@ -13,6 +13,7 @@ Commands (all print JSON):
   init --root-id ID                 first sync on a machine whose cloud folder exists
   listing-query                     the one search query that lists every known folder
   plan --listing F [--listing F...] [--manifest F] --scope ticker|sweep|scan|all [TICKER ...]
+       [--adopt-same-size]          once, after a first upload by hand: adopt same-size files
   folder PATH --id ID               register a folder the model just created
   put PATH B64FILE --id ID --modified TS     write a downloaded file, record it
                                     (PATH .manifest-in.json for the manifest: written, not recorded)
@@ -160,7 +161,10 @@ def parse_listings(pages, folders):
         parent = by_id[f["parentId"]]
         rel = f"{parent}/{f['title']}" if parent else f["title"]
         if synced(rel):
-            by_path.setdefault(rel, []).append({"id": f["id"], "modified": norm_ts(f.get("modifiedTime"))})
+            item = {"id": f["id"], "modified": norm_ts(f.get("modifiedTime"))}
+            if f.get("fileSize") is not None:
+                item["size"] = int(f["fileSize"])
+            by_path.setdefault(rel, []).append(item)
     # Two files on one path happen when an overwrite (create, then bin the old
     # one) was interrupted, or two copies uploaded at once. The newest is the
     # file; the others are reported so they can be kept as conflict copies.
@@ -184,9 +188,15 @@ def _conflict_copy(rel, today, taken):
     return name
 
 
-def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None, today=None):
+def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None, today=None,
+         local_sizes=None, adopt_same_size=False):
+    """adopt_same_size: a first upload done by hand (drag and drop) has no base
+    entry and no manifest hash, so it would read as a conflict. With the flag,
+    a never-synced file the listing reports at the local file's exact size is
+    adopted as that copy. Opt-in, because size alone is not proof of content."""
     today = today or date.today().isoformat()
     local_mtimes = local_mtimes or {}
+    local_sizes = local_sizes or {}
     folders = base.get("folders", {})
     bfiles = base.get("files", {})
     out = {k: [] for k in ("download", "upload", "mkdir", "conflict", "duplicate", "unchanged", "adopt")}
@@ -198,6 +208,7 @@ def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None,
             for d in R.get("dups", []):
                 out["duplicate"].append({"path": rel, "id": d["id"], "modified": d["modified"],
                                          "copy": _conflict_copy(rel, today, taken)})
+            size = R.get("size")
             R = {"id": R["id"], "modified": norm_ts(R["modified"])}
         if B:
             B = dict(B, modified=norm_ts(B.get("modified")))
@@ -222,6 +233,10 @@ def plan(local, remote, base, manifest_files, scope, tickers, local_mtimes=None,
                 out["adopt"].append({"path": rel, **R})
             else:
                 out["unchanged"].append(rel)
+            continue
+        if (adopt_same_size and not B and remote_sha is None and size is not None
+                and local_sizes.get(rel) == size):
+            out["adopt"].append({"path": rel, **R})
             continue
         local_changed = not B or L != B.get("sha")
         remote_changed = not B or R["id"] != B.get("id") or R["modified"] != B.get("modified")
@@ -350,6 +365,9 @@ def main(argv=None, data_dir=None):
     s.add_argument("--listing", action="append", default=[])
     s.add_argument("--manifest")
     s.add_argument("--scope", choices=["ticker", "sweep", "scan", "all"], required=True)
+    s.add_argument("--adopt-same-size", action="store_true",
+                   help="once, after a first upload done by hand: adopt never-synced files "
+                        "the listing reports at the local file's size")
     s.add_argument("tickers", nargs="*")
     s = sub.add_parser("folder")
     s.add_argument("path")
@@ -397,7 +415,9 @@ def main(argv=None, data_dir=None):
         remote, base["folders"] = parse_listings([_load_json(f) for f in pages], base.get("folders", {}))
         local = local_files(data_dir)
         out = plan(local, remote, base, manifest.get("files", {}), a.scope, a.tickers,
-                   local_mtimes=local_mtimes(data_dir, local))
+                   local_mtimes=local_mtimes(data_dir, local),
+                   local_sizes={rel: os.path.getsize(os.path.join(data_dir, rel)) for rel in local},
+                   adopt_same_size=a.adopt_same_size)
         apply_adopt(base, data_dir, out["adopt"])
         # Folders found in this listing were not in its query, so their files
         # are missing from it: list again before acting on the plan.

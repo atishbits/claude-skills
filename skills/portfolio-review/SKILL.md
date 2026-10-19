@@ -98,7 +98,10 @@ live in the working root's `data/` folder, which `drive_sync.py` reads by defaul
    `python3 scripts/drive_sync.py put .manifest-in.json TEMPFILE --id ID --modified TS`. That
    also tells a fresh working root where every folder is.
    Not found anywhere: first run. Ask the user which folder to use, run
-   `python3 scripts/drive_sync.py init --root-id ID`, and upload the local copy in Step 5.
+   `python3 scripts/drive_sync.py init --root-id ID`, and upload the local copy in Step 5 — or,
+   to save retyping large files, ask the user to drag the local files into the matching cloud
+   folders, then run that one plan with `--adopt-same-size`, which records each never-synced file
+   whose cloud size equals the local size as synced instead of reporting a conflict.
 2. **List.** `python3 scripts/drive_sync.py listing-query` prints one search query and where to
    save the results. Run it with the connector asking for metadata only (no content snippets),
    page through every result, and save each raw page as `.listing-1.json`, `.listing-2.json`, …
