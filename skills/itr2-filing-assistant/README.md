@@ -38,9 +38,27 @@ Each phase writes a conclusions file — computation, cross-checks, flags, a `PE
 
 This repo holds statutory rates, procedure and templates. **Nothing personal is ever written here.**
 
-Point the skill at a working folder of your own — `~/Documents/itr/AY2026-27/`, say — and every
-conclusions file, worksheet and rate lookup lands there. Your Form 16, AIS, 26AS and broker
-statements stay where they are and are read locally; nothing is uploaded anywhere.
+Point the skill at a working folder of your own and every conclusions file, worksheet and rate
+lookup lands there. Your Form 16, AIS, 26AS and broker statements are read from where you keep them;
+nothing is sent to any other service or shared.
+
+## Where it runs
+
+It works in Claude Code and in Cowork. The two places it can keep its working folder:
+
+- **On your computer.** In Claude Code, any path, e.g. `~/Documents/itr/AY2026-27/`. In Cowork, a
+  folder inside the one you shared with the session.
+- **In your cloud file storage**, through a file-storage connector. Use this when the session has no
+  folder of yours, or to resume on another device. Each conclusions file is uploaded as soon as its
+  phase finishes, to a folder you name, and the skill never changes that folder's sharing.
+
+Either way, a later session resumes from the conclusions files already in the folder. The skill
+needs Python (standard library only) for its calculator; it stops if the environment has none.
+Password-protected PDFs (the AIS and 26AS usually are) need an unlocked copy, or a PDF-unlocking
+skill installed alongside.
+
+Install it as a plugin (see the repository README) or by symlinking this folder into
+`~/.claude/skills/`.
 
 The skill will not echo a PAN, Aadhaar, bank account or full broker account number into chat unless
 you ask it to, and will not carry any of it into memory.

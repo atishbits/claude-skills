@@ -1,7 +1,7 @@
 # Output templates
 
-Everything written goes to **the user's working folder**, never into this skill directory — it lives
-in a public repo.
+Everything written goes to **the user's working folder** (local or in their cloud storage — see
+*Setup* in `SKILL.md`), never into this skill directory — it lives in a public repo.
 
 ## 1. One file per schedule
 

@@ -39,13 +39,15 @@ computation and validation; the user types the final figures into the income tax
    mental math on money.
 5. **Re-read the relevant reference file at the start of each phase.** Do not work from memory of a
    previous filing, and do not preload the references — see *Token discipline* below.
-6. **Store all working files under the user's chosen project folder**, one conclusions file per
-   schedule (`references/10_output_templates.md`). Never inside this skill directory: it lives in a
-   public repo.
-7. **Treat every document as sensitive.** Work only on local files. Do not send document contents to
-   any external service. Do not write PAN, Aadhaar, bank account numbers or full broker account
-   numbers into chat/summary output unless the user asks — keep them only in the local working
-   files. Do not persist any of it into long-term memory.
+6. **Store all working files in the user's working folder** (see *Setup*), one conclusions file
+   per schedule (`references/10_output_templates.md`). Never inside this skill's own folder: it
+   lives in a public repo, and when the skill is installed as a plugin an update replaces it.
+7. **Treat every document as sensitive.** Read documents only from where the user put them: their
+   own folder, their own cloud storage, or files attached to the chat. Do not send document
+   contents to any other service — no web search, no online converter, no sharing link. Do not write
+   PAN, Aadhaar, bank account numbers or full broker account numbers into chat/summary output unless
+   the user asks — keep them only in the working files. Do not persist any of it into long-term
+   memory.
 
 ## Token discipline (progressive disclosure)
 
@@ -56,11 +58,35 @@ Phase 6 actually starts.
 
 ## Setup — before Phase 0
 
-Ask the user for a **working folder** outside this repo (e.g. `~/Documents/itr/AY2026-27/`), and if
-more than one person is being helped, one subfolder per assessee. Everything you write goes there.
+**Python.** The scripts are in `scripts/` beside this file (`${CLAUDE_SKILL_DIR}/scripts` where
+that variable is set); run every command in this skill from the folder holding this file. Run
+`python3 scripts/tax_calc.py --selftest` once. If this environment cannot run Python, say so and
+stop: rule 4 forbids computing without the scripts.
 
-Then check for prior state: if conclusions files already exist in that folder, read them and resume
-from the first phase that has no file, rather than starting over.
+**Working folder.** Ask the user where the working files should live. This must be somewhere that
+outlasts the session, because the next session resumes from it:
+
+- **A folder on their computer** — any path in Claude Code (e.g. `~/Documents/itr/AY2026-27/`), or
+  a folder inside the one they shared with the session in a desktop app. Write files there directly.
+- **A folder in their cloud file storage**, reached with whichever file-storage connector is
+  connected — for a session that has no folder of theirs, or if they prefer it. Write each file
+  into a temporary folder first (never this skill's folder), then upload it to that folder under the same name: update the existing file
+  rather than creating a second one with the same name. Upload a phase's conclusions file as soon
+  as it is written, not at the end. Never change its sharing.
+
+If the session has neither — no folder of theirs and no file-storage connector — say that nothing
+will survive the session, and offer to carry on anyway with the files given back at the end of each
+phase for them to keep.
+
+If more than one person is being helped, use one subfolder per assessee.
+
+**Prior state.** If conclusions files already exist in the working folder, read them (download them,
+for a cloud folder) and resume from the first phase that has no file, rather than starting over.
+
+**Documents.** The user's documents may be in the working folder, in their cloud storage, or
+attached to the chat; record where each one is in the Phase 1 inventory. A password-protected PDF
+(the AIS and 26AS usually are) that will not open: if a PDF-unlocking skill is available, use it with
+the password the user gives; otherwise ask the user for an unlocked copy.
 
 ## Phases
 
@@ -105,12 +131,12 @@ conclusions file before moving on.
 ## Scripts
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/tax_calc.py --regime new --ay 2026-27 \
+python3 scripts/tax_calc.py --regime new --ay 2026-27 \
   --normal-income N --ltcg-112a N --stcg-111a N --ltcg-other N \
   --tds N --advance-tax N --tcs N --age 35 [--compare]
-python3 ${CLAUDE_SKILL_DIR}/scripts/tax_calc.py --selftest
+python3 scripts/tax_calc.py --selftest
 
-python3 ${CLAUDE_SKILL_DIR}/scripts/fx.py --amount 1000 --currency USD \
+python3 scripts/fx.py --amount 1000 --currency USD \
   --date 2025-11-14 --basis rule115 [--rate 84.1234]
 ```
 
@@ -125,8 +151,9 @@ TT buying rate to fetch, then ask the user to supply or confirm it.
 - **Never file, never log in, never automate the portal.**
 - **Never fabricate a figure.** `PENDING` beats a guess.
 - **No mental arithmetic on money** — route through the script.
-- **Privacy:** local files only; nothing uploaded anywhere; no PAN / Aadhaar / account numbers echoed
-  into chat summaries unless asked; nothing personal written into this skill folder or memory.
+- **Privacy:** files stay in the user's own folder or own cloud storage, never shared or sent to any
+  other service; no PAN / Aadhaar / account numbers echoed into chat summaries unless asked; nothing
+  personal written into this skill folder or memory.
 - **Do not advise on evasion.** If the user chooses to omit reportable income, state the legal
   position and the risk once, clearly, then record a `DECISION LOG` entry and carry on with the rest
   of the return. Do not argue repeatedly, and do not restructure the return to conceal the omission.

@@ -74,7 +74,8 @@ Ask which of these the user has and where the file is. Mark each **Have / Missin
 Write `00_Document_Review_and_Data_Inventory.md` in the user's working folder, containing:
 
 - **Assessee block** — name, PAN (full in the file, masked in chat), AY/FY, regime, employer.
-- **Documents on file** — the table above with Have/Missing/N/A and the local path of each file.
+- **Documents on file** — the table above with Have/Missing/N/A and where each file is (a path, a cloud-storage file, or
+  "attached to the chat").
 - **Per-head first-pass figures** — whatever is already legible from the documents, each with its
   source.
 - **Gaps / still needed** — numbered, each naming exactly where to get the item.
