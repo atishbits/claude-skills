@@ -53,6 +53,28 @@ class TestTermsIn(unittest.TestCase):
         self.assertIn("pp", glossary.terms_in("FIIs 12.0% (-1.8pp)"))
         self.assertNotIn("pp", glossary.terms_in("see the app pp list"))
 
+    def test_ratings_are_found_only_in_capitals(self):
+        found = glossary.terms_in("Rating: HOLD (was BUY); SELL / trim the newest lots")
+        self.assertEqual([t for t in found if t in ("BUY", "HOLD", "SELL / trim")],
+                         ["BUY", "HOLD", "SELL / trim"])
+        self.assertEqual(glossary.terms_in("hold on, buy milk, sell the car"), [])
+
+    def test_results_terms(self):
+        found = glossary.terms_in("H1 revenue +9% in constant currency; TCV $1.2bn; margin -40 bps")
+        for term in ("H1/H2", "Constant currency", "TCV", "bps"):
+            self.assertIn(term, found)
+        self.assertIn("H1/H2", glossary.terms_in("guidance for H2"))
+        self.assertNotIn("H1/H2", glossary.terms_in("H100 chips, h2 heading"))
+
+    def test_consensus_and_record_date_match_any_case(self):
+        self.assertIn("Consensus", glossary.terms_in("Consensus TP ₹500"))
+        self.assertIn("Record date", glossary.terms_in("Record Date 14 Nov"))
+
+    def test_market_terms(self):
+        found = glossary.terms_in("UPI MDR; an MNC; GLP1 and GLP-1 entrants; Nifty 500 constituent")
+        for term in ("UPI", "MDR", "MNC", "GLP-1", "Nifty 500"):
+            self.assertIn(term, found)
+
     def test_plain_prose_finds_nothing(self):
         self.assertEqual(glossary.terms_in("The price fell a little this week."), [])
 
@@ -61,6 +83,11 @@ class TestResolveTerms(unittest.TestCase):
     def test_free_typed_names(self):
         labels, unknown = glossary.resolve_terms(["rsi", " EBITDA margin ", "200 DMA", ""])
         self.assertEqual(labels, ["RSI", "EBITDA", "DMA"])
+        self.assertEqual(unknown, [])
+
+    def test_free_typed_new_terms(self):
+        labels, unknown = glossary.resolve_terms(["h2", "sell", "constant currency", "glp-1"])
+        self.assertEqual(labels, ["H1/H2", "SELL / trim", "Constant currency", "GLP-1"])
         self.assertEqual(unknown, [])
 
     def test_unknown_is_reported_not_dropped(self):
