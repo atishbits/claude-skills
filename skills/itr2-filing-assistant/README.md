@@ -59,8 +59,9 @@ python3 scripts/fx.py --amount 1200 --currency USD --date 2025-11-14 --basis rul
 implemented rather than approximated: 87A marginal relief, surcharge marginal relief at each band
 floor, the 15% surcharge cap on 111A/112/112A/dividend tax, unused basic exemption set against
 capital gains, and 234B/234C estimates. Rate tables are keyed by AY, so a new year is one edit —
-in `RATES` and in `references/08_rates_and_thresholds.md`, which must stay in step. `--selftest`
-covers the rebate cliff, every surcharge band boundary and the cap case.
+in `RATES` and in `references/08_rates_and_thresholds.md`, which must stay in step. The unit tests
+in `scripts/tests/` (also run by `--selftest`) cover the rebate cliff, every surcharge band
+boundary, the cap case and 234B/234C; `fx.py`'s rate-date rules are tested there too.
 
 `fx.py` deals with the conversion date, which is where foreign figures go wrong quietly: Rule 115
 (income), Rule 128 (foreign tax credit) and Schedule FA each want a different date, and none of them

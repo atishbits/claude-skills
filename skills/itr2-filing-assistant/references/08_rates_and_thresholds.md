@@ -97,6 +97,6 @@ python3 scripts/tax_calc.py --regime new --ay 2026-27 \
 - `--dividend-income` is the dividend **portion of** `--normal-income` (not additional income); it is
   needed only so the 15% surcharge cap can be applied correctly.
 - `--paid-q1 … --paid-q4` enable the 234C estimate; `--months-234b` enables the 234B estimate.
-- `--selftest` runs the built-in unit tests.
+- `--selftest` runs the unit tests in `scripts/tests/`.
 
 Never hand-compute slab tax, rebate, marginal relief, surcharge or cess. Route it through the script.

@@ -560,89 +560,15 @@ def render_comparison(new_res: Result, old_res: Result) -> str:
 # --------------------------------------------------------------------------
 
 def _selftest() -> int:
-    failures = []
-
-    def check(name, got, want, tol=1.0):
-        if abs(got - want) > tol:
-            failures.append(f"{name}: got {got:.2f}, want {want:.2f}")
-
-    # 1. Below the rebate threshold: liability nil.
-    r = compute(Inputs(regime="new", ay="2026-27", normal_income=700000))
-    check("below-rebate slab tax", r.slab_tax, 15000)
-    check("below-rebate rebate", r.rebate, 15000)
-    check("below-rebate liability", r.total_liability, 0)
-
-    # 2. Just above the threshold: marginal relief, not a cliff.
-    r = compute(Inputs(regime="new", ay="2026-27", normal_income=1210000))
-    check("just-above slab tax", r.slab_tax, 61500)
-    check("just-above marginal relief", r.rebate_marginal_relief, 51500)
-    check("just-above liability", r.total_liability, 10400)
-
-    # ... and the cliff it prevents: 10 more rupees of income must not cost
-    # more than 10 rupees of tax.
-    r2 = compute(Inputs(regime="new", ay="2026-27", normal_income=1210010))
-    if r2.total_liability - r.total_liability > 11:
-        failures.append("marginal relief leaves a cliff at the 87A threshold")
-
-    # 3. Surcharge band boundaries: at the floor, no surcharge; one rupee over,
-    #    marginal relief holds tax+surcharge to the ceiling.
-    at = compute(Inputs(regime="new", ay="2026-27", normal_income=5000000))
-    check("50L slab tax", at.slab_tax, 1080000)
-    check("50L surcharge", at.surcharge, 0)
-    check("50L liability", at.total_liability, 1123200)
-
-    for floor in (5000000, 10000000, 20000000, 50000000):
-        base = compute(Inputs(regime="new", ay="2026-27", normal_income=floor))
-        over = compute(Inputs(regime="new", ay="2026-27",
-                              normal_income=floor + 100))
-        step = over.total_liability - base.total_liability
-        if step > 110:
-            failures.append(
-                f"surcharge marginal relief missing at {floor}: "
-                f"100 rupees more income costs {step:.0f} in tax")
-
-    # 4. 112A-heavy case where the 15% surcharge cap binds.
-    r = compute(Inputs(regime="new", ay="2026-27", normal_income=5000000,
-                       ltcg_112a=20000000))
-    check("cap case slab tax", r.slab_tax, 1080000)
-    check("cap case 112A tax", r.special_tax["ltcg_112a"], 2484375)
-    check("cap case surcharge rate", r.surcharge_rate, 0.25, tol=1e-9)
-    check("cap case surcharge", r.surcharge, 1080000 * 0.25 + 2484375 * 0.15)
-
-    # 5. Unused basic exemption set against capital gains.
-    r = compute(Inputs(regime="new", ay="2026-27", normal_income=100000,
-                       stcg_111a=500000))
-    check("BE adjusted", r.basic_exemption_adjusted, 300000)
-    check("BE adjusted 111A tax", r.special_tax["stcg_111a"], 200000 * 0.20)
-
-    # 6. 87A never runs against special-rate tax.
-    r = compute(Inputs(regime="new", ay="2026-27", normal_income=400000,
-                       ltcg_112a=500000))
-    check("rebate vs 112A", r.rebate, 0)
-    check("112A tax stands", r.special_tax["ltcg_112a"],
-          (500000 - 125000 - 0) * 0.125, tol=1.0)
-
-    # 7. Old regime, senior citizen exemption.
-    r = compute(Inputs(regime="old", ay="2026-27", age=65,
-                       normal_income=1000000))
-    check("old senior slab tax", r.slab_tax, (500000 - 300000) * 0.05
-          + (1000000 - 500000) * 0.20)
-
-    # 8. Sec 234C on a fully deferred payment.
-    r = compute(Inputs(regime="new", ay="2026-27", normal_income=2000000,
-                       paid_by_quarter=[0, 0, 0, 0]))
-    assessed = r.total_liability
-    want = (0.15 * assessed * 0.03 + 0.45 * assessed * 0.03
-            + 0.75 * assessed * 0.03 + 1.00 * assessed * 0.01)
-    check("234C fully deferred", r.interest_234c, want)
-
-    if failures:
-        print("SELFTEST FAILED")
-        for f in failures:
-            print("  x " + f)
-        return 1
-    print("selftest: all checks passed")
-    return 0
+    """Run the unit tests in tests/ -- the one set of checks, so --selftest
+    and the repo's pre-commit hook cannot drift apart."""
+    import os
+    import unittest
+    here = os.path.dirname(os.path.abspath(__file__))
+    suite = unittest.defaultTestLoader.discover(
+        os.path.join(here, "tests"), pattern="test_*.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    return 0 if result.wasSuccessful() else 1
 
 
 # --------------------------------------------------------------------------
@@ -653,7 +579,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Indian income tax computation for ITR-2 preparation.")
     p.add_argument("--selftest", action="store_true",
-                   help="run the built-in unit tests and exit")
+                   help="run the unit tests in tests/ and exit")
     p.add_argument("--regime", default="new", choices=["new", "old"])
     p.add_argument("--compare", action="store_true",
                    help="compute both regimes and print the delta")
