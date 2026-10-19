@@ -177,40 +177,135 @@ ROW_TEXT = {
 
 # --------------------------------------------------------------------------- io
 
-def latest_holdings_file(required=True):
-    """The newest holdings input under data/: either a broker CSV export
-    (broker_holdings_<date>.csv, or any *holdings*.csv with the same columns) or a
-    lot-level broker export (broker-portfolio-<date>.md, or any *-portfolio-*.md
-    in the template's layout).
+def broker_of(path):
+    """Which account an export belongs to: the filename's part before
+    `_holdings` / `-holdings` / `-portfolio`, so alphabroker_holdings_<date>.csv
+    and alphabroker-portfolio-<date>.md are the same broker. '' when the name
+    has no prefix."""
+    base = os.path.basename(path).lower()
+    m = re.match(r"(.*?)[-_](?:holdings|portfolio)(?=[-_.])", base)
+    return m.group(1) if m else ""
 
-    Returns None when there is none and the caller can live without it: a
+
+def latest_holdings_files(required=True):
+    """The newest holdings input of each broker under data/: a broker CSV
+    export (broker_holdings_<date>.csv, or any *holdings*.csv with the same
+    columns) or a lot-level broker export (broker-portfolio-<date>.md, or any
+    *-portfolio-*.md in the template's layout). One file per broker, so an
+    account at a second broker never hides the first one's holdings.
+
+    Returns [] when there is none and the caller can live without it: a
     --screen run rates stocks nobody owns, so it should not need a portfolio."""
     csvs = [f for f in glob.glob(os.path.join(DATA_DIR, "*holdings*.csv"))
             if not os.path.basename(f).startswith("holdings-template")]
     mds = [f for f in glob.glob(os.path.join(DATA_DIR, "*-portfolio-*.md"))
            if "-portfolio-template" not in os.path.basename(f)]
-    files = csvs + mds
-    if len(files) > 1:
-        # Pick by the date embedded in the filename, not file mtime: a fresh
-        # export can land with an older mtime than a stale one still sitting
-        # around (a cloud-synced copy, a file moved rather than freshly
-        # saved), and the filename date is what the user actually means by
-        # "latest". Only fall back to mtime as a tiebreaker for a same-date
-        # collision.
-        files.sort(key=lambda f: (holdings_date(f), os.path.getmtime(f)))
-    if not files:
-        if required:
-            sys.exit(f"No holdings file found in {DATA_DIR}.\n"
-                     "Put a broker export there as broker_holdings_<date>.csv (columns: "
-                     "Instrument, Qty., Avg. cost, LTP, Invested, Cur. val, P&L, Net chg.),\n"
-                     "or a lot-level broker export as broker-portfolio-<date>.md "
-                     "(see broker-portfolio-template.md),\n"
-                     "or point the script at the right folder with --root PATH "
-                     "(or $PORTFOLIO_ROOT),\n"
-                     "or rate a stock without holding it: "
-                     "fetch_fundamentals.py --screen TICKER")
-        return None
-    return files[-1]
+    newest = {}
+    # Pick by the date embedded in the filename, not file mtime: a fresh
+    # export can land with an older mtime than a stale one still sitting
+    # around (a cloud-synced copy, a file moved rather than freshly saved),
+    # and the filename date is what the user actually means by "latest". On a
+    # same-date tie the lot-level export wins (it carries buy dates), then mtime.
+    for f in sorted(csvs + mds, key=lambda f: (holdings_date(f), f.lower().endswith(".md"),
+                                                os.path.getmtime(f))):
+        newest[broker_of(f)] = f
+    if not newest and required:
+        sys.exit(f"No holdings file found in {DATA_DIR}.\n"
+                 "Put a broker export there as broker_holdings_<date>.csv "
+                 "(columns as in holdings-template.csv),\n"
+                 "or a lot-level broker export as broker-portfolio-<date>.md "
+                 "(see broker-portfolio-template.md),\n"
+                 "or point the script at the right folder with --root PATH "
+                 "(or $PORTFOLIO_ROOT),\n"
+                 "or rate a stock without holding it: "
+                 "fetch_fundamentals.py --screen TICKER")
+    return [newest[b] for b in sorted(newest)]
+
+
+def _sum_or_none(values):
+    return None if any(v is None for v in values) else sum(values)
+
+
+def merge_holdings(per_broker):
+    """[(broker, holdings), ...] -> one holding per ticker. A stock held at
+    two brokers becomes one position: quantities, invested, value and P&L
+    add; average cost is invested / qty; each lot keeps the broker it sits
+    at. A lot split one broker doesn't report (a plain CSV) leaves the
+    combined split unknown (None), never a partial figure. `brokers` maps
+    broker -> qty for every holding."""
+    by_ticker = {}
+    for broker, holdings in per_broker:
+        for h in holdings:
+            by_ticker.setdefault(h["ticker"], []).append((broker, h))
+    merged = []
+    for ticker in sorted(by_ticker):
+        parts = by_ticker[ticker]
+        if len(parts) == 1:
+            broker, h = parts[0]
+            m = dict(h)
+            if "lots" in h:
+                m["lots"] = [dict(l, broker=broker) for l in h["lots"]]
+            m["brokers"] = {broker: h["qty"]}
+            merged.append(m)
+            continue
+        hs = [h for _, h in parts]
+        qty = sum(h["qty"] for h in hs)
+        invested = sum(h["invested"] for h in hs)
+        pnl = sum(h["pnl"] for h in hs)
+        nxt = [h.get("next_lot_turns_lt") for h in hs if h.get("next_lot_turns_lt")]
+        merged.append({
+            "ticker": ticker,
+            "qty": qty,
+            "avg_cost": invested / qty if qty else None,
+            "ltp": hs[0]["ltp"],
+            "invested": invested,
+            "current_value": sum(h["current_value"] for h in hs),
+            "pnl": pnl,
+            "pnl_pct": pnl / invested * 100 if invested else None,
+            "lt_qty": _sum_or_none([h.get("lt_qty") for h in hs]),
+            "st_qty": _sum_or_none([h.get("st_qty") for h in hs]),
+            "next_lot_turns_lt": min(nxt) if nxt else None,
+            "unrealized_lt_pnl": _sum_or_none([h.get("unrealized_lt_pnl") for h in hs]),
+            "unrealized_st_pnl": _sum_or_none([h.get("unrealized_st_pnl") for h in hs]),
+            "broker_sector": next((h.get("broker_sector") for h in hs if h.get("broker_sector")), None),
+            "lots": [dict(l, broker=b) for b, h in parts for l in h.get("lots", [])],
+            "brokers": {b: h["qty"] for b, h in parts},
+        })
+    return merged
+
+
+def merge_tax_positions(positions):
+    """Each lot-level export's own Tax position block -> one. Realised gains
+    add across brokers (tax is owed on the total); the broker harvest
+    estimates and stock-only unrealised figures add the same way."""
+    found = [p for p in positions if p]
+    if len(found) <= 1:
+        return found[0] if found else None
+    out = {"fy": found[0]["fy"]}
+    for key in ("realised_stcg", "realised_ltcg", "broker_harvest_savings"):
+        vals = [p[key] for p in found if p.get(key) is not None]
+        if vals:
+            out[key] = sum(vals)
+    so = [p["stocks_only"] for p in found if p.get("stocks_only")]
+    if so:
+        out["stocks_only"] = {k: sum(s[k] for s in so) for k in so[0]}
+    return out
+
+
+def load_portfolio(required=True):
+    """Every broker's newest export, read and merged. Returns (paths, holdings,
+    as_of, tax_position): as_of is the oldest export's date, since that is
+    how stale the least-fresh price in the merged set is."""
+    paths = latest_holdings_files(required=required)
+    if not paths:
+        return [], [], None, None
+    held = merge_holdings([(broker_of(p), read_holdings(p)) for p in paths])
+    taxes = []
+    for p in paths:
+        if p.lower().endswith(".md"):
+            with open(p, encoding="utf-8") as fh:
+                taxes.append(parse_tax_position(fh.read()))
+    return paths, held, min(holdings_date(p) for p in paths), merge_tax_positions(taxes)
 
 
 def holdings_date(path):
@@ -1849,15 +1944,14 @@ def merge_stocks(base, fresh, held):
 
 def main():
     force, screen, only, use_nse, scan_index = parse_args(sys.argv[1:])
-    csv_path = latest_holdings_file(required=not (screen or scan_index))
-    held = read_holdings(csv_path) if csv_path else []
+    paths, held, csv_date, tax_position = load_portfolio(required=not (screen or scan_index))
+    names = ", ".join(os.path.basename(p) for p in paths)
     if screen:
         run_screen(only, held, force, use_nse)
         return
     if scan_index:
         run_scan(scan_index, held, force, use_nse)
         return
-    csv_date = holdings_date(csv_path)
     today = date.today().isoformat()
     os.makedirs(SKILL_DATA_DIR, exist_ok=True)
     out = os.path.join(SKILL_DATA_DIR, f"snapshot-{today}.json")
@@ -1872,7 +1966,7 @@ def main():
         known = {h["ticker"] for h in held}
         unknown = [t for t in only if t not in known]
         if unknown:
-            print(f"Not in {os.path.basename(csv_path)}, skipping: "
+            print(f"Not in {names}, skipping: "
                   f"{', '.join(unknown)}\n")
         holdings = [h for h in held if h["ticker"] in only]
         if not holdings:
@@ -1880,7 +1974,7 @@ def main():
     else:
         holdings = held
 
-    print(f"Holdings file : {os.path.basename(csv_path)}")
+    print(f"Holdings files: {names}")
     print(f"Mode          : {'subset merge' if only else 'full refresh'}"
           f"{', cache bypassed' if force else ''}")
     if only and base.get("full_refresh_at"):
@@ -1930,16 +2024,12 @@ def main():
         full_refresh_at = now
     add_portfolio_context(stocks)
     risk = portfolio_risk(stocks, bench)
-    tax_position = None
-    if csv_path.lower().endswith(".md"):
-        with open(csv_path, encoding="utf-8") as fh:
-            tax_position = parse_tax_position(fh.read())
 
     with open(out, "w", encoding="utf-8") as fh:
         json.dump({
             "generated_at": now,
             "full_refresh_at": full_refresh_at,
-            "holdings_file": os.path.basename(csv_path),
+            "holdings_file": names,
             "holdings_date": csv_date,
             "row_definitions": ROW_TEXT,
             "portfolio_risk": risk,
@@ -1973,7 +2063,7 @@ def main():
         print(f"Merged {len(results)} into {len(stocks)} holdings "
               f"(last full run {full_refresh_at or 'unknown'})")
     print(f"Snapshot  -> {os.path.relpath(out, ROOT)}")
-    portfolio = write_portfolio_md(stocks, os.path.basename(csv_path), full_refresh_at, risk)
+    portfolio = write_portfolio_md(stocks, names, full_refresh_at, risk)
     print(f"Portfolio -> {os.path.relpath(portfolio, ROOT)}")
 
 

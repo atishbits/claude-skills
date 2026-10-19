@@ -48,7 +48,9 @@ connected. It holds the broker export, `slug-overrides.json`, and `skill-data/` 
 Scripts work on a local copy under a **working root**: `$PORTFOLIO_ROOT` if set, else the working
 directory, with the same split as the cloud folder:
 - `data/` directly — what the user provides: a broker CSV (`broker_holdings_<date>.csv`) or a
-  lot-level broker export (`broker-portfolio-<date>.md`, see `broker-portfolio-template.md`).
+  lot-level broker export (`broker-portfolio-<date>.md`, see `broker-portfolio-template.md`). With
+  accounts at several brokers, one export per broker (the name's prefix is the broker); the fetch
+  merges the newest of each, and a holding's `brokers` field says how much sits where.
 - `data/skill-data/` — everything the skill fetches or writes: the fetch cache, `snapshot-*.json` /
   `screen-*.json`, the notes, `PORTFOLIO.md`, the digest and the logs.
 - `data/notes.md`, where present: the cloud folder's id and path. Read it first.

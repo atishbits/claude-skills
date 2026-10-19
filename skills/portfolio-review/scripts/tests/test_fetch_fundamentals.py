@@ -355,10 +355,155 @@ class TestLatestHoldingsFile(unittest.TestCase):
                     fh.write("placeholder\n")
                 self.assertGreater(os.path.getmtime(old), os.path.getmtime(new))
 
-                picked = ff.latest_holdings_file()
-                self.assertEqual(os.path.basename(picked), "broker_holdings_2026-09-27.csv")
+                picked = ff.latest_holdings_files()
+                self.assertEqual([os.path.basename(p) for p in picked], ["broker_holdings_2026-09-27.csv"])
             finally:
                 ff.set_root(saved_root)
+
+
+class TestHoldingsPerBroker(unittest.TestCase):
+    """Accounts at more than one broker: the newest export of each broker is
+    read and merged, so one broker's export never hides another's holdings."""
+
+    def _files(self, names):
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        saved_root = ff.ROOT
+        self.addCleanup(ff.set_root, saved_root)
+        ff.set_root(tmp.name)
+        os.makedirs(ff.DATA_DIR, exist_ok=True)
+        for name in names:
+            with open(os.path.join(ff.DATA_DIR, name), "w") as fh:
+                fh.write("placeholder\n")
+
+    def test_broker_of(self):
+        self.assertEqual(ff.broker_of("alphabroker_holdings_2026-10-01.csv"), "alphabroker")
+        self.assertEqual(ff.broker_of("alphabroker-portfolio-2026-10-01.md"), "alphabroker")
+        self.assertEqual(ff.broker_of("Beta-Broker_holdings_6September2026.csv"), "beta-broker")
+        self.assertEqual(ff.broker_of("holdings.csv"), "")
+
+    def test_newest_export_of_each_broker(self):
+        self._files(["alphabroker_holdings_2026-09-01.csv", "alphabroker_holdings_2026-10-01.csv",
+                     "betabroker-portfolio-2026-08-01.md"])
+        picked = [os.path.basename(p) for p in ff.latest_holdings_files()]
+        self.assertEqual(picked, ["alphabroker_holdings_2026-10-01.csv",
+                                  "betabroker-portfolio-2026-08-01.md"])
+
+    def test_same_day_prefers_lot_level_export(self):
+        self._files(["alphabroker-portfolio-2026-10-01.md", "alphabroker_holdings_2026-10-01.csv"])
+        picked = [os.path.basename(p) for p in ff.latest_holdings_files()]
+        self.assertEqual(picked, ["alphabroker-portfolio-2026-10-01.md"])
+
+    def test_none_found(self):
+        self._files([])
+        self.assertEqual(ff.latest_holdings_files(required=False), [])
+        with self.assertRaises(SystemExit):
+            ff.latest_holdings_files()
+
+    def test_merge_combines_a_stock_held_at_two_brokers(self):
+        a = [{"ticker": "TESTCO", "qty": 10.0, "avg_cost": 100.0, "ltp": 150.0, "invested": 1000.0,
+              "current_value": 1500.0, "pnl": 500.0, "pnl_pct": 50.0, "lt_qty": 10.0, "st_qty": 0.0,
+              "next_lot_turns_lt": None, "unrealized_lt_pnl": 500.0, "unrealized_st_pnl": 0.0,
+              "broker_sector": "Industrials", "lots": [{"date": "2024-01-02", "qty": 10.0, "cost": 100.0}]},
+             {"ticker": "ONLYA", "qty": 1.0, "avg_cost": 50.0, "ltp": 40.0, "invested": 50.0,
+              "current_value": 40.0, "pnl": -10.0, "pnl_pct": -20.0}]
+        b = [{"ticker": "TESTCO", "qty": 30.0, "avg_cost": 200.0, "ltp": 150.0, "invested": 6000.0,
+              "current_value": 4500.0, "pnl": -1500.0, "pnl_pct": -25.0, "lt_qty": 0.0, "st_qty": 30.0,
+              "next_lot_turns_lt": "2026-12-01", "unrealized_lt_pnl": 0.0, "unrealized_st_pnl": -1500.0,
+              "broker_sector": None, "lots": [{"date": "2025-11-30", "qty": 30.0, "cost": 200.0}]}]
+        merged = ff.merge_holdings([("alphabroker", a), ("betabroker", b)])
+        self.assertEqual([h["ticker"] for h in merged], ["ONLYA", "TESTCO"])
+        t = merged[1]
+        self.assertEqual(t["qty"], 40.0)
+        self.assertEqual(t["invested"], 7000.0)
+        self.assertEqual(t["avg_cost"], 175.0)
+        self.assertEqual(t["current_value"], 6000.0)
+        self.assertEqual(t["pnl"], -1000.0)
+        self.assertAlmostEqual(t["pnl_pct"], -1000.0 / 7000.0 * 100)
+        self.assertEqual((t["lt_qty"], t["st_qty"]), (10.0, 30.0))
+        self.assertEqual(t["next_lot_turns_lt"], "2026-12-01")
+        self.assertEqual((t["unrealized_lt_pnl"], t["unrealized_st_pnl"]), (500.0, -1500.0))
+        self.assertEqual(t["broker_sector"], "Industrials")
+        self.assertEqual(t["brokers"], {"alphabroker": 10.0, "betabroker": 30.0})
+        self.assertEqual([(l["date"], l["broker"]) for l in t["lots"]],
+                         [("2024-01-02", "alphabroker"), ("2025-11-30", "betabroker")])
+        self.assertEqual(merged[0]["brokers"], {"alphabroker": 1.0})
+
+    def test_merge_unknown_lot_split_stays_unknown(self):
+        a = [{"ticker": "TESTCO", "qty": 1.0, "avg_cost": 10.0, "ltp": 10.0, "invested": 10.0,
+              "current_value": 10.0, "pnl": 0.0, "pnl_pct": 0.0}]                 # plain CSV: no lot split
+        b = [{"ticker": "TESTCO", "qty": 2.0, "avg_cost": 10.0, "ltp": 10.0, "invested": 20.0,
+              "current_value": 20.0, "pnl": 0.0, "pnl_pct": 0.0, "lt_qty": 2.0, "st_qty": 0.0,
+              "next_lot_turns_lt": None, "unrealized_lt_pnl": 0.0, "unrealized_st_pnl": 0.0, "lots": []}]
+        t = ff.merge_holdings([("alphabroker", a), ("betabroker", b)])[0]
+        self.assertIsNone(t["lt_qty"])
+        self.assertIsNone(t["st_qty"])
+        self.assertIsNone(t["unrealized_lt_pnl"])
+
+    def test_single_broker_is_unchanged_apart_from_tags(self):
+        a = [{"ticker": "TESTCO", "qty": 3.0, "avg_cost": 10.0, "ltp": 12.0, "invested": 30.0,
+              "current_value": 36.0, "pnl": 6.0, "pnl_pct": 20.0}]
+        t = ff.merge_holdings([("alphabroker", a)])[0]
+        self.assertEqual({k: t[k] for k in a[0]}, a[0])
+        self.assertNotIn("lt_qty", t)
+
+    def test_tax_positions_add_realised_gains(self):
+        one = {"fy": "FY 2026-27", "realised_stcg": 100.0, "realised_ltcg": 1000.0,
+               "broker_harvest_savings": 50.0,
+               "stocks_only": {"lt_gains": 1.0, "lt_losses": -2.0, "st_gains": 3.0, "st_losses": -4.0}}
+        two = {"fy": "FY 2026-27", "realised_stcg": 10.0, "realised_ltcg": 0.0}
+        self.assertIsNone(ff.merge_tax_positions([None, None]))
+        self.assertIs(ff.merge_tax_positions([None, one]), one)
+        both = ff.merge_tax_positions([one, two])
+        self.assertEqual((both["realised_stcg"], both["realised_ltcg"]), (110.0, 1000.0))
+        self.assertEqual(both["broker_harvest_savings"], 50.0)
+        self.assertEqual(both["stocks_only"], one["stocks_only"])
+        self.assertEqual(both["fy"], "FY 2026-27")
+
+
+class TestLoadPortfolio(unittest.TestCase):
+    """What a run reads: every broker's newest export, merged."""
+
+    def test_two_brokers_merged_with_tax_position_and_oldest_date(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_root = ff.ROOT
+            self.addCleanup(ff.set_root, saved_root)
+            ff.set_root(tmp)
+            os.makedirs(ff.DATA_DIR, exist_ok=True)
+            with open(os.path.join(ff.DATA_DIR, "alphabroker_holdings_2026-10-02.csv"), "w") as fh:
+                # Column header from the skill's own template: the format is
+                # documented there, and only template files may carry it.
+                template = os.path.join(os.path.dirname(__file__), "..", "..", "holdings-template.csv")
+                with open(template, encoding="utf-8") as tf:
+                    header = tf.readline()
+                fh.write(header +
+                         "TESTCO,10,100,150,1000,1500,500,50\n"
+                         "ONLYA,1,50,40,50,40,-10,-20\n")
+            with open(os.path.join(ff.DATA_DIR, "betabroker-portfolio-2026-10-01.md"), "w",
+                      encoding="utf-8") as fh:
+                fh.write("## Tax position FY 2026-27 (broker)\n\n"
+                         "- Realised STCG: ₹10 · Realised LTCG: ₹20\n\n"
+                         + TestReadHoldingsMd.HEADER +
+                         "| TESTCO | 30 | 200.00 | 150.00 | 4500 | -1500 | -25.0% | 30 | 0 | all LT | "
+                         "-1500 / +0 | IT | 2024-01-01 30@200.00 |\n")
+            paths, held, as_of, tax = ff.load_portfolio()
+            self.assertEqual([os.path.basename(p) for p in paths],
+                             ["alphabroker_holdings_2026-10-02.csv", "betabroker-portfolio-2026-10-01.md"])
+            self.assertEqual(as_of, "2026-10-01")
+            testco = next(h for h in held if h["ticker"] == "TESTCO")
+            self.assertEqual(testco["qty"], 40.0)
+            self.assertEqual(testco["brokers"], {"alphabroker": 10.0, "betabroker": 30.0})
+            self.assertEqual((tax["realised_stcg"], tax["realised_ltcg"]), (10.0, 20.0))
+
+    def test_no_files(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_root = ff.ROOT
+            self.addCleanup(ff.set_root, saved_root)
+            ff.set_root(tmp)
+            self.assertEqual(ff.load_portfolio(required=False), ([], [], None, None))
 
 
 class TestSlugOverrides(unittest.TestCase):

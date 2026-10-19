@@ -86,6 +86,12 @@ long-term, gains split by holding period), put a lot-level broker export in `dat
 `broker-portfolio-<date>.md` — see `broker-portfolio-template.md` for the format. The script reads
 whichever file is newest; you don't need both.
 
+**Accounts at more than one broker.** Name each export after its broker — `alphabroker_holdings_<date>.csv`,
+`betabroker-portfolio-<date>.md` — and the script reads the newest export of each and merges them: a stock
+held at both becomes one position (total quantity, weighted average cost, every lot tagged with its
+broker, and a per-broker quantity split). Realised gains in each lot-level export's Tax position section
+add up across brokers.
+
 Then `python3 scripts/fetch_fundamentals.py` builds `data/skill-data/snapshot-<today>.json` and
 `data/skill-data/PORTFOLIO.md`, and in Claude Code you run `/portfolio-review TICKER ...` or just
 ask about a holding.
