@@ -159,8 +159,9 @@ class TestFindingAndFailing(unittest.TestCase):
                 open(path, "w").close()
                 os.utime(path, (stamp, stamp))
             self.assertEqual(ingest._find_report(root), new)
+            # A sync rewrites the older report later; the date in the name still wins.
             os.utime(old, (3_000_000, 3_000_000))
-            self.assertEqual(ingest._find_report(root), old)
+            self.assertEqual(ingest._find_report(root), new)
 
     def test_nothing_in_data_says_where_to_put_it(self):
         with tempfile.TemporaryDirectory() as root:

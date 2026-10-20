@@ -134,6 +134,7 @@ data/                        gitignored: yours
   bond-listings-<time>.json    listings captures
   skill-data/                  everything the scripts write
     snapshot-<date>.json         normalised holdings and cash flows
+    bond-interest.json           this financial year's bond interest and TDS (fy_interest.py)
     listings-<time>.json         normalised listings capture
     bond-facts.json              rating, security, seniority per bond, with sources
     ratings-ledger.jsonl         every verdict, with the hashes of the data behind it
@@ -144,7 +145,37 @@ data/                        gitignored: yours
                                  REVIEW.md (generated) and analysis.md (the written reading)
 ```
 
-The data root is `--root PATH`, then `$BOND_ROOT`, then the working directory.
+The data root is `--root PATH`, then `$BOND_ROOT`, then the working directory. The skill's own
+folder counts only if its `data/` already exists: installed as a plugin, the folder is replaced on
+update, so the scripts refuse to create `data/` there. `python3 scripts/common.py --where` prints
+the root in use and the date of the newest snapshot and listings capture in it.
+
+## Where it runs
+
+It works in Claude Code and in Cowork, on a phone as well as a laptop. What changes is whether the
+session has a browser it controls:
+
+- **With a browser** (Claude Code or Cowork on a laptop, with the browser extension): it can fetch
+  a fresh holdings report and listings capture when you ask. Whatever it fetches goes up to the
+  cloud copy at the end of the run. Where Cowork cannot reach your Downloads folder, the capture is
+  read back from the page instead, and its checksum proves it arrived unchanged; put a holdings
+  report in the shared folder or the cloud folder.
+- **Without one** (the phone app): it fetches nothing and works from the newest report and capture
+  in the cloud copy, and says how old each is. A holdings report you drop into the cloud folder,
+  named `holdings-report-<date>.xlsx`, is picked up on the next run.
+
+**The cloud copy.** With a file-storage connector, `data/` can have a copy in one cloud folder:
+the profile, notes, bond facts, ratings ledger, issuer notes, holdings reports, captures,
+snapshots, saved runs and `bond-interest.json`. With a lasting local folder the skill syncs when
+you ask ("pull", "sync") and after any run that fetched new data. With a temporary folder it pulls
+at the start and pushes at the end. What moves is decided by `scripts/drive_sync.py`, shared with
+other skills (master copy: `shared/scripts/drive_sync.py` at the top of this repository), which
+never overwrites an edit made on the other side; a file changed on both sides is kept twice for
+you to reconcile.
+
+**Bond interest for a tax tool.** `fy_interest.py` writes `data/skill-data/bond-interest.json`,
+which syncs, so a tax tool running elsewhere can read it from the cloud copy. To also write it
+straight into another local folder, name that folder in `data/notes.md`.
 
 ## Setup
 
@@ -157,7 +188,10 @@ cp skills/bond-portfolio-monitor/profile-template.json skills/bond-portfolio-mon
 Then put the holdings report in `skills/bond-portfolio-monitor/data/` and ask Claude to review your bond
 portfolio, or run `/bond-portfolio-monitor`.
 
-Python 3 only; no packages. Browser capture needs Claude in Chrome.
+Or install it as a plugin (see the repository README), and let the skill ask where to keep
+`data/`.
+
+Python 3 only; no packages. Browser capture needs a browser the session controls.
 
 ## Scripts
 

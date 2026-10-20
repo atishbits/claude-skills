@@ -22,6 +22,8 @@ allowed-tools:
   - Bash(python3 *rating_ledger.py*)
   - Bash(python3 *run_record.py*)
   - Bash(python3 *tax_profile.py*)
+  - Bash(python3 *common.py --where*)
+  - Bash(python3 *drive_sync.py*)
   - Read
   - Write
   - Edit
@@ -36,17 +38,49 @@ You are helping with a bond portfolio held on an online bond platform. Everythin
 advisory. **Never invest, sell, sign Form 121, or change anything on the portal.** On the portal
 you only read pages and run the capture snippet below.
 
-**Which platform.** This file names none. Read `${CLAUDE_SKILL_DIR}/data/notes.md` before Step 1:
+**Which platform.** This file names none. Read `data/notes.md` in the working root (Step 0) before Step 1:
 it is the user's own, gitignored, and says which platform they use, the address of its listings
 page, where its holdings report is downloaded and what the download is called. If it is missing,
 ask the user for those four things and write the file before going on. Never copy what it says
 into a file outside `data/`.
 
-**Where things live.** Run every command from `${CLAUDE_SKILL_DIR}`. Everything personal sits under
-`${CLAUDE_SKILL_DIR}/data/`, which is gitignored: `data/profile.json` (the user's limits),
-the holdings report and listings captures the user brings, directly in `data/`, and
-`data/skill-data/` (everything the scripts write). If the
-user keeps data elsewhere, pass `--root /that/folder` to every script or set `$BOND_ROOT`.
+## Step 0: working folder, cloud copy, browser
+
+Run every command from `${CLAUDE_SKILL_DIR}`. Everything personal sits in a working root's `data/`
+folder (WORKROOT below): `data/profile.json` (the user's limits), `data/notes.md`, the holdings
+reports and listings captures, and `data/skill-data/` (everything the scripts write). Paths in this
+file that start with `data/` are inside WORKROOT.
+
+**Find WORKROOT.** Run `python3 scripts/common.py --where`. It prints the root (`$BOND_ROOT`, else
+this skill's folder when its gitignored `data/` already exists) and the newest snapshot and listings
+capture in it.
+
+- **`root` is set:** that is WORKROOT. If it is not this skill's folder, pass `--root WORKROOT` to
+  every script below.
+- **`root` is null:** ask the user where to keep the data. In Claude Code, any folder (offer to set
+  `BOND_ROOT` to it in the `env` block of their Claude Code settings); in a desktop app with a
+  folder shared to the session, a folder inside it; otherwise a temporary folder, with the cloud
+  copy as the only lasting one. Pass `--root WORKROOT` to every script.
+
+Never create `data/` inside this skill's folder: installed as a plugin, it is replaced on update.
+The scripts refuse to.
+
+**Cloud storage.** The user can keep a copy of `data/` in their cloud file storage, so a session on
+another device works from the same data. To sync, read `references/cloud_sync.md` and follow it.
+
+- **A lasting folder:** sync when the user asks ("pull" down, "sync" or "push" up), **and** push
+  up after any run that brought in a new holdings report or listings capture, once the run is
+  saved: new data from the platform goes to the cloud copy so a session without a browser can use
+  it.
+- **A temporary folder:** sync down now, before Step 1; sync up once at the end, after the run is
+  saved.
+- **No file-storage connector:** with a temporary folder, say nothing will outlast the session.
+
+**Browser.** Fetching anything from the platform needs a browser the session controls, with the
+user logged in. Without one (a phone, or a session with no browser extension), do not fetch: work
+from the newest snapshot and capture that `--where` reports (after the pull, with a temporary
+folder), and say the date of each beside every figure it drives. If the user drops a new holdings
+report into the cloud folder, it comes down with the pull and Step 1 ingests it.
 
 **Numbers come from scripts.** Every figure in a verdict or note is read from a script's output.
 Do not recompute a share, a YTM, a tax amount or a date difference yourself.
@@ -67,12 +101,15 @@ Do not recompute a share, a YTM, a tax amount or a date difference yourself.
 
 ## Step 1: get the data in
 
-**Holdings.** Ask the user to download the holdings report (`data/notes.md` says where on the
-portal), then move it into `data/` under a name that carries no phone number or account id, which
-the download's own name may:
+**Holdings.** When the request needs a fresh report and there is a browser, ask the user to
+download the holdings report (`data/notes.md` says where on the portal), then move it into
+`data/` under a name that carries no phone number or account id, which the download's own name
+may. Where the session cannot reach the Downloads folder, ask the user to put it, so named, in the
+shared folder or the cloud folder (then pull). Without a browser, the newest report already in
+`data/` is the one to use; skip to Step 2 unless a new one has come down.
 
 ```
-mv ~/Downloads/<the downloaded workbook> data/holdings-report-$(date +%F).xlsx
+mv ~/Downloads/<the downloaded workbook> WORKROOT/data/holdings-report-$(date +%F).xlsx
 ```
 
 Then:
@@ -85,13 +122,17 @@ A header error means the platform changed the report. Show the user the message;
 column in `config.json` `report_columns`, never a guess. Do not use the PDF Holding Statement: its
 password is the user's PAN.
 
-**Listings** (only when the request needs them). With the user logged in to the platform in Chrome:
+**Listings** (only when the request needs them, and only with a browser; without one, use the
+newest capture and say its date). With the user logged in to the platform in the browser:
 
 1. Open the listings page (its address is in `data/notes.md`) in a new tab and wait for the cards
    to load.
 2. Run the contents of `${CLAUDE_SKILL_DIR}/capture-listings.js` in that tab, once. It reads the
    cards already on the page and saves `bond-listings-<time>.json` to Downloads.
-3. `mv ~/Downloads/bond-listings-*.json data/`
+3. `mv ~/Downloads/bond-listings-*.json WORKROOT/data/`. Where the session cannot reach the
+   Downloads folder, evaluate `window.__bondListingsCapture` in the same tab instead and write the
+   string it returns, unchanged, to `data/` under the `file` name the snippet printed. The
+   checksum in the next step catches any change to it.
 4. `python3 scripts/ingest.py listings`
 
 Limits on what you do in the browser, with no exceptions: read-only; one capture per review; no
@@ -123,9 +164,10 @@ assume every scheduled payment arrives, and the post-tax figure is an approximat
 **Tax on the interest.** When the user asks what tax or advance tax the bonds bring, run
 `python3 scripts/fy_interest.py` and quote its figures: gross interest for the financial year
 (received plus scheduled) and the TDS on it. Interest is taxed at the slab and TDS covers only
-part of it; principal coming back is not income. If the `advance-tax` skill is installed, add
-`--out <advance-tax skill>/data/bond-interest.json` so that skill counts it, and leave the
-instalment arithmetic to that skill.
+part of it; principal coming back is not income. The script also writes
+`data/skill-data/bond-interest.json`, which syncs with the cloud copy, so a tax tool on another
+device can read it there. If `data/notes.md` names another folder that should get the file, add
+`--out <that folder>/bond-interest.json`. Leave any instalment arithmetic to a tax tool.
 
 Then report, briefly: totals and weighted YTM; any limit breach (issuers in one group are capped
 together); what is due in the lookahead window; `principal_ahead` from `cashflows.py` (principal
@@ -249,12 +291,15 @@ Numbers in `analysis.md` are quoted from the JSON files beside it. If you change
 saving, record it in the ledger and run `run_record.py save` again; it rewrites the generated
 files and leaves `analysis.md` alone.
 
+Then sync up if Step 0 says so: a temporary folder, or a run that brought in new data from the
+platform.
+
 In an issuer note, write below the generated verdict history. Do not write a verdict line of your
 own there: the history comes from the ledger, so it cannot go stale.
 
 ## Before you finish
 
-- The run is saved and `analysis.md` is written.
+- The run is saved and `analysis.md` is written, and synced up if Step 0 says so.
 
 - Every number in what you wrote appears in a script's output from this run.
 - Every ENTER and EXIT has sources you opened, and a ledger entry.

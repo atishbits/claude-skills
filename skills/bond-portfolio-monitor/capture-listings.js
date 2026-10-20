@@ -44,4 +44,7 @@ link.download = name;
 document.body.appendChild(link);
 link.click();
 link.remove();
+// Kept on the page too, for a session that cannot reach the browser's Downloads
+// folder: evaluating window.__bondListingsCapture in this tab returns the file.
+window.__bondListingsCapture = payload;
 JSON.stringify({ file: name, count: rows.length, sha256 });

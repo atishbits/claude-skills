@@ -7,13 +7,17 @@ rest of it, and the TDS on both.
 
 The year defaults to the one the newest snapshot falls in. Interest is gross
 (before TDS), which is the figure that is taxed; principal is not income and
-is left out. --out also writes the result to PATH, for example the advance-tax
-skill's data folder. Amounts are the holdings report's own, summed."""
+is left out. The result is written to data/skill-data/bond-interest.json,
+which syncs with the cloud copy, and --out also writes it to PATH, for example
+an advance-tax working folder. Amounts are the holdings report's own, summed."""
 import argparse
 import json
+import os
 import sys
 
 import common
+
+OUT_NAME = "bond-interest.json"
 
 
 def _sum(rows):
@@ -52,6 +56,7 @@ def main(argv=None):
         print("No snapshot yet. Run ingest.py reports first.", file=sys.stderr)
         return 1
     result = fy_interest(common.load_json(snapshots[-1]), args.fy_start)
+    common.write_json(os.path.join(common.skill_data_dir(root), OUT_NAME), result)
     if args.out:
         common.write_json(args.out, result)
     print(json.dumps(result, indent=2, ensure_ascii=False))

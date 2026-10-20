@@ -1,0 +1,16 @@
+{
+ "marker": "bond-portfolio-monitor-sync.json",
+ "root_env": "BOND_ROOT",
+ "data_dir": "data",
+ "kinds": {
+  "state": {"patterns": ["profile.json", "notes.md",
+                         "skill-data/bond-facts.json", "skill-data/ratings-ledger.jsonl",
+                         "skill-data/PORTFOLIO.md", "skill-data/POSITIONS.md",
+                         "skill-data/bond-interest.json", "skill-data/bonds/*.md",
+                         "*.conflict-*", "skill-data/*.conflict-*"]},
+  "pulled": {"patterns": ["*report-*.xlsx", "*listings-*.json",
+                          "skill-data/snapshot-*.json", "skill-data/listings-*.json"]},
+  "run": {"patterns": ["skill-data/runs/*/*"]}
+ },
+ "_comment": "Everything goes both ways. 'pulled' is what a session with a browser fetched from the platform (the holdings report and listings captures, and what ingest.py made of them), so a session without one works from the newest copy. A holdings report keeps the name it was saved under in data/; the platform's own download name, which can carry a phone number, does not match."
+}

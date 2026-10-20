@@ -12,7 +12,7 @@ checks its SHA-256 against the rows, and writes data/skill-data/listings-<time>.
 download and writes data/skill-data/snapshot-<date>.json.
 
 Both commands read what the user put in data/ (the newest *.xlsx, the newest
-bond-listings-*.json) unless --file says otherwise. Save the report there as
+bond-listings-*.json, newest by the date in the name) unless --file says otherwise. Save the report there as
 holdings-report-<date>.xlsx: the name it downloads under can carry a phone
 number. A listing's URL is the capture's own `origin` plus the card's path.
 
@@ -273,7 +273,7 @@ def _find_capture(root):
     if not found:
         raise IngestError("No *listings-*.json capture in data/. Run capture-listings.js on the "
                           "listings page, move the file it saves into data/, or pass --file.")
-    return max(found, key=os.path.getmtime)
+    return common.newest_by_name_date(found)
 
 
 def cmd_listings(args):
@@ -293,19 +293,20 @@ def cmd_listings(args):
 
 
 def _find_report(root):
-    """The most recently modified workbook in data/."""
+    """The newest workbook in data/, by the date in its name (see
+    common.newest_by_name_date)."""
     found = glob.glob(os.path.join(root, "data", "*.xlsx"))
     if not found:
         raise IngestError(
             "No holdings report in data/. Download it from the platform, move it to "
             "data/holdings-report-<date>.xlsx, or pass --file.")
-    return max(found, key=os.path.getmtime)
+    return common.newest_by_name_date(found)
 
 
 def cmd_reports(args):
     root = common.resolve_root(args.root)
     path = args.file or _find_report(root)
-    as_of = args.date or dt.date.today().isoformat()
+    as_of = args.date or common.name_date(path) or dt.date.today().isoformat()
     try:
         dt.date.fromisoformat(as_of)
     except ValueError:

@@ -7,6 +7,8 @@ import glob
 import hashlib
 import json
 import os
+import re
+import sys
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -15,9 +17,74 @@ PROFILE_KEYS = ["tax_slab_pct", "min_rating", "max_tenure_months", "min_post_tax
                 "allow_subordinated", "prefer_monthly_income", "lookahead_days"]
 
 
+ROOT_ENV = "BOND_ROOT"
+
+
 def resolve_root(arg=None):
-    """--root, then $BOND_ROOT, then the working directory."""
-    return os.path.abspath(arg or os.environ.get("BOND_ROOT") or os.getcwd())
+    """--root, then $BOND_ROOT, then the working directory. The skill's own
+    folder is a root only if its data/ already exists (the skill run from a
+    checkout of its repo, where data/ is gitignored): installed as a plugin,
+    the folder is replaced on update, and a data/ made there would be lost."""
+    root = os.path.abspath(arg or os.environ.get(ROOT_ENV) or os.getcwd())
+    if (os.path.realpath(root) == os.path.realpath(SKILL_DIR)
+            and not os.path.isdir(os.path.join(root, "data"))):
+        sys.exit(f"No working folder: {root} is the skill's own folder and has no data/. "
+                 f"Pass --root with the folder that holds data/, or set ${ROOT_ENV}.")
+    return root
+
+
+_NAME_DATE = re.compile(r"(\d{4})-?(\d{2})-?(\d{2})")
+
+
+def name_date(path):
+    """The first YYYY-MM-DD (or YYYYMMDD) in a file's name, else None."""
+    m = _NAME_DATE.search(os.path.basename(path))
+    if not m:
+        return None
+    try:
+        return dt.date(*map(int, m.groups())).isoformat()
+    except ValueError:
+        return None
+
+
+def newest_by_name_date(paths):
+    """The newest file by the date in its name, falling back to its
+    modification date when the name has none; the modification time breaks a
+    tie. A file copied down from cloud storage gets a fresh modification time,
+    so the name is the better witness to which report is newest. Two names on
+    one date compare as text, which orders the capture's own timestamps."""
+    def key(path):
+        mtime, day = os.path.getmtime(path), name_date(path)
+        return (day or dt.date.fromtimestamp(mtime).isoformat(),
+                os.path.basename(path) if day else "", mtime)
+    return max(paths, key=key)
+
+
+def where(root=None):
+    """What `common.py --where` prints: the working root, where it came from,
+    and how old the newest holdings snapshot and listings capture in it are,
+    so a run that cannot fetch fresh data can say what it is working from."""
+    if root is None and os.environ.get(ROOT_ENV):
+        root, source = os.path.abspath(os.environ[ROOT_ENV]), ROOT_ENV
+    elif root is None and os.path.isdir(os.path.join(SKILL_DIR, "data")):
+        root, source = SKILL_DIR, "skill data/"
+    elif root is None:
+        return {"root": None, "from": None, "exists": False}
+    else:
+        root, source = os.path.abspath(root), "--root"
+    data = os.path.join(root, "data")
+    out = {"root": root, "from": source, "exists": os.path.isdir(data)}
+    if out["exists"]:
+        skill_data = os.path.join(data, "skill-data")
+        snaps = dated_files(skill_data, "snapshot-")
+        caps = dated_files(skill_data, "listings-")
+        out.update({
+            "profile": os.path.isfile(os.path.join(data, "profile.json")),
+            "notes": os.path.isfile(os.path.join(data, "notes.md")),
+            "newest_snapshot": os.path.basename(snaps[-1]) if snaps else None,
+            "newest_listings": os.path.basename(caps[-1]) if caps else None,
+        })
+    return out
 
 
 def skill_data_dir(root):
@@ -173,3 +240,10 @@ def stale_config_warnings(config, today_iso):
 
     walk(config, "")
     return warnings
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if args[:1] != ["--where"] or len(args) > 2:
+        sys.exit("usage: common.py --where [ROOT]")
+    print(json.dumps(where(args[1] if len(args) == 2 else None), indent=2))

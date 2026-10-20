@@ -1,5 +1,9 @@
+import contextlib
+import io
+import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -34,6 +38,19 @@ class TestFyInterest(unittest.TestCase):
     def test_issuers_paying_without_tds_are_named(self):
         self.assertEqual(fy_interest.fy_interest(snapshot())["issuers_without_tds"],
                          ["Beta Capital"])
+
+
+class TestFyInterestFile(unittest.TestCase):
+    def test_main_writes_the_synced_file_and_out(self):
+        with tempfile.TemporaryDirectory() as root:
+            sd = common.skill_data_dir(root)
+            common.write_json(os.path.join(sd, "snapshot-2026-10-02.json"), snapshot())
+            extra = os.path.join(root, "elsewhere.json")
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(fy_interest.main(["--root", root, "--out", extra]), 0)
+            synced = common.load_json(os.path.join(sd, fy_interest.OUT_NAME))
+            self.assertEqual(synced, common.load_json(extra))
+            self.assertEqual(synced["as_of"], "2026-10-02")
 
 
 if __name__ == "__main__":

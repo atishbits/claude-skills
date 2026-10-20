@@ -51,7 +51,9 @@ from datetime import date, datetime, timezone
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 MIME = {".md": "text/markdown", ".json": "application/json", ".csv": "text/csv",
-        ".jsonl": "text/plain", ".txt": "text/plain", ".pdf": "application/pdf"}
+        ".jsonl": "text/plain", ".txt": "text/plain", ".pdf": "application/pdf",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xls": "application/vnd.ms-excel"}
 CONFIG_NAME = "drive-sync.json"
 
 # The skill's drive-sync.json:

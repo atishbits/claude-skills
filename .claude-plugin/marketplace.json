@@ -54,6 +54,16 @@
         "./skills/advance-tax"
       ],
       "homepage": "https://github.com/atishbits/claude-skills"
+    },
+    {
+      "name": "bond-portfolio-monitor",
+      "description": "Monitor a bond portfolio held on an online bond platform: holdings, cash flows, repayment checks, and ENTER / SKIP and HOLD / REVIEW / EXIT verdicts with sources. Fetches fresh data through a browser when one is available and keeps a copy in your cloud storage, so it also runs without one from the newest copy.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/bond-portfolio-monitor"
+      ],
+      "homepage": "https://github.com/atishbits/claude-skills"
     }
   ]
 }
