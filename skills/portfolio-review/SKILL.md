@@ -3,7 +3,7 @@ name: portfolio-review
 description: >-
   Review a long-term Indian equity portfolio from a broker export. Refreshes
   fundamentals from screener.in, places each stock in the P/E vs ROE/ROCE signal rows, rates
-  BUY / HOLD / SELL-trim, and writes stocks/<TICKER>.md notes. Use when the user asks
+  BUY / HOLD / SELL-trim, and writes a note per stock in stocks/. Use when the user asks
   about their holdings or a named stock: whether to buy, add, hold, trim or sell; a
   portfolio-wide sweep or refresh; or ideas for stocks outside the portfolio.
 argument-hint: "[TICKER ...] | [filter, e.g. \"not analysed in 30 days\"]"
