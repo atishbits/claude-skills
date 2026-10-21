@@ -406,6 +406,18 @@ def listing_query(folders):
     return " or ".join(f"parentId = '{fid}'" for _, fid in sorted(folders.items()))
 
 
+def check_query(uploads):
+    """A listing page can silently leave files out. Before creating files the
+    listing did not show, one search by name and folder confirms they are
+    really missing; anything it finds goes in as one more listing page."""
+    terms = []
+    for u in uploads:
+        if u["old_id"] is None and u["parent"]:
+            name = os.path.basename(u["path"]).replace("\\", "\\\\").replace("'", "\\'")
+            terms.append(f"(parentId = '{u['parent']}' and title = '{name}')")
+    return " or ".join(terms) or None
+
+
 def _load_json(path):
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
@@ -493,6 +505,7 @@ def main(argv=None, data_dir=None):
         # Folders found in this listing were not in its query, so their files
         # are missing from it: list again before acting on the plan.
         out["relist"] = sorted(set(base["folders"].values()) - listed)
+        out["check_first"] = check_query(out["upload"])
     elif a.cmd == "folder":
         base.setdefault("folders", {})[a.path] = a.id
         out = {"folder": a.path, "id": a.id}

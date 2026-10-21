@@ -157,3 +157,17 @@ class TestPlan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCheckQuery(unittest.TestCase):
+    def test_only_new_files_in_known_folders(self):
+        q = ds.check_query([
+            {"path": "skill-data/stocks/TESTCO.md", "old_id": None, "parent": "F2"},
+            {"path": "notes.md", "old_id": "x", "parent": "R0"},       # replacing a listed file
+            {"path": "skill-data/new/a.md", "old_id": None, "parent": None}])
+        self.assertEqual(q, "(parentId = 'F2' and title = 'TESTCO.md')")
+
+    def test_quotes_escaped_and_none_when_nothing_new(self):
+        q = ds.check_query([{"path": "it's.md", "old_id": None, "parent": "R0"}])
+        self.assertEqual(q, "(parentId = 'R0' and title = 'it\\'s.md')")
+        self.assertIsNone(ds.check_query([]))

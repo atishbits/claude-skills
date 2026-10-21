@@ -110,6 +110,8 @@ live in the working root's `data/` folder, which `drive_sync.py` reads by defaul
    `ticker` for named stocks, `sweep` for a portfolio-wide pass or a filter, `scan` for a market
    scan, `all` when the working root keeps a full copy (always so in Claude Code). If the output's
    `relist` is not empty, go back to step 2: the listing found folders its query did not cover.
+   If `check_first` is set, run that search too: anything it finds is a file the listing left
+   out, so save the results as one more `.listing-N.json` page and plan again.
 4. **Carry out the plan**:
    - `mkdir`: create the folder with the connector, then
      `python3 scripts/drive_sync.py folder PATH --id ID`.

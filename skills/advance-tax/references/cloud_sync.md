@@ -43,6 +43,9 @@ says.
 
 If `relist` in the output is not empty, go back to step 2.
 
+If `check_first` is set, run that search too (metadata only). Anything it finds is a file the
+listing left out: save the results as one more `.listing-N.json` page and plan again.
+
 ## 4. Carry out the plan
 
 - **`download`:** fetch the file's content (base64), write it to a temporary file, then
