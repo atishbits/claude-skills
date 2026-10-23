@@ -293,6 +293,18 @@ class HeadroomTests(unittest.TestCase):
         self.assertIn("no gains log yet", note)
 
 
+class FyLabelTests(unittest.TestCase):
+    def test_headroom_uses_gains_log_fy_of(self):
+        from unittest import mock
+        gl = mock.Mock()
+        gl.fy_of.return_value = "FYX"
+        gl.fy_running.return_value = {"fy_tax": {"exempt_left": 1.0}}
+        with mock.patch.object(sell_signals, "_gains_log", return_value=gl):
+            sell_signals.lt_headroom(date(2026, 10, 23))
+        self.assertEqual(gl.fy_running.call_args[0][0], "FYX")
+        self.assertFalse(hasattr(sell_signals, "_fy_label"))
+
+
 class CliTests(unittest.TestCase):
     TODAY = date(2026, 10, 23)
 
@@ -444,6 +456,20 @@ class CliTests(unittest.TestCase):
             out = self.run_cli("STOCKA")
         self.assertNotIn("trim now", out)
         self.assertIn("if you ever trim: break-even drop", out)
+
+    def test_stock_without_price_exits_clearly(self):
+        for broken in ({"fetch_error": "timeout", "price": None}, {"price": None}):
+            self.stock.update(broken)
+            self.write_snapshot()
+            with self.assertRaises(SystemExit) as cm:
+                self.run_cli("STOCKA")
+            self.assertIn("STOCKA: no current price", str(cm.exception))
+            self.assertIn("fetch_fundamentals.py", str(cm.exception))
+        self.stock.pop("price")
+        self.write_snapshot()
+        with self.assertRaises(SystemExit) as cm:
+            self.run_cli("STOCKA", "--open-plan", "why")
+        self.assertIn("no current price", str(cm.exception))
 
     def test_open_plan_refused_for_watch_and_when_open(self):
         with mock_tier("watch"):

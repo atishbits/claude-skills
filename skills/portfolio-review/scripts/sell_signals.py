@@ -256,17 +256,12 @@ def _gains_log():
         return None
 
 
-def _fy_label(today):
-    start = today.year if today.month >= 4 else today.year - 1
-    return f"{start}-{str(start + 1)[-2:]}"
-
-
 def lt_headroom(today, snapshot=None, log_dir=None):
     """(unused LTCG exemption this FY, note or None)."""
     gl = _gains_log()
     if gl is None:
         return float(tax_lots.LTCG_EXEMPTION_PER_FY), NO_LOG_NOTE
-    run = gl.fy_running(_fy_label(today), snapshot=snapshot, log_dir=log_dir)
+    run = gl.fy_running(gl.fy_of(today), snapshot=snapshot, log_dir=log_dir)
     return float(run["fy_tax"]["exempt_left"]), None
 
 
@@ -435,6 +430,10 @@ def main(argv=None, today=None):
     stock = _stock(snap, ticker)
     if not stock:
         raise SystemExit(f"{ticker} is not in the newest snapshot.")
+    if stock.get("fetch_error") or stock.get("price") is None:
+        why = f" (fetch failed: {stock['fetch_error']})" if stock.get("fetch_error") else ""
+        raise SystemExit(f"{ticker}: no current price in the newest snapshot{why}; "
+                         f"re-run fetch_fundamentals.py {ticker} and try again.")
     ev = evaluate(stock, today, consensus_avg(ticker, today=today))
     if args.open_plan:
         existing = load_plans().get(ticker)

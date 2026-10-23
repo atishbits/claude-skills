@@ -374,3 +374,32 @@ class TestReconcileUnmatched(Base):
         out = buf.getvalue()
         self.assertIn("unmatched 1", out)
         self.assertIn(f"{wrong['id']}: logged a STOCKA 10 on 2026-10-22, not in the broker report", out)
+
+
+class TestMinors(Base):
+    def test_template_example_gains_add_up(self):
+        import csv
+        import io
+        path = os.path.join(HERE, "..", "..", "realised-gains-template.md")
+        with open(path, encoding="utf-8") as fh:
+            block = fh.read().split("```csv\n", 1)[1].split("```", 1)[0]
+        for row in csv.DictReader(io.StringIO(block)):
+            want = float(row["qty"]) * (float(row["sell_price"]) - float(row["buy_price"])) \
+                - float(row["charges"])
+            self.assertAlmostEqual(float(row["gain"]), want, msg=row)
+
+    def test_report_says_when_there_is_no_baseline(self):
+        import io
+        from contextlib import redirect_stdout
+        with open(os.path.join(self.sd, "snapshot-2026-10-19.json"), "w") as fh:
+            json.dump(snapshot("FY 2025-26"), fh)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            gains_log._report("2026-27")
+        self.assertIn("no broker baseline for this FY; totals are logged sales only", buf.getvalue())
+        with open(os.path.join(self.sd, "snapshot-2026-10-19.json"), "w") as fh:
+            json.dump(snapshot(), fh)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            gains_log._report("2026-27")
+        self.assertNotIn("no broker baseline", buf.getvalue())

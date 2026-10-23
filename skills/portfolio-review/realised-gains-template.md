@@ -7,7 +7,7 @@ The broker's tax P&L report is converted into this shape on the laptop by the mo
 ```csv
 account,symbol,sell_date,qty,sell_price,buy_date,buy_price,gain,term,charges
 brokera,STOCKA,2026-10-20,6,150.00,2026-01-15,100.00,295.00,ST,5.00
-brokera,STOCKA,2026-10-20,4,150.00,2020-01-01,50.00,395.00,LT,3.00
+brokera,STOCKA,2026-10-20,4,150.00,2020-01-01,50.00,397.00,LT,3.00
 brokera,STOCKB,2026-10-21,5,200.00,2025-02-01,180.00,95.00,ST,5.00
 ```
 

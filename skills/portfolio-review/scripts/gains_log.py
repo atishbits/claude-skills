@@ -331,6 +331,8 @@ def _report(fy, log_dir=None):
         for account, ab in sorted(base.items()):
             who = "" if account == "*" else f" ({account})"
             print(f"  baseline{who} to {ab['as_of']}: STCG {ab['stcg']:,.0f}, LTCG {ab['ltcg']:,.0f}")
+    else:
+        print("  no broker baseline for this FY; totals are logged sales only")
     for s in fold(read_entries(log_dir)):
         if fy_of(date.fromisoformat(s["sell_date"])) == fy:
             inb = " (in broker baseline, not added)" if in_baseline(s, base) else ""
