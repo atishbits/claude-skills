@@ -269,7 +269,7 @@ def sold_since(ticker, opened):
         return None
     total = 0.0
     for e in gl.fold(gl.read_entries()):
-        if e.get("ticker") == ticker.upper() and e.get("sell_date", "") > opened:
+        if e.get("ticker") == ticker.upper() and e.get("sell_date", "") >= opened:
             total += e.get("qty") or 0
     return total
 
@@ -304,8 +304,9 @@ def _report(stock, ev, today, plan):
     tech = stock.get("technicals") or {}
     print(flag_text(ticker, ev) or f"{ticker}: no sell case (tier none)")
     print(f"tier {ev['tier']}, kind {ev['kind']}, tests {ev['tests']}")
+    qty = stock.get("qty") or 0
     tp = ({k: plan[k] for k in ("step1_qty", "step2_qty", "core_qty")} if plan
-          else trim_plan(stock.get("qty") or 0, ev["tier"], ev["kind"]))
+          else trim_plan(qty, ev["tier"], ev["kind"]))
     trig = step2_triggers(price, tech)
     print(f"plan: step 1 {tp['step1_qty']}, step 2 {tp['step2_qty']}, core {tp['core_qty']}; "
           f"step 2 on close below {trig['off_peak_price']:.2f} (peak {trig['peak']:.2f})"
@@ -313,31 +314,41 @@ def _report(stock, ev, today, plan):
     headroom, note = lt_headroom(today)
     if note:
         print(note)
-    total = stock.get("qty") or 0
+    step1 = tp["step1_qty"]
+    label = "if sold from"
+    if step1 <= 0:
+        step1 = trim_plan(qty, "trim_third", ev["kind"])["step1_qty"]
+        label = "preview: if you trimmed a third, if sold from"
     for broker, bq in _account_split(stock):
-        share = int(round(tp["step1_qty"] * bq / total)) if total else 0
-        print(f"-- account {broker or '(single)'}: holds {bq:g}, step-1 share {share}")
-        if share <= 0:
+        n = min(step1, bq)
+        name = broker or "(single)"
+        print(f"-- {label} {name} (holds {bq:g}): {n:g} share(s)")
+        if n <= 0:
             continue
         try:
-            matched = tax_lots.fifo_match(stock.get("lots") or [], share, broker,
+            matched = tax_lots.fifo_match(stock.get("lots") or [], n, broker,
                                           fallback_cost=stock.get("avg_cost"))
         except ValueError as exc:
             print(f"   cannot match lots: {exc}")
             continue
-        days = []
+        days, gain_sum, tax_sum, net_sum, untaxed = [], 0.0, 0.0, 0.0, 0.0
         for m in matched:
             st = tax_lots.lot_status(m, price, today, NEAR_LT_DAYS, stock.get("avg_cost"))
             if not m["taxable"] or m["cost"] is None or st is None:
                 print(f"   {m['date']}: {m['qty']:g} sh - tax not estimated")
+                untaxed += m["qty"]
                 continue
-            t = tax_lots.sale_tax([m], price, today)
-            tax = t["est_tax"]
+            tax = tax_lots.sale_tax([m], price, today)["est_tax"]
             term = "LT" if st["is_lt"] else f"ST ({st['days_to_lt']}d to LT)"
             if not st["is_lt"]:
                 days.append(st["days_to_lt"])
+            net = m["qty"] * price - tax
+            gain_sum, tax_sum, net_sum = gain_sum + st["gain"], tax_sum + tax, net_sum + net
             print(f"   {m['date']}: {m['qty']:g} sh gain ₹{st['gain']:,.0f} {term} "
-                  f"tax ₹{tax:,.0f} net ₹{m['qty'] * price - tax:,.0f}")
+                  f"tax ₹{tax:,.0f} net ₹{net:,.0f}")
+        print(f"   total: gain ₹{gain_sum:,.0f}, est. tax ₹{tax_sum:,.0f}, net ₹{net_sum:,.0f}")
+        if untaxed > 0:
+            print(f"   {untaxed:g} shares tax not estimated (pre-2018/undated), excluded")
         be = tax_lots.breakeven_drop_pct(matched, price, today, headroom)
         print("   " + (f"break-even drop {be:.1f}%; " if be is not None else "")
               + advice(ev["tier"], days, be, tech.get("max_drawdown_1y_pct")))
@@ -349,7 +360,7 @@ def _report(stock, ev, today, plan):
               f"steps done: {done}")
 
 
-def main(argv=None):
+def main(argv=None, today=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("ticker", nargs="?")
     ap.add_argument("--open-plan", metavar="SENTENCE", help="save a sell plan with this deciding sentence")
@@ -358,7 +369,7 @@ def main(argv=None):
     ap.add_argument("--flags", action="store_true", help="one line per held stock with a sell case")
     args = ap.parse_args(argv)
     snap, _ = tax_lots.latest_snapshot()
-    today = date.today()
+    today = today or date.today()
     if args.flags:
         for s in snap.get("stocks", []):
             line = flag_text(s["ticker"], evaluate(s, today, consensus_avg(s["ticker"], today=today)))
@@ -376,6 +387,13 @@ def main(argv=None):
         raise SystemExit(f"{ticker} is not in the newest snapshot.")
     ev = evaluate(stock, today, consensus_avg(ticker, today=today))
     if args.open_plan:
+        existing = load_plans().get(ticker)
+        if existing:
+            raise SystemExit(f"{ticker} already has an open plan ({existing['deciding_sentence']!r}, "
+                             f"opened {existing['opened']}); run --close-plan first.")
+        if ev["tier"] in ("none", "watch") and not args.full_exit:
+            raise SystemExit(f"{ticker} is tier {ev['tier']}: step 1 would be 0, no plan opened "
+                             f"(use --full-exit for a deliberate exit).")
         tp = trim_plan(stock.get("qty") or 0, ev["tier"], ev["kind"], args.full_exit)
         trig = step2_triggers(stock["price"], stock.get("technicals"))
         save_plan(ticker, {"opened": today.isoformat(), "deciding_sentence": args.open_plan,

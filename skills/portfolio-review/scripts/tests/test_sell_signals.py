@@ -261,5 +261,114 @@ class HeadroomTests(unittest.TestCase):
         self.assertIn("no gains log yet", note)
 
 
+class CliTests(unittest.TestCase):
+    TODAY = date(2026, 10, 23)
+
+    def setUp(self):
+        import io
+        import json
+        import os
+        import tempfile
+        from contextlib import redirect_stdout
+        from unittest import mock
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        sd = os.path.join(self._tmp.name, "skill-data")
+        os.makedirs(sd)
+        self.stock = {
+            "ticker": "STOCKA", "qty": 90, "avg_cost": 100, "price": 150,
+            "brokers": {"a": 60, "b": 30},
+            "lots": [{"broker": "a", "date": "2026-01-15", "qty": 60, "cost": 100},
+                     {"broker": "b", "date": "2025-09-01", "qty": 20, "cost": 90},
+                     {"broker": "b", "date": "2015-01-01", "qty": 10, "cost": 20}],
+            "technicals": {"max_drawdown_1y_pct": -25, "recent_high_60d": 160}}
+        with open(os.path.join(sd, "snapshot-2026-10-23.json"), "w") as fh:
+            json.dump({"stocks": [self.stock]}, fh)
+        self.plans = os.path.join(sd, "sell-plans.json")
+        for target, name, val in ((sell_signals.tax_lots, "SKILL_DATA_DIR", sd),
+                                  (sell_signals, "PLANS_PATH", self.plans),
+                                  (sell_signals, "NEAR_LT_DAYS", 60)):
+            p = mock.patch.object(target, name, val)
+            p.start()
+            self.addCleanup(p.stop)
+        p = mock.patch.object(sell_signals, "consensus_avg", return_value=None)
+        p.start()
+        self.addCleanup(p.stop)
+        self.io, self.redirect = io, redirect_stdout
+
+    def run_cli(self, *argv):
+        buf = self.io.StringIO()
+        with self.redirect(buf):
+            sell_signals.main(list(argv), today=self.TODAY)
+        return buf.getvalue()
+
+    def open_plan(self, tier="trim_third"):
+        import json
+        plan = {"opened": "2026-10-23", "deciding_sentence": "s", "qty_at_open": 90, "tier": tier,
+                "kind": "ordinary", "step1_qty": 30, "step2_qty": 30, "core_qty": 30,
+                "triggers": {}, "core_ends_on": None}
+        with open(self.plans, "w") as fh:
+            json.dump({"STOCKA": plan}, fh)
+
+    def test_each_account_previews_own_lots_and_totals(self):
+        self.open_plan()
+        out = self.run_cli("STOCKA")
+        a, b = out.split("-- if sold from b")
+        self.assertIn("if sold from a (holds 60): 30 share(s)", a)
+        self.assertIn("2026-01-15: 30 sh", a)
+        self.assertNotIn("2025-09-01", a)
+        self.assertIn("total: gain ₹1,500", a)
+        self.assertIn("(holds 30): 30 share(s)", b)
+        self.assertIn("2015-01-01", b)
+        self.assertIn("tax not estimated", b)
+        self.assertIn("10 shares tax not estimated (pre-2018/undated), excluded", b)
+
+    def test_watch_preview_shows_lots_and_wait_advice(self):
+        self.stock["lots"][1]["date"] = "2025-11-20"   # turns long-term in ~28 days
+        import json
+        import os
+        with open(os.path.join(os.path.dirname(self.plans), "snapshot-2026-10-23.json"), "w") as fh:
+            json.dump({"stocks": [self.stock]}, fh)
+        with mock_tier("watch"):
+            out = self.run_cli("STOCKA")
+        self.assertIn("preview: if you trimmed a third", out)
+        self.assertIn("2025-11-20", out)
+        self.assertIn("wait for that lot", out)
+
+    def test_sale_on_opening_day_counts(self):
+        from unittest import mock
+        self.open_plan()
+        gl = mock.Mock()
+        gl.fold.return_value = [{"ticker": "STOCKA", "sell_date": "2026-10-23", "qty": 30}]
+        gl.read_entries.return_value = []
+        gl.fy_running.return_value = {"fy_tax": {"exempt_left": 125000}}
+        with mock.patch.object(sell_signals, "_gains_log", return_value=gl):
+            out = self.run_cli("STOCKA")
+        self.assertIn("30 sold since 2026-10-23", out)
+
+    def test_open_plan_refused_for_watch_and_when_open(self):
+        with mock_tier("watch"):
+            with self.assertRaises(SystemExit) as cm:
+                self.run_cli("STOCKA", "--open-plan", "why")
+        self.assertIn("step 1 would be 0", str(cm.exception))
+        self.assertEqual(sell_signals.load_plans(self.plans), {})
+        self.open_plan()
+        with mock_tier("trim_third"):
+            with self.assertRaises(SystemExit) as cm:
+                self.run_cli("STOCKA", "--open-plan", "again")
+        self.assertIn("--close-plan", str(cm.exception))
+
+
+def mock_tier(tier):
+    from unittest import mock
+    real = sell_signals.evaluate
+
+    def fake(stock, today, consensus=None):
+        ev = real(stock, today, consensus)
+        ev["tier"] = tier
+        return ev
+    return mock.patch.object(sell_signals, "evaluate", fake)
+
+
 if __name__ == "__main__":
     unittest.main()
