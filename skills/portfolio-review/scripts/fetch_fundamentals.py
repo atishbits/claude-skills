@@ -293,19 +293,31 @@ def merge_tax_positions(positions):
     return out
 
 
+def broker_exports(paths):
+    """broker -> {"date": export ISO date, "tax_position": that export's own
+    Tax position block, or None (a plain CSV has none)}. Stored in the
+    snapshot as `exports` so the gains log can judge each account against its
+    own export date and baseline."""
+    out = {}
+    for p in paths:
+        tp = None
+        if p.lower().endswith(".md"):
+            with open(p, encoding="utf-8") as fh:
+                tp = parse_tax_position(fh.read())
+        out[broker_of(p)] = {"date": holdings_date(p), "tax_position": tp}
+    return out
+
+
 def load_portfolio(required=True):
     """Every broker's newest export, read and merged. Returns (paths, holdings,
     as_of, tax_position): as_of is the oldest export's date, since that is
-    how stale the least-fresh price in the merged set is."""
+    how stale the least-fresh price in the merged set is. broker_exports()
+    keeps the per-broker dates and tax positions."""
     paths = latest_holdings_files(required=required)
     if not paths:
         return [], [], None, None
     held = merge_holdings([(broker_of(p), read_holdings(p)) for p in paths])
-    taxes = []
-    for p in paths:
-        if p.lower().endswith(".md"):
-            with open(p, encoding="utf-8") as fh:
-                taxes.append(parse_tax_position(fh.read()))
+    taxes = [e["tax_position"] for e in broker_exports(paths).values()]
     return paths, held, min(holdings_date(p) for p in paths), merge_tax_positions(taxes)
 
 
@@ -1720,7 +1732,9 @@ def add_sell_flags(stocks, today):
 def sell_review(stocks, today):
     try:
         plans = sell_signals.load_plans(os.path.join(SKILL_DATA_DIR, "sell-plans.json"))
-        return sell_flag_lines(stocks, previous_tiers(SKILL_DATA_DIR, today.isoformat()), plans)
+        log_dir = os.path.join(SKILL_DATA_DIR, "realised-gains")
+        return sell_flag_lines(stocks, previous_tiers(SKILL_DATA_DIR, today.isoformat()), plans,
+                               sold=lambda t, opened: sell_signals.sold_since(t, opened, log_dir))
     except Exception:
         return [], []
 
@@ -2283,6 +2297,7 @@ def main():
             "row_definitions": ROW_TEXT,
             "portfolio_risk": risk,
             "tax_position": tax_position,
+            "exports": broker_exports(paths),
             "stocks": stocks,
         }, fh, indent=2, ensure_ascii=False)
 

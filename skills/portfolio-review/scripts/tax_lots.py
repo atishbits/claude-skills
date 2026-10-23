@@ -215,10 +215,11 @@ def lot_status(lot, price, today, near_lt_days=60, fallback_cost=None):
     }
 
 
-def latest_snapshot():
-    files = sorted(glob.glob(os.path.join(SKILL_DATA_DIR, "snapshot-*.json")))
+def latest_snapshot(skill_data_dir=None):
+    skill_data_dir = skill_data_dir or SKILL_DATA_DIR
+    files = sorted(glob.glob(os.path.join(skill_data_dir, "snapshot-*.json")))
     if not files:
-        sys.exit(f"No snapshot under {SKILL_DATA_DIR}. Run fetch_fundamentals.py first.")
+        sys.exit(f"No snapshot under {skill_data_dir}. Run fetch_fundamentals.py first.")
     with open(files[-1], encoding="utf-8") as fh:
         return json.load(fh), files[-1]
 

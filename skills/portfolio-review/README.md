@@ -119,7 +119,10 @@ scripts carry its arithmetic:
 - **`scripts/gains_log.py`** records the sales you report. `record TICKER QTY PRICE --date
   YYYY-MM-DD --account NAME [--charges N]` matches the sale FIFO against that account's lots and
   logs it as unconfirmed (charges are deductible sale expenses, not STT; a sale dated on or before
-  the export's holdings date is refused, since the export already has it). `report [--fy 2026-27]`
+  that account's own export date is refused, since the export already has it). Each snapshot
+  keeps every broker's export date and tax position under `exports`, so two brokers exported on
+  different days are each judged by their own date. Account labels are compared stripped and
+  lower-cased. `report [--fy 2026-27]`
   prints the year's totals and the unconfirmed entries. `reconcile PATH` matches the log against
   the broker's tax report and `export [--fy]` writes the hand-off file.
 
@@ -147,6 +150,7 @@ so another tool can read the year's gains without reading this code:
  "fy": "2026-27",
  "generated_at": "2026-10-23T04:00:00+00:00",
  "baseline": {"as_of": "2026-10-01", "stcg": 1000.0, "ltcg": 2000.0,
+              "accounts": {"brokera": {"as_of": "2026-10-01", "stcg": 1000.0, "ltcg": 2000.0}},
               "note": "broker FY total to as_of; includes mutual funds where the broker reports them"},
  "sales": [{"date": "2026-10-20", "ticker": "STOCKA", "account": "brokera", "qty": 10.0,
             "stcg": 480.0, "ltcg": 0.0, "status": "unconfirmed", "in_baseline": false}],
@@ -155,12 +159,16 @@ so another tool can read the year's gains without reading this code:
 }
 ```
 
-- `baseline` is the broker export's own realised total for the year up to `as_of`, or `null` when
-  the newest export has none for that year. It can include mutual funds.
+- `baseline` is the sum of each broker export's own realised total for the year, or `null` when no
+  export has one for that year. `accounts` gives each account's figure and its own `as_of` (the
+  top-level `as_of` is the oldest of them; an older snapshot without per-broker data shows one
+  `*` entry covering every account). A plain CSV export has no baseline. It can include mutual
+  funds.
 - `sales` lists every logged sale in the year by date, with gains in rupees after charges.
   `status` is `unconfirmed` (logged, not yet matched to a broker report) or `confirmed`.
-  `in_baseline` is true for a sale on or before `as_of`, which the baseline already counts.
-- `totals` is baseline plus the sales after `as_of`: net short- and long-term gain, exemption used
+  `in_baseline` is true for a sale on or before its own account's `as_of`, which that account's
+  baseline already counts; a sale at an account with no baseline is always added.
+- `totals` is baseline plus every sale not in a baseline: net short- and long-term gain, exemption used
   and left, and the estimated tax. A net short-term loss is set off against long-term gains first.
   Advance tax counts a gain from the installment after it arises, which is why sales carry dates.
 

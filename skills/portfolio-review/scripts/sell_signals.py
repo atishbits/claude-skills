@@ -254,21 +254,23 @@ def _fy_label(today):
     return f"{start}-{str(start + 1)[-2:]}"
 
 
-def lt_headroom(today):
+def lt_headroom(today, snapshot=None, log_dir=None):
     """(unused LTCG exemption this FY, note or None)."""
     gl = _gains_log()
     if gl is None:
         return float(tax_lots.LTCG_EXEMPTION_PER_FY), NO_LOG_NOTE
-    return float(gl.fy_running(_fy_label(today))["fy_tax"]["exempt_left"]), None
+    run = gl.fy_running(_fy_label(today), snapshot=snapshot, log_dir=log_dir)
+    return float(run["fy_tax"]["exempt_left"]), None
 
 
-def sold_since(ticker, opened):
-    """Quantity of `ticker` sold in the gains log after `opened` (ISO date); None if no log."""
+def sold_since(ticker, opened, log_dir=None):
+    """Quantity of `ticker` sold in the gains log on or after `opened` (ISO
+    date); None if no log. `log_dir` defaults to the gains log's own folder."""
     gl = _gains_log()
     if gl is None:
         return None
     total = 0.0
-    for e in gl.fold(gl.read_entries()):
+    for e in gl.fold(gl.read_entries(log_dir)):
         if e.get("ticker") == ticker.upper() and e.get("sell_date", "") >= opened:
             total += e.get("qty") or 0
     return total
@@ -299,34 +301,54 @@ def _account_split(stock):
     return sorted(brokers.items()) if brokers else [(None, stock.get("qty") or 0)]
 
 
-def _report(stock, ev, today, plan):
+def _logged_since(ticker, broker, snap):
+    """Units of `ticker` logged as sold from `broker` after its export; 0 without a log."""
+    gl = _gains_log()
+    if gl is None or broker is None:
+        return 0.0
+    return float(gl.logged_since_export(ticker, broker, snapshot=snap))
+
+
+def _report(stock, ev, today, plan, snap=None):
     ticker, price = stock["ticker"], stock["price"]
     tech = stock.get("technicals") or {}
     print(flag_text(ticker, ev) or f"{ticker}: no sell case (tier none)")
     print(f"tier {ev['tier']}, kind {ev['kind']}, tests {ev['tests']}")
-    qty = stock.get("qty") or 0
+    accounts = [(b, bq, _logged_since(ticker, b, snap)) for b, bq in _account_split(stock)]
+    gone = sum(g for _, _, g in accounts)
+    qty = max(0.0, (stock.get("qty") or 0) - gone)
+    if gone:
+        print(f"{gone:g} share(s) logged as sold since the export; {qty:g} left")
     tp = ({k: plan[k] for k in ("step1_qty", "step2_qty", "core_qty")} if plan
           else trim_plan(qty, ev["tier"], ev["kind"]))
     trig = step2_triggers(price, tech)
     print(f"plan: step 1 {tp['step1_qty']}, step 2 {tp['step2_qty']}, core {tp['core_qty']}; "
           f"step 2 on close below {trig['off_peak_price']:.2f} (peak {trig['peak']:.2f})"
           + (f" or 50DMA {trig['dma50']:.2f}" if trig["dma50"] else ""))
-    headroom, note = lt_headroom(today)
+    headroom, note = lt_headroom(today, snapshot=snap)
     if note:
         print(note)
     step1 = tp["step1_qty"]
     label = "if sold from"
+    if plan:
+        done = sold_since(ticker, plan["opened"]) or 0
+        step1 = max(0, tp["step1_qty"] - done)
+        if step1 <= 0:
+            step1 = max(0, tp["step2_qty"] - max(0, done - tp["step1_qty"]))
+            label = "step 2: if sold from"
     if step1 <= 0:
         step1 = trim_plan(qty, "trim_third", ev["kind"])["step1_qty"]
         label = "preview: if you trimmed a third, if sold from"
-    for broker, bq in _account_split(stock):
-        n = min(step1, bq)
+    for broker, bq, since in accounts:
+        left = max(0.0, bq - since)
+        n = min(step1, left)
         name = broker or "(single)"
-        print(f"-- {label} {name} (holds {bq:g}): {n:g} share(s)")
+        after = f", {since:g} logged since the export" if since else ""
+        print(f"-- {label} {name} (holds {left:g}{after}): {n:g} share(s)")
         if n <= 0:
             continue
         try:
-            matched = tax_lots.fifo_match(stock.get("lots") or [], n, broker,
+            matched = tax_lots.fifo_match(stock.get("lots") or [], n, broker, already_sold=since,
                                           fallback_cost=stock.get("avg_cost"))
         except ValueError as exc:
             print(f"   cannot match lots: {exc}")
@@ -402,7 +424,7 @@ def main(argv=None, today=None):
                            "core_ends_on": None})
         print(f"saved plan for {ticker}: {tp}")
         return
-    _report(stock, ev, today, load_plans().get(ticker))
+    _report(stock, ev, today, load_plans().get(ticker), snap)
 
 
 if __name__ == "__main__":

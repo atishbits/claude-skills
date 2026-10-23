@@ -7,8 +7,13 @@
     python3 scripts/gains_log.py reconcile PATH
 
 Each sale is matched FIFO against the newest snapshot's lots in that demat
-account (tax_lots.py), after skipping units already logged as sold since the
-snapshot's holdings date. The log is a folder of per-writer-per-day files
+account (tax_lots.py), after skipping units already logged as sold since that
+account's own export date (the snapshot's `exports` block; older snapshots
+without it fall back to the single holdings_date). A sale on or before that
+date is refused: the export already reflects it. A sale is "in the broker
+baseline" only when its account's export carries a tax position for that FY
+and the sale is dated on or before that export. Account labels are compared
+stripped and lower-cased. The log is a folder of per-writer-per-day files
 (logdir.py). A later `kind: "confirm"` record (ref = a sale id) is folded over
 the sale by `fold`. `export` writes a hand-off file other sessions can read.
 `--charges` is the deductible sale expenses (brokerage, exchange charges, GST on
@@ -48,8 +53,16 @@ def _norm_fy(label):
     return label[3:].strip() if label.upper().startswith("FY ") else label
 
 
+def norm_account(label):
+    return (label or "").strip().lower()
+
+
 def read_entries(log_dir=None):
     return logdir.read(log_dir or LOG_DIR)
+
+
+def _skill_data_dir(log_dir=None):
+    return os.path.dirname(log_dir) if log_dir else SKILL_DATA_DIR
 
 
 def fold(entries):
@@ -68,11 +81,58 @@ def fold(entries):
     return [sales[i] for i in order]
 
 
-def _snapshot():
+def _snapshot(log_dir=None):
     try:
-        return tax_lots.latest_snapshot()[0]
+        return tax_lots.latest_snapshot(_skill_data_dir(log_dir) if log_dir else None)[0]
     except SystemExit:
         return None
+
+
+def export_date(snapshot, account):
+    """The ISO date of `account`'s own export; the snapshot-wide holdings_date
+    for an older snapshot without `exports` or an account it does not list."""
+    info = ((snapshot or {}).get("exports") or {}).get(norm_account(account))
+    return (info or {}).get("date") or (snapshot or {}).get("holdings_date")
+
+
+def baselines(snapshot, fy):
+    """account -> {as_of, stcg, ltcg} for every export with a tax position for
+    `fy`. An older snapshot without `exports` gives one baseline under "*"
+    that covers every account."""
+    snapshot = snapshot or {}
+    out = {}
+    exports = snapshot.get("exports")
+    if exports is None:
+        tp = snapshot.get("tax_position")
+        if tp and _norm_fy(tp.get("fy")) == fy:
+            out["*"] = {"as_of": snapshot["holdings_date"], "stcg": tp.get("realised_stcg") or 0.0,
+                        "ltcg": tp.get("realised_ltcg") or 0.0}
+        return out
+    for account, info in exports.items():
+        tp = (info or {}).get("tax_position")
+        if tp and _norm_fy(tp.get("fy")) == fy:
+            out[norm_account(account)] = {"as_of": info["date"],
+                                          "stcg": tp.get("realised_stcg") or 0.0,
+                                          "ltcg": tp.get("realised_ltcg") or 0.0}
+    return out
+
+
+def in_baseline(sale, base):
+    """True when `sale` is already inside its account's broker baseline."""
+    b = base.get(norm_account(sale.get("account"))) or base.get("*")
+    return bool(b) and sale["sell_date"] <= b["as_of"]
+
+
+def logged_since_export(ticker, account, snapshot=None, entries=None, log_dir=None):
+    """Quantity of `ticker` logged as sold from `account` after that account's
+    export date: units the export still shows but that are already gone."""
+    snapshot = snapshot if snapshot is not None else _snapshot(log_dir)
+    entries = entries if entries is not None else read_entries(log_dir)
+    since = export_date(snapshot, account) or ""
+    ticker, account = ticker.strip().upper(), norm_account(account)
+    return sum(e.get("qty") or 0 for e in fold(entries)
+               if e.get("ticker") == ticker and norm_account(e.get("account")) == account
+               and e.get("sell_date", "") > since)
 
 
 def _new_id(sell_date, ticker, entries, root):
@@ -81,22 +141,23 @@ def _new_id(sell_date, ticker, entries, root):
     return f"{prefix}{n + 1}"
 
 
-def record(ticker, qty, price, sell_date, account, charges=0.0, snapshot=None, entries=None):
+def record(ticker, qty, price, sell_date, account, charges=0.0, snapshot=None, entries=None,
+           log_dir=None):
     ticker = ticker.strip().upper()
+    account = norm_account(account)
     qty, price = float(qty), float(price)
     if qty <= 0 or price <= 0:
         raise ValueError("qty and price must be positive")
     date.fromisoformat(sell_date)
-    snapshot = snapshot if snapshot is not None else _snapshot()
+    snapshot = snapshot if snapshot is not None else _snapshot(log_dir)
     if snapshot is None:
         raise ValueError("no snapshot on file; run fetch_fundamentals.py first")
     stock = next((s for s in snapshot["stocks"] if s["ticker"] == ticker), None)
     if stock is None:
         raise ValueError(f"{ticker} not in the snapshot")
-    entries = entries if entries is not None else read_entries()
-    since = snapshot["holdings_date"]
-    already = sum(e["qty"] for e in fold(entries)
-                  if e["ticker"] == ticker and e["account"] == account and e["sell_date"] > since)
+    entries = entries if entries is not None else read_entries(log_dir)
+    since = export_date(snapshot, account)
+    already = logged_since_export(ticker, account, snapshot, entries)
     matched = tax_lots.fifo_match(stock.get("lots") or [], qty, account, already_sold=already,
                                   fallback_cost=stock.get("avg_cost"))
     sd = date.fromisoformat(sell_date)
@@ -122,25 +183,31 @@ def record(ticker, qty, price, sell_date, account, charges=0.0, snapshot=None, e
            "charges": float(charges), "lots": matched, "stcg": t["stcg"], "ltcg": t["ltcg"],
            "untaxed_qty": t["untaxed_qty"], "est_tax": t["est_tax"], "status": "unconfirmed",
            "source": "user", "recorded_at": now}
-    logdir.append(LOG_DIR, rec, ROOT, sell_date)
+    logdir.append(log_dir or LOG_DIR, rec, ROOT, sell_date)
     return rec
 
 
-def fy_running(fy, entries=None, snapshot=None):
-    entries = entries if entries is not None else read_entries()
-    snapshot = snapshot if snapshot is not None else _snapshot()
+def fy_running(fy, entries=None, snapshot=None, log_dir=None):
+    """FY totals: the sum of every account's broker baseline for `fy`, plus each
+    logged sale not already inside its own account's baseline. `baseline` is
+    None when no account has one; otherwise {as_of (the oldest), stcg, ltcg,
+    accounts: {account: {as_of, stcg, ltcg}}}."""
+    entries = entries if entries is not None else read_entries(log_dir)
+    snapshot = snapshot if snapshot is not None else _snapshot(log_dir)
+    base = baselines(snapshot, fy)
     baseline = None
-    tp = (snapshot or {}).get("tax_position")
-    if tp and _norm_fy(tp.get("fy")) == fy:
-        baseline = {"as_of": snapshot["holdings_date"], "stcg": tp.get("realised_stcg") or 0.0,
-                    "ltcg": tp.get("realised_ltcg") or 0.0}
+    if base:
+        baseline = {"as_of": min(b["as_of"] for b in base.values()),
+                    "stcg": sum(b["stcg"] for b in base.values()),
+                    "ltcg": sum(b["ltcg"] for b in base.values()),
+                    "accounts": base}
     stcg = baseline["stcg"] if baseline else 0.0
     ltcg = baseline["ltcg"] if baseline else 0.0
     unconfirmed = 0
     for s in fold(entries):
         if fy_of(date.fromisoformat(s["sell_date"])) != fy:
             continue
-        if baseline and s["sell_date"] <= baseline["as_of"]:
+        if in_baseline(s, base):
             continue
         stcg += s["stcg"]
         ltcg += s["ltcg"]
@@ -149,19 +216,20 @@ def fy_running(fy, entries=None, snapshot=None):
             "fy_tax": tax_lots.fy_tax(stcg, ltcg), "unconfirmed": unconfirmed}
 
 
-def export(fy):
-    entries, snapshot = read_entries(), _snapshot()
+def export(fy, log_dir=None):
+    entries, snapshot = read_entries(log_dir), _snapshot(log_dir)
     run = fy_running(fy, entries, snapshot)
     baseline = dict(run["baseline"], note=BASELINE_NOTE) if run["baseline"] else None
-    as_of = run["baseline"]["as_of"] if run["baseline"] else None
+    base = run["baseline"]["accounts"] if run["baseline"] else {}
     sales = [{"date": s["sell_date"], "ticker": s["ticker"], "account": s["account"],
               "qty": s["qty"], "stcg": s["stcg"], "ltcg": s["ltcg"], "status": s.get("status"),
-              "in_baseline": bool(as_of and s["sell_date"] <= as_of)}
+              "in_baseline": in_baseline(s, base)}
              for s in fold(entries) if fy_of(date.fromisoformat(s["sell_date"])) == fy]
     doc = {"fy": fy, "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
            "baseline": baseline, "sales": sales, "totals": run["fy_tax"]}
-    os.makedirs(SKILL_DATA_DIR, exist_ok=True)
-    path = os.path.join(SKILL_DATA_DIR, f"realised-gains-FY{fy}.json")
+    out_dir = _skill_data_dir(log_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"realised-gains-FY{fy}.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1)
         fh.write("\n")
@@ -194,10 +262,11 @@ def read_broker_csv(path):
     return out
 
 
-def reconcile(path, entries=None):
+def reconcile(path, entries=None, log_dir=None):
     """Confirm logged sales against a broker report, import the ones not logged.
     Broker figures win. Idempotent: confirmed or already imported sales are skipped."""
-    entries = list(entries if entries is not None else read_entries())
+    log_dir = log_dir or LOG_DIR
+    entries = list(entries if entries is not None else read_entries(log_dir))
     result = {"confirmed": [], "imported": [], "mismatched": []}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for b in read_broker_csv(path):
@@ -214,7 +283,7 @@ def reconcile(path, entries=None):
                    "est_tax": tax_lots.LTCG_RATE_PCT / 100 * max(0.0, b["ltcg"])
                    + tax_lots.STCG_RATE_PCT / 100 * max(0.0, b["stcg"]),
                    "status": "confirmed", "source": "broker", "recorded_at": now}
-            logdir.append(LOG_DIR, rec, ROOT, b["sell_date"])
+            logdir.append(log_dir, rec, ROOT, b["sell_date"])
             entries.append(rec)
             result["imported"].append(rec["id"])
             continue
@@ -230,21 +299,24 @@ def reconcile(path, entries=None):
             continue
         rec = {"kind": "confirm", "ref": match["id"], "stcg": b["stcg"], "ltcg": b["ltcg"],
                "charges": b["charges"], "status": "confirmed", "recorded_at": now}
-        logdir.append(LOG_DIR, rec, ROOT, b["sell_date"])
+        logdir.append(log_dir, rec, ROOT, b["sell_date"])
         entries.append(rec)
         result["confirmed"].append(match["id"])
     return result
 
 
-def _report(fy):
-    run = fy_running(fy)
+def _report(fy, log_dir=None):
+    run = fy_running(fy, log_dir=log_dir)
     b = run["baseline"]
+    base = b["accounts"] if b else {}
     print(f"Realised gains FY {fy}")
     if b:
-        print(f"  baseline to {b['as_of']}: STCG {b['stcg']:,.0f}, LTCG {b['ltcg']:,.0f}")
-    for s in fold(read_entries()):
+        for account, ab in sorted(base.items()):
+            who = "" if account == "*" else f" ({account})"
+            print(f"  baseline{who} to {ab['as_of']}: STCG {ab['stcg']:,.0f}, LTCG {ab['ltcg']:,.0f}")
+    for s in fold(read_entries(log_dir)):
         if fy_of(date.fromisoformat(s["sell_date"])) == fy:
-            inb = " (in broker baseline, not added)" if b and s["sell_date"] <= b["as_of"] else ""
+            inb = " (in broker baseline, not added)" if in_baseline(s, base) else ""
             print(f"  {s['sell_date']} {s['ticker']} ({s['account']}) {s['qty']:g} @ {s['price']:g}: "
                   f"STCG {s['stcg']:,.0f}, LTCG {s['ltcg']:,.0f} [{s.get('status')}]{inb}")
             if s.get("untaxed_qty"):

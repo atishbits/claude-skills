@@ -342,9 +342,56 @@ class CliTests(unittest.TestCase):
         gl.fold.return_value = [{"ticker": "STOCKA", "sell_date": "2026-10-23", "qty": 30}]
         gl.read_entries.return_value = []
         gl.fy_running.return_value = {"fy_tax": {"exempt_left": 125000}}
+        gl.logged_since_export.return_value = 0
         with mock.patch.object(sell_signals, "_gains_log", return_value=gl):
             out = self.run_cli("STOCKA")
         self.assertIn("30 sold since 2026-10-23", out)
+
+    def write_snapshot(self, **extra):
+        import json
+        import os
+        with open(os.path.join(os.path.dirname(self.plans), "snapshot-2026-10-23.json"), "w") as fh:
+            json.dump(dict({"stocks": [self.stock]}, **extra), fh)
+
+    def patch_log(self):
+        import os
+        from unittest import mock
+        import gains_log
+        log = os.path.join(os.path.dirname(self.plans), "realised-gains")
+        p = mock.patch.object(gains_log, "LOG_DIR", log)
+        p.start()
+        self.addCleanup(p.stop)
+        return gains_log
+
+    def test_preview_skips_sales_logged_since_the_export(self):
+        self.stock["lots"][0:1] = [{"broker": "a", "date": "2026-01-15", "qty": 5, "cost": 100},
+                                   {"broker": "a", "date": "2026-03-01", "qty": 55, "cost": 110}]
+        snap = {"holdings_date": "2026-10-19",
+                "exports": {"a": {"date": "2026-10-19", "tax_position": None},
+                            "b": {"date": "2026-10-19", "tax_position": None}}}
+        self.write_snapshot(**snap)
+        gl = self.patch_log()
+        gl.record("STOCKA", 5, 150, "2026-10-20", "a", snapshot=dict(snap, stocks=[self.stock]))
+        with mock_tier("trim_third"):
+            out = self.run_cli("STOCKA")
+        a = out.split("-- if sold from b")[0]
+        self.assertIn("if sold from a (holds 55", a)
+        self.assertIn("2026-03-01:", a)
+        self.assertNotIn("2026-01-15:", a)
+        self.assertIn("5 logged since the export", a)
+        self.assertIn("plan: step 1 28,", out)   # a third of the 85 left, floored
+
+    def test_open_plan_preview_uses_what_is_left_of_the_plan(self):
+        snap = {"holdings_date": "2026-10-19",
+                "exports": {"a": {"date": "2026-10-19", "tax_position": None},
+                            "b": {"date": "2026-10-19", "tax_position": None}}}
+        self.write_snapshot(**snap)
+        self.open_plan()                                   # step 1 30, step 2 30, opened 2026-10-23
+        gl = self.patch_log()
+        gl.record("STOCKA", 30, 150, "2026-10-23", "a", snapshot=dict(snap, stocks=[self.stock]))
+        out = self.run_cli("STOCKA")
+        self.assertIn("-- step 2: if sold from a (holds 30, 30 logged since the export): 30 share(s)", out)
+        self.assertIn("-- step 2: if sold from b (holds 30): 30 share(s)", out)
 
     def test_open_plan_refused_for_watch_and_when_open(self):
         with mock_tier("watch"):

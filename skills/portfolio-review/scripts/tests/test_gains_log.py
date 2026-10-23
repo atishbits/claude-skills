@@ -240,3 +240,90 @@ class TestReconcile(Base):
         res = gains_log.reconcile(path)
         self.assertEqual((res["confirmed"], res["imported"], res["mismatched"]), ([], [], []))
         self.assertEqual(len(gains_log.read_entries()), n)
+
+
+def two_account_snapshot():
+    """a exported 2026-10-01, b 2026-10-15, both with an FY 2026-27 baseline;
+    c is a CSV-only account (no tax position) exported 2026-10-15."""
+    return {"holdings_date": "2026-10-01",
+            "tax_position": {"fy": "FY 2026-27", "realised_stcg": 400.0, "realised_ltcg": 600.0},
+            "exports": {
+                "a": {"date": "2026-10-01",
+                      "tax_position": {"fy": "FY 2026-27", "realised_stcg": 100.0, "realised_ltcg": 200.0}},
+                "b": {"date": "2026-10-15",
+                      "tax_position": {"fy": "FY 2026-27", "realised_stcg": 300.0, "realised_ltcg": 400.0}},
+                "c": {"date": "2026-10-15", "tax_position": None}},
+            "stocks": [{"ticker": "STOCKA", "avg_cost": 100, "lots": [
+                {"broker": "a", "date": "2026-01-15", "qty": 10, "cost": 100},
+                {"broker": "b", "date": "2026-01-15", "qty": 10, "cost": 100},
+                {"broker": "c", "date": "2026-01-15", "qty": 10, "cost": 100}]}]}
+
+
+def sale(account, sell_date, qty=2, stcg=777.0, sid=None, ticker="STOCKA"):
+    return {"kind": "sale", "id": sid or f"{sell_date}-{account}", "ticker": ticker,
+            "account": account, "sell_date": sell_date, "qty": qty, "price": 150,
+            "stcg": stcg, "ltcg": 0.0, "status": "confirmed", "source": "broker"}
+
+
+class TestPerAccountExports(Base):
+    def setUp(self):
+        super().setUp()
+        self.snap = two_account_snapshot()
+
+    def test_record_uses_the_accounts_own_export_date(self):
+        with self.assertRaises(ValueError) as cm:
+            gains_log.record("STOCKA", 1, 150, "2026-10-10", "b", snapshot=self.snap, entries=[])
+        self.assertIn("2026-10-15", str(cm.exception))
+        r = gains_log.record("STOCKA", 1, 150, "2026-10-10", "a", snapshot=self.snap, entries=[])
+        self.assertEqual(r["sell_date"], "2026-10-10")
+
+    def test_b_sale_before_b_export_in_baseline_a_sale_added(self):
+        a = gains_log.record("STOCKA", 10, 150, "2026-10-10", "a", snapshot=self.snap, entries=[])
+        b = sale("b", "2026-10-10")
+        run = gains_log.fy_running("2026-27", [a, b], self.snap)
+        self.assertEqual(run["stcg"], 100.0 + 300.0 + 500.0)
+        self.assertEqual(run["ltcg"], 200.0 + 400.0)
+        self.assertEqual(set(run["baseline"]["accounts"]), {"a", "b"})
+
+    def test_export_marks_in_baseline_per_account(self):
+        gains_log.logdir.append(gains_log.LOG_DIR, sale("b", "2026-10-10"), self.tmp.name, "2026-10-10")
+        gains_log.logdir.append(gains_log.LOG_DIR, sale("a", "2026-10-10", sid="x2"), self.tmp.name,
+                                "2026-10-10")
+        with open(os.path.join(self.sd, "snapshot-2026-10-15.json"), "w") as fh:
+            json.dump(self.snap, fh)
+        with open(gains_log.export("2026-27")) as fh:
+            flags = {x["account"]: x["in_baseline"] for x in json.load(fh)["sales"]}
+        self.assertEqual(flags, {"a": False, "b": True})
+
+    def test_csv_only_account_sales_always_added(self):
+        c = sale("c", "2026-10-05", stcg=50.0)
+        run = gains_log.fy_running("2026-27", [c], self.snap)
+        self.assertEqual(run["stcg"], 100.0 + 300.0 + 50.0)
+
+    def test_record_skips_only_sales_after_that_accounts_export(self):
+        before = sale("b", "2026-10-12", qty=4, sid="early")    # already gone from b's lots
+        after = sale("b", "2026-10-20", qty=2, sid="late")
+        r = gains_log.record("STOCKA", 8, 150, "2026-10-21", "b", snapshot=self.snap,
+                             entries=[before, after])
+        self.assertEqual(sum(m["qty"] for m in r["lots"]), 8)
+
+    def test_logged_since_export(self):
+        entries = [sale("a", "2026-10-10", qty=3, sid="1"), sale("b", "2026-10-12", qty=4, sid="2"),
+                   sale("b", "2026-10-20", qty=2, sid="3"), sale("a", "2026-10-10", qty=9, sid="4",
+                                                              ticker="STOCKB")]
+        self.assertEqual(gains_log.logged_since_export("STOCKA", "a", self.snap, entries), 3)
+        self.assertEqual(gains_log.logged_since_export("stocka", " B ", self.snap, entries), 2)
+
+    def test_logged_since_export_legacy_snapshot(self):
+        entries = [sale("a", "2026-10-19", qty=3, sid="1"), sale("a", "2026-10-20", qty=2, sid="2")]
+        self.assertEqual(gains_log.logged_since_export("STOCKA", "a", snapshot(), entries), 2)
+
+
+class TestLogDirParam(Base):
+    def test_functions_take_an_explicit_log_dir(self):
+        other = os.path.join(self.tmp.name, "elsewhere", "data", "skill-data", "realised-gains")
+        gains_log.record("STOCKA", 2, 150, "2026-10-20", "a", snapshot=snapshot(), log_dir=other)
+        self.assertEqual(gains_log.read_entries(), [])
+        self.assertEqual(len(gains_log.read_entries(other)), 1)
+        self.assertEqual(sell_signals.sold_since("STOCKA", "2026-10-20", log_dir=other), 2)
+        self.assertEqual(sell_signals.sold_since("STOCKA", "2026-10-20"), 0)

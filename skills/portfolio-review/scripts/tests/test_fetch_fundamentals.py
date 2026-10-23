@@ -501,6 +501,26 @@ class TestLoadPortfolio(unittest.TestCase):
             self.assertEqual(testco["brokers"], {"alphabroker": 10.0, "betabroker": 30.0})
             self.assertEqual((tax["realised_stcg"], tax["realised_ltcg"]), (10.0, 20.0))
 
+    def test_per_broker_exports(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_root = ff.ROOT
+            self.addCleanup(ff.set_root, saved_root)
+            ff.set_root(tmp)
+            os.makedirs(ff.DATA_DIR, exist_ok=True)
+            csv_path = os.path.join(ff.DATA_DIR, "alphabroker_holdings_2026-10-02.csv")
+            with open(csv_path, "w") as fh:
+                fh.write("x\n")
+            md_path = os.path.join(ff.DATA_DIR, "betabroker-portfolio-2026-10-01.md")
+            with open(md_path, "w", encoding="utf-8") as fh:
+                fh.write("## Tax position FY 2026-27 (broker)\n\n"
+                         "- Realised STCG: ₹10 · Realised LTCG: ₹20\n\n")
+            ex = ff.broker_exports([csv_path, md_path])
+            self.assertEqual(ex["alphabroker"], {"date": "2026-10-02", "tax_position": None})
+            self.assertEqual(ex["betabroker"]["date"], "2026-10-01")
+            self.assertEqual((ex["betabroker"]["tax_position"]["realised_stcg"],
+                              ex["betabroker"]["tax_position"]["realised_ltcg"]), (10.0, 20.0))
+
     def test_no_files(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -733,6 +753,24 @@ class TestSellFlagLines(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("STEP 2 TRIGGER HIT", lines[0][1])
         self.assertEqual(still, [])
+
+    def test_sell_review_reads_the_gains_log_under_root(self):
+        import json
+        saved_root = ff.ROOT
+        self.addCleanup(ff.set_root, saved_root)
+        with tempfile.TemporaryDirectory() as tmp:
+            ff.set_root(tmp)
+            log = os.path.join(ff.SKILL_DATA_DIR, "realised-gains")
+            os.makedirs(log)
+            with open(os.path.join(log, "2026-10-20-w.jsonl"), "w") as fh:
+                fh.write(json.dumps({"kind": "sale", "id": "s1", "ticker": "STOCKA", "account": "a",
+                                     "sell_date": "2026-10-20", "qty": 10}) + "\n")
+            plan = {"opened": "2026-10-01", "step1_qty": 10, "triggers": {"off_peak_price": 80.0}}
+            with open(os.path.join(ff.SKILL_DATA_DIR, "sell-plans.json"), "w") as fh:
+                json.dump({"STOCKA": plan}, fh)
+            lines, _ = ff.sell_review([_sf("STOCKA", "trim_third")], date(2026, 10, 23))
+        self.assertEqual(len(lines), 1)
+        self.assertIn("step 1 done", lines[0][1])
 
     def test_previous_tiers_uses_newest_earlier_snapshot(self):
         import json
