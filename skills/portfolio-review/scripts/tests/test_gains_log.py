@@ -60,8 +60,9 @@ class TestGainsLog(Base):
 
     def test_fy_running_baseline_plus_later_sales(self):
         gains_log.record("STOCKA", 10, 150, "2026-10-20", "a", snapshot=self.snap)   # STCG 500
-        gains_log.record("STOCKA", 5, 150, "2026-10-19", "b", snapshot=self.snap)    # on as_of: excluded
-        run = gains_log.fy_running("2026-27", snapshot=self.snap)
+        old = {"kind": "sale", "id": "x", "ticker": "STOCKA", "account": "b", "sell_date": "2026-10-19",
+               "qty": 5, "stcg": 0.0, "ltcg": 777.0, "status": "unconfirmed"}  # on as_of: excluded
+        run = gains_log.fy_running("2026-27", gains_log.read_entries() + [old], self.snap)
         self.assertEqual(run["baseline"]["as_of"], "2026-10-19")
         self.assertEqual(run["stcg"], 1500.0)
         self.assertEqual(run["ltcg"], 5000.0)
@@ -91,8 +92,42 @@ class TestGainsLog(Base):
             doc = json.load(fh)
         self.assertEqual(set(doc), {"fy", "generated_at", "baseline", "sales", "totals"})
         self.assertIn("mutual funds", doc["baseline"]["note"])
-        self.assertEqual(set(doc["sales"][0]), {"date", "ticker", "account", "qty", "stcg", "ltcg", "status"})
+        self.assertEqual(set(doc["sales"][0]), {"date", "ticker", "account", "qty", "stcg", "ltcg", "status", "in_baseline"})
         self.assertIn("exempt_left", doc["totals"])
+
+
+class TestFixes(Base):
+    def test_charges_split_pro_rata(self):
+        snap = snapshot()
+        snap["stocks"][0]["lots"] = [{"broker": "a", "date": "2020-01-01", "qty": 10, "cost": 100},
+                                     {"broker": "a", "date": "2026-09-01", "qty": 30, "cost": 100}]
+        r = gains_log.record("STOCKA", 40, 150, "2026-10-21", "a", snapshot=snap, entries=[])
+        self.assertEqual((r["ltcg"], r["stcg"]), (500.0, 1500.0))
+        r = gains_log.record("STOCKA", 40, 150, "2026-10-22", "a", charges=100, snapshot=snap, entries=[])
+        self.assertAlmostEqual(r["ltcg"], 475.0)
+        self.assertAlmostEqual(r["stcg"], 1425.0)
+        self.assertAlmostEqual(r["est_tax"], 0.125 * 475 + 0.2 * 1425)
+
+    def test_export_marks_baseline_sales(self):
+        old = {"kind": "sale", "id": "x", "ticker": "STOCKA", "account": "b", "sell_date": "2026-10-19",
+               "qty": 5, "stcg": 0.0, "ltcg": 777.0, "status": "unconfirmed"}
+        new = dict(old, id="y", sell_date="2026-10-20")
+        gains_log.logdir.append(gains_log.LOG_DIR, old, self.tmp.name, "2026-10-19")
+        gains_log.logdir.append(gains_log.LOG_DIR, new, self.tmp.name, "2026-10-20")
+        with open(os.path.join(self.sd, "snapshot-2026-10-19.json"), "w") as fh:
+            json.dump(self.snap, fh)
+        with open(gains_log.export("2026-27")) as fh:
+            flags = {x["date"]: x["in_baseline"] for x in json.load(fh)["sales"]}
+        self.assertEqual(flags, {"2026-10-19": True, "2026-10-20": False})
+
+    def test_sale_on_or_before_export_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            gains_log.record("STOCKA", 1, 150, "2026-10-19", "a", snapshot=self.snap)
+        self.assertIn("already in the export", str(cm.exception))
+
+    def test_account_without_lots(self):
+        with self.assertRaises(ValueError):
+            gains_log.record("STOCKA", 1, 150, "2026-10-20", "zzz", snapshot=self.snap)
 
 
 class TestSellSignalsWiring(Base):

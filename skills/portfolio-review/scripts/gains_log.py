@@ -10,6 +10,9 @@ account (tax_lots.py), after skipping units already logged as sold since the
 snapshot's holdings date. The log is a folder of per-writer-per-day files
 (logdir.py). A later `kind: "confirm"` record (ref = a sale id) is folded over
 the sale by `fold`. `export` writes a hand-off file other sessions can read.
+`--charges` is the deductible sale expenses (brokerage, exchange charges, GST on
+them; exclude STT). They reduce the gain, split pro rata by quantity across the
+matched taxable lots before the short/long-term split.
 The skill only records sales the user reports or the broker report contains.
 """
 import argparse
@@ -90,7 +93,23 @@ def record(ticker, qty, price, sell_date, account, charges=0.0, snapshot=None, e
                   if e["ticker"] == ticker and e["account"] == account and e["sell_date"] > since)
     matched = tax_lots.fifo_match(stock.get("lots") or [], qty, account, already_sold=already,
                                   fallback_cost=stock.get("avg_cost"))
-    t = tax_lots.sale_tax(matched, price, date.fromisoformat(sell_date))
+    sd = date.fromisoformat(sell_date)
+    if sd <= date.fromisoformat(since):
+        raise ValueError(f"{sell_date} is on or before the broker export ({since}): that sale is "
+                         "already in the export; reconcile imports those")
+    t = tax_lots.sale_tax(matched, price, sd)
+    taxable = [m for m in matched if m.get("taxable") and m.get("cost") is not None
+               and tax_lots._parse_date(m.get("date"))]
+    tq = sum(m["qty"] for m in taxable)
+    if charges and tq:
+        for m in taxable:
+            share = float(charges) * m["qty"] / tq
+            if tax_lots.is_long_term(tax_lots._parse_date(m["date"]), sd):
+                t["ltcg"] -= share
+            else:
+                t["stcg"] -= share
+        t["est_tax"] = (tax_lots.LTCG_RATE_PCT / 100 * max(0.0, t["ltcg"])
+                        + tax_lots.STCG_RATE_PCT / 100 * max(0.0, t["stcg"]))
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rec = {"kind": "sale", "id": _new_id(sell_date, ticker, entries, ROOT), "ticker": ticker,
            "account": account, "sell_date": sell_date, "qty": qty, "price": price,
@@ -128,8 +147,10 @@ def export(fy):
     entries, snapshot = read_entries(), _snapshot()
     run = fy_running(fy, entries, snapshot)
     baseline = dict(run["baseline"], note=BASELINE_NOTE) if run["baseline"] else None
+    as_of = run["baseline"]["as_of"] if run["baseline"] else None
     sales = [{"date": s["sell_date"], "ticker": s["ticker"], "account": s["account"],
-              "qty": s["qty"], "stcg": s["stcg"], "ltcg": s["ltcg"], "status": s.get("status")}
+              "qty": s["qty"], "stcg": s["stcg"], "ltcg": s["ltcg"], "status": s.get("status"),
+              "in_baseline": bool(as_of and s["sell_date"] <= as_of)}
              for s in fold(entries) if fy_of(date.fromisoformat(s["sell_date"])) == fy]
     doc = {"fy": fy, "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
            "baseline": baseline, "sales": sales, "totals": run["fy_tax"]}
@@ -149,8 +170,9 @@ def _report(fy):
         print(f"  baseline to {b['as_of']}: STCG {b['stcg']:,.0f}, LTCG {b['ltcg']:,.0f}")
     for s in fold(read_entries()):
         if fy_of(date.fromisoformat(s["sell_date"])) == fy:
+            inb = " (in broker baseline, not added)" if b and s["sell_date"] <= b["as_of"] else ""
             print(f"  {s['sell_date']} {s['ticker']} ({s['account']}) {s['qty']:g} @ {s['price']:g}: "
-                  f"STCG {s['stcg']:,.0f}, LTCG {s['ltcg']:,.0f} [{s.get('status')}]")
+                  f"STCG {s['stcg']:,.0f}, LTCG {s['ltcg']:,.0f} [{s.get('status')}]{inb}")
             if s.get("untaxed_qty"):
                 print(f"    {s['untaxed_qty']:g} share(s): tax not estimated, excluded from totals")
     t = run["fy_tax"]
@@ -167,7 +189,8 @@ def main():
     r.add_argument("price", type=float)
     r.add_argument("--date", required=True)
     r.add_argument("--account", required=True)
-    r.add_argument("--charges", type=float, default=0.0)
+    r.add_argument("--charges", type=float, default=0.0,
+                   help="deductible sale expenses such as brokerage; exclude STT")
     for name in ("report", "export"):
         s = sub.add_parser(name)
         s.add_argument("--fy", default=None)
