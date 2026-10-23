@@ -163,3 +163,80 @@ class TestSellSignalsWiring(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+HEADER = "account,symbol,sell_date,qty,sell_price,buy_date,buy_price,gain,term,charges\n"
+
+
+class TestReconcile(Base):
+    def csv(self, rows):
+        path = os.path.join(self.tmp.name, "tax.csv")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(HEADER + "".join(rows))
+        return path
+
+    def test_read_groups_sales(self):
+        path = self.csv(["a,STOCKA,2026-10-20,6,150,2026-01-15,100,300,ST,5\n",
+                         "a,STOCKA,2026-10-20,4,150,2020-01-01,50,400,LT,3\n"])
+        sales = gains_log.read_broker_csv(path)
+        self.assertEqual(len(sales), 1)
+        self.assertEqual((sales[0]["qty"], sales[0]["stcg"], sales[0]["ltcg"], sales[0]["charges"]),
+                         (10, 300, 400, 8))
+
+    def test_logged_sale_confirmed_once_totals_unchanged(self):
+        rec = gains_log.record("STOCKA", 10, 150, "2026-10-20", "a", snapshot=self.snap)
+        before = gains_log.fy_running("2026-27", snapshot=self.snap)
+        path = self.csv(["a,STOCKA,2026-10-20,10,150,2026-01-15,100,495,ST,5\n"])
+        res = gains_log.reconcile(path)
+        self.assertEqual(res["confirmed"], [rec["id"]])
+        self.assertEqual(res["imported"], [])
+        folded = gains_log.fold(gains_log.read_entries())
+        self.assertEqual(len(folded), 1)
+        self.assertEqual(folded[0]["status"], "confirmed")
+        self.assertEqual(folded[0]["stcg"], 495)
+        after = gains_log.fy_running("2026-27", snapshot=self.snap)
+        self.assertAlmostEqual(after["stcg"] - before["stcg"], 495 - rec["stcg"])
+        self.assertEqual(after["unconfirmed"], 0)
+
+    def test_unlogged_sale_imported(self):
+        path = self.csv(["a,STOCKA,2026-10-21,5,150,2026-01-15,100,200,ST,2\n"])
+        res = gains_log.reconcile(path)
+        self.assertEqual(len(res["imported"]), 1)
+        s = gains_log.fold(gains_log.read_entries())[0]
+        self.assertEqual((s["source"], s["status"], s["ticker"], s["stcg"]), ("broker", "confirmed", "STOCKA", 200))
+        self.assertEqual(gains_log.fy_running("2026-27", snapshot=self.snap)["stcg"], 1200)
+
+    def test_imported_pre_baseline_sale_not_double_counted(self):
+        before = gains_log.fy_running("2026-27", snapshot=self.snap)
+        path = self.csv(["a,STOCKA,2026-10-01,5,150,2026-01-15,100,200,ST,2\n"])
+        self.assertEqual(len(gains_log.reconcile(path)["imported"]), 1)
+        after = gains_log.fy_running("2026-27", snapshot=self.snap)
+        self.assertEqual((after["stcg"], after["ltcg"]), (before["stcg"], before["ltcg"]))
+
+    def test_qty_mismatch_listed_not_confirmed(self):
+        rec = gains_log.record("STOCKA", 10, 150, "2026-10-20", "a", snapshot=self.snap)
+        path = self.csv(["a,STOCKA,2026-10-20,8,150,2026-01-15,100,300,ST,5\n"])
+        res = gains_log.reconcile(path)
+        self.assertEqual(res["confirmed"], [])
+        self.assertEqual(res["imported"], [])
+        self.assertEqual(res["mismatched"][0]["id"], rec["id"])
+        self.assertEqual(res["mismatched"][0]["field"], "qty")
+        self.assertEqual(gains_log.fold(gains_log.read_entries())[0]["status"], "unconfirmed")
+
+    def test_gain_mismatch_listed(self):
+        rec = gains_log.record("STOCKA", 10, 150, "2026-10-20", "a", snapshot=self.snap)
+        path = self.csv(["a,STOCKA,2026-10-20,10,150,2026-01-15,100,300,ST,5\n"])
+        res = gains_log.reconcile(path)
+        self.assertEqual(res["mismatched"][0]["field"], "gain")
+        self.assertEqual(res["confirmed"], [])
+        self.assertEqual(rec["stcg"], 500)
+
+    def test_rerun_idempotent(self):
+        gains_log.record("STOCKA", 10, 150, "2026-10-20", "a", snapshot=self.snap)
+        path = self.csv(["a,STOCKA,2026-10-20,10,150,2026-01-15,100,500,ST,0\n",
+                         "a,STOCKA,2026-10-22,2,150,2026-01-15,100,60,ST,0\n"])
+        gains_log.reconcile(path)
+        n = len(gains_log.read_entries())
+        res = gains_log.reconcile(path)
+        self.assertEqual((res["confirmed"], res["imported"], res["mismatched"]), ([], [], []))
+        self.assertEqual(len(gains_log.read_entries()), n)

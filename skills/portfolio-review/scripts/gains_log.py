@@ -4,6 +4,7 @@
     python3 scripts/gains_log.py record TICKER QTY PRICE --date YYYY-MM-DD --account NAME [--charges N]
     python3 scripts/gains_log.py report [--fy 2026-27]
     python3 scripts/gains_log.py export [--fy 2026-27]
+    python3 scripts/gains_log.py reconcile PATH
 
 Each sale is matched FIFO against the newest snapshot's lots in that demat
 account (tax_lots.py), after skipping units already logged as sold since the
@@ -16,6 +17,7 @@ matched taxable lots before the short/long-term split.
 The skill only records sales the user reports or the broker report contains.
 """
 import argparse
+import csv
 import json
 import os
 import sys
@@ -27,6 +29,10 @@ import tax_lots
 ROOT = os.path.abspath(os.environ.get("PORTFOLIO_ROOT") or os.getcwd())
 SKILL_DATA_DIR = os.path.join(ROOT, "data", "skill-data")
 LOG_DIR = os.path.join(SKILL_DATA_DIR, "realised-gains")
+
+# A broker gain may differ from the logged one by this much before it is a mismatch.
+GAIN_TOLERANCE_PCT = 1.0
+GAIN_TOLERANCE_ABS = 10.0
 
 BASELINE_NOTE = "broker FY total to as_of; includes mutual funds where the broker reports them"
 
@@ -162,6 +168,74 @@ def export(fy):
     return path
 
 
+def read_broker_csv(path):
+    """Broker tax P&L rows (realised-gains-template.md) grouped into sales by
+    (account, symbol, sell_date): summed qty, stcg (term ST), ltcg (term LT), charges."""
+    sales = {}
+    with open(path, encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            key = (row["account"].strip(), row["symbol"].strip().upper(), row["sell_date"].strip())
+            date.fromisoformat(key[2])
+            sale = sales.setdefault(key, {"account": key[0], "ticker": key[1], "sell_date": key[2],
+                                          "qty": 0.0, "stcg": 0.0, "ltcg": 0.0, "charges": 0.0,
+                                          "_value": 0.0})
+            q = float(row["qty"])
+            sale["qty"] += q
+            sale["_value"] += q * float(row["sell_price"])
+            term = row["term"].strip().upper()
+            if term not in ("ST", "LT"):
+                raise ValueError(f"term must be ST or LT, got {row['term']!r}")
+            sale["stcg" if term == "ST" else "ltcg"] += float(row["gain"])
+            sale["charges"] += float(row.get("charges") or 0)
+    out = []
+    for sale in sales.values():
+        sale["price"] = sale.pop("_value") / sale["qty"] if sale["qty"] else 0.0
+        out.append(sale)
+    return out
+
+
+def reconcile(path, entries=None):
+    """Confirm logged sales against a broker report, import the ones not logged.
+    Broker figures win. Idempotent: confirmed or already imported sales are skipped."""
+    entries = list(entries if entries is not None else read_entries())
+    result = {"confirmed": [], "imported": [], "mismatched": []}
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for b in read_broker_csv(path):
+        key = (b["account"], b["ticker"], b["sell_date"])
+        same = [s for s in fold(entries)
+                if (s["account"], s["ticker"], s["sell_date"]) == key]
+        if any(s.get("status") == "confirmed" or s.get("source") == "broker" for s in same):
+            continue
+        if not same:
+            rec = {"kind": "sale", "id": _new_id(b["sell_date"], b["ticker"], entries, ROOT),
+                   "ticker": b["ticker"], "account": b["account"], "sell_date": b["sell_date"],
+                   "qty": b["qty"], "price": b["price"], "charges": b["charges"], "lots": [],
+                   "stcg": b["stcg"], "ltcg": b["ltcg"], "untaxed_qty": 0.0,
+                   "est_tax": tax_lots.LTCG_RATE_PCT / 100 * max(0.0, b["ltcg"])
+                   + tax_lots.STCG_RATE_PCT / 100 * max(0.0, b["stcg"]),
+                   "status": "confirmed", "source": "broker", "recorded_at": now}
+            logdir.append(LOG_DIR, rec, ROOT, b["sell_date"])
+            entries.append(rec)
+            result["imported"].append(rec["id"])
+            continue
+        match = next((s for s in same if abs(s["qty"] - b["qty"]) < 1e-9), None)
+        if match is None:
+            result["mismatched"].append({"id": same[0]["id"], "field": "qty",
+                                         "logged": same[0]["qty"], "broker": b["qty"]})
+            continue
+        logged, broker = match["stcg"] + match["ltcg"], b["stcg"] + b["ltcg"]
+        if abs(logged - broker) > GAIN_TOLERANCE_PCT / 100 * abs(broker) + GAIN_TOLERANCE_ABS:
+            result["mismatched"].append({"id": match["id"], "field": "gain",
+                                         "logged": logged, "broker": broker})
+            continue
+        rec = {"kind": "confirm", "ref": match["id"], "stcg": b["stcg"], "ltcg": b["ltcg"],
+               "charges": b["charges"], "status": "confirmed", "recorded_at": now}
+        logdir.append(LOG_DIR, rec, ROOT, b["sell_date"])
+        entries.append(rec)
+        result["confirmed"].append(match["id"])
+    return result
+
+
 def _report(fy):
     run = fy_running(fy)
     b = run["baseline"]
@@ -191,6 +265,8 @@ def main():
     r.add_argument("--account", required=True)
     r.add_argument("--charges", type=float, default=0.0,
                    help="deductible sale expenses such as brokerage; exclude STT")
+    rc = sub.add_parser("reconcile")
+    rc.add_argument("path")
     for name in ("report", "export"):
         s = sub.add_parser(name)
         s.add_argument("--fy", default=None)
@@ -200,6 +276,12 @@ def main():
             rec = record(a.ticker, a.qty, a.price, a.date, a.account, a.charges)
             print(f"Recorded {rec['id']}: STCG {rec['stcg']:,.0f}, LTCG {rec['ltcg']:,.0f}, "
                   f"est. tax {rec['est_tax']:,.0f}")
+        elif a.cmd == "reconcile":
+            res = reconcile(a.path)
+            print(f"confirmed {len(res['confirmed'])}, imported {len(res['imported'])}, "
+                  f"mismatched {len(res['mismatched'])}")
+            for m in res["mismatched"]:
+                print(f"  {m['id']}: {m['field']} logged {m['logged']:g} vs broker {m['broker']:g}")
         else:
             fy = a.fy or fy_of(date.today())
             if a.cmd == "report":
