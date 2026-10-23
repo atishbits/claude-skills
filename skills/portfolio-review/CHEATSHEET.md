@@ -59,8 +59,8 @@ Quick reference for the three ratios that come up most when judging whether a st
 | 3 | High P/E + low ROE/ROCE | Expensive with weak fundamentals — caution |
 | 4 | Low P/E + low ROE/ROCE | Cheap for a reason — possible value trap |
 
-**Worked example (Aarti Industries, as of 23 Jul 2026):**
-P/E ~44, ROCE ~6.85%, ROE ~7.13%. That's a rich valuation sitting on top of weak returns, i.e. the market is paying up for an expected earnings recovery that hasn't shown up yet. Justified only if profits rebound.
+**Worked example (STOCKA, invented figures):**
+P/E ~45, ROCE ~7%, ROE ~7%. That's a rich valuation sitting on top of weak returns, i.e. the market is paying up for an expected earnings recovery that hasn't shown up yet. Justified only if profits rebound.
 
 ---
 

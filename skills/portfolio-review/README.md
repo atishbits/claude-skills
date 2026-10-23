@@ -33,7 +33,10 @@ data/                              yours — the only files you provide
     stocks/<TICKER>.md               one note per holding
     PORTFOLIO.md                     generated summary table
     entry-budgets.json, calendar.md
-    ratings-ledger/, scan-history/   append-only logs, one file per copy per day
+    sell-plans.json                  open sell plans, one per ticker
+    realised-gains-FY<fy>.json       the year's realised gains, for tax planning (below)
+    ratings-ledger/, scan-history/,  append-only logs, one file per copy per day
+      realised-gains/
 ```
 
 Everything not marked local only is also kept in cloud storage (below).
@@ -98,6 +101,68 @@ ask about a holding.
 
 A first full run of a few dozen holdings takes 10–15 minutes, mostly waiting out screener's rate limit.
 Everything is cached per day afterwards, so later runs that day rebuild in under a second.
+
+## Selling and realised gains
+
+`sell-review.md` is the guide for selling, trimming, booking profit or reporting a sale. Two
+scripts carry its arithmetic:
+
+- **`scripts/sell_signals.py`** splits a stock's 3- and 6-month rise into the part from profit
+  growth and the part from a higher P/E, places the P/E in the stock's own long-run band, runs the
+  peak tests, and grades the case: none, watch, trim a third, or trim half. `TICKER` prints the full
+  case, a staged plan (step 1 now, step 2 on a price trigger, a core kept), and for each demat
+  account the lots FIFO would sell with gain, estimated tax and net, plus the break-even drop: how
+  far the price could fall before waiting for the long-term rate stops paying. `--open-plan
+  "sentence"` (with `--full-exit` for a deliberate exit) saves the plan to
+  `data/skill-data/sell-plans.json`; `--close-plan` removes it; `--flags` prints one line per
+  flagged holding. Every portfolio run puts the flags in `PORTFOLIO.md`'s "Worth a look".
+- **`scripts/gains_log.py`** records the sales you report. `record TICKER QTY PRICE --date
+  YYYY-MM-DD --account NAME [--charges N]` matches the sale FIFO against that account's lots and
+  logs it as unconfirmed (charges are deductible sale expenses, not STT; a sale dated on or before
+  the export's holdings date is refused, since the export already has it). `report [--fy 2026-27]`
+  prints the year's totals and the unconfirmed entries. `reconcile PATH` matches the log against
+  the broker's tax report and `export [--fy]` writes the hand-off file.
+
+Tax rates (20% short-term, 12.5% long-term, Rs 1,25,000 long-term exemption per year) are constants
+in `scripts/tax_lots.py`; check them against the current Finance Act.
+
+### Reconcile input
+
+`reconcile` reads a CSV with one row per matched buy lot of a sale:
+
+```
+account,symbol,sell_date,qty,sell_price,buy_date,buy_price,gain,term,charges
+```
+
+`realised-gains-template.md` describes each column with an example. Which broker report to
+download, and where, is personal and goes in your `data/notes.md`.
+
+### The hand-off file
+
+`export` writes `data/skill-data/realised-gains-FY<fy>.json` (e.g. `realised-gains-FY2026-27.json`)
+so another tool can read the year's gains without reading this code:
+
+```json
+{
+ "fy": "2026-27",
+ "generated_at": "2026-10-23T04:00:00+00:00",
+ "baseline": {"as_of": "2026-10-01", "stcg": 1000.0, "ltcg": 2000.0,
+              "note": "broker FY total to as_of; includes mutual funds where the broker reports them"},
+ "sales": [{"date": "2026-10-20", "ticker": "STOCKA", "account": "brokera", "qty": 10.0,
+            "stcg": 480.0, "ltcg": 0.0, "status": "unconfirmed", "in_baseline": false}],
+ "totals": {"net_st": 1480.0, "net_lt": 2000.0, "exempt_used": 2000.0,
+            "exempt_left": 123000.0, "tax": 296.0}
+}
+```
+
+- `baseline` is the broker export's own realised total for the year up to `as_of`, or `null` when
+  the newest export has none for that year. It can include mutual funds.
+- `sales` lists every logged sale in the year by date, with gains in rupees after charges.
+  `status` is `unconfirmed` (logged, not yet matched to a broker report) or `confirmed`.
+  `in_baseline` is true for a sale on or before `as_of`, which the baseline already counts.
+- `totals` is baseline plus the sales after `as_of`: net short- and long-term gain, exemption used
+  and left, and the estimated tax. A net short-term loss is set off against long-term gains first.
+  Advance tax counts a gain from the installment after it arises, which is why sales carry dates.
 
 ## Data sources
 

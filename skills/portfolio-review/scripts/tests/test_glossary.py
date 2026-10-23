@@ -75,6 +75,17 @@ class TestTermsIn(unittest.TestCase):
         for term in ("UPI", "MDR", "MNC", "GLP-1", "Nifty 500"):
             self.assertIn(term, found)
 
+    def test_sell_review_terms(self):
+        found = glossary.terms_in(
+            "STOCKA: ~90% from P/E stretch; break-even drop 3.0%; FIFO from brokera; "
+            "trim a third under the sell plan; realised gains this FY: STCG 1,000, LTCG 2,000")
+        for term in ("P/E", "P/E stretch", "Break-even drop", "FIFO", "Trim", "Sell plan",
+                     "Realised gain", "STCG", "LTCG"):
+            self.assertIn(term, found)
+        self.assertIn("Trim", glossary.terms_in("Trimmed 10 shares"))
+        self.assertIn("Realised gain", glossary.terms_in("a realized loss offsets it"))
+        self.assertNotIn("FIFO", glossary.terms_in("fifo"))
+
     def test_plain_prose_finds_nothing(self):
         self.assertEqual(glossary.terms_in("The price fell a little this week."), [])
 
@@ -89,6 +100,15 @@ class TestResolveTerms(unittest.TestCase):
         labels, unknown = glossary.resolve_terms(["h2", "sell", "constant currency", "glp-1"])
         self.assertEqual(labels, ["H1/H2", "SELL / trim", "Constant currency", "GLP-1"])
         self.assertEqual(unknown, [])
+
+    def test_free_typed_sell_review_terms(self):
+        names = ["P/E stretch", "break-even drop", "FIFO", "STCG", "LTCG", "trim", "sell plan",
+                 "realised gain"]
+        labels, unknown = glossary.resolve_terms(names)
+        self.assertEqual(unknown, [])
+        for label in ("P/E stretch", "Break-even drop", "FIFO", "STCG", "LTCG", "Trim",
+                      "Sell plan", "Realised gain"):
+            self.assertIn(label, labels)
 
     def test_unknown_is_reported_not_dropped(self):
         labels, unknown = glossary.resolve_terms(["ROE", "zzgibberish"])

@@ -21,6 +21,8 @@ allowed-tools:
   - Bash(python3 *drive_sync.py*)
   - Bash(python3 *digest.py*)
   - Bash(python3 *freshness.py*)
+  - Bash(python3 *sell_signals.py*)
+  - Bash(python3 *gains_log.py*)
   - Bash(pip install *requests*)
   - Bash(curl *)
   - Bash(pdftotext *)
@@ -41,8 +43,9 @@ value traps. Ratings are advisory only — never place or suggest placing an ord
 **Where things live.** The master copy of everything the skill remembers is a `portfolio-review/`
 folder in the user's cloud file storage, reached with whichever file-storage connector is
 connected. It holds the broker export, `slug-overrides.json`, and `skill-data/` with `digest.json`,
-`PORTFOLIO.md`, `entry-budgets.json`, `calendar.md`, `stocks/<TICKER>.md` and two log folders,
-`ratings-ledger/` and `scan-history/`. Its marker file, found by exact name, is
+`PORTFOLIO.md`, `entry-budgets.json`, `sell-plans.json`, `realised-gains-FY<fy>.json`,
+`calendar.md`, `stocks/<TICKER>.md` and three log folders, `ratings-ledger/`, `scan-history/` and
+`realised-gains/`. Its marker file, found by exact name, is
 `portfolio-review-sync.json`.
 
 Scripts work on a local copy under a **working root**: `$PORTFOLIO_ROOT` if set, else the working
@@ -82,6 +85,9 @@ would cost far more tokens than fetching again.
 - **Invoked from a plain question rather than `/portfolio-review`:** take the tickers from the
   user's message. If their scope is unclear and the fetch would be broad, confirm the scope before
   researching.
+- **Selling, trimming or booking profit on a holding, whether a stock has peaked, or a sale the
+  user reports** → read `sell-review.md` (beside this file) and follow it. It reuses Steps 0, 1,
+  3b–3d, 3g and 4.
 - **Tax-loss harvesting, gain booking, or "what should I sell for tax reasons"** → Step 1, then
   `python3 scripts/tax_lots.py --harvest` (3e). No per-ticker research needed
   unless the user then asks about a specific name it surfaces.
@@ -180,6 +186,10 @@ Report what changed at the portfolio level and stop. Do not research anything:
 - total P&L, the row distribution, and the top of the sector-exposure list
 - everything under "Worth a look" in `PORTFOLIO.md`, which is mechanical flags only — call out any
   "financials stale" flag first, since every ratio on that row is suspect
+- the sell lines in "Worth a look": `sell: <flag>` is a new or stronger sell case, `sell plan open`
+  is a saved plan (put any marked `STEP 2 TRIGGER HIT` at the top), and `still stretched, no
+  change` is one line with no action. Offer a sell review for a flagged name rather than
+  researching it (`sell-review.md` explains each line)
 - any holding whose signal row moved since the previous `data/skill-data/snapshot-*.json` — before calling a
   move a "threshold crossing," check `profit_yoy_pct` (or the one-off–adjusted figure in
   `one_offs`) for that ticker. A P/E rising through a row boundary because profit fell is an
@@ -250,7 +260,11 @@ For each ticker being researched (named in the request, or on the shortlist from
 3. **The entry budget**, if one is saved: `python3 scripts/entry_plan.py TICKER`
    prints the user's budget for this stock, how much of it is in, and which tranches are left
    (3e). It exits saying none is saved if there isn't one.
-4. **What another session did.** Notes, budgets and ledger entries written from another surface
+4. **The sell case and any open sell plan**, on every review of a held ticker, before anything
+   else in this list is weighed: `python3 scripts/sell_signals.py TICKER`. It prints the sell
+   tier, the rise split into profit and P/E, and an open plan with the steps already done, so a
+   plan is never forgotten (`sell-review.md` reads the rest of its output).
+5. **What another session did.** Notes, budgets and ledger entries written from another surface
    arrive with the sync, as ordinary files. Treat a trade or decision recorded there the way you
    would one the user told you: a budget goes through `entry_plan.py --budget`, money already
    placed through `--spent-so-far`. It never changes `qty` or `avg_cost`: those come only from the
@@ -537,6 +551,11 @@ Everything else below is weighed together, not ranked against each other by a fi
   percentile line), is `earnings_above_trend` true, and is price already above the consensus
   average? Two of three together is a real peak case; one alone (a high percentile with earnings
   still on trend) is a re-rating, not a peak, and argues for HOLD, not SELL.
+- **When the rating is SELL.** HOLD stays the default, and SELL is reached in two named cases:
+  an exit window (a rise resting on P/E stretch, especially in a weak business) and a crisis exit
+  (current analyst calls and the frameworks agree the business is breaking). Read "When the rating
+  is SELL" in `sell-review.md` and apply it on every review, not only in a sell review. A SELL
+  carries a staged plan from `sell_signals.py`, never a size chosen by feel.
 - **Reinvestment**, as a qualitative read, not a computed ratio — manufacturing, mining and pharma
   only. Is the company visibly plowing cash into capex while `roce_fading` is true (`leverage.trend`
   rising alongside falling FCF is the tell), or is growth coming from M&A/stake buys a fixed-assets
@@ -721,12 +740,17 @@ P/E N<x> (run-rate N<x> if it diverges), ROE N%, ROCE N%
 Consensus <rating>, avg TP ₹N = N% <upside|downside> (<date>, <M> of <N> post-result — or "unavailable" per 3c)
 3-Year case: base N% vs bear N% vs Nifty hurdle N%/yr — <clears|doesn't clear>    [BUY/SELL only, from three_year_case.py]
 Action: <what was done or should be done, per 3e — for a BUY, the entry_plan.py tranches>
+Sell plan: <step N of 2 — sell Q of TOTAL now; step 2 below ₹N or the 50 DMA ₹N; core Q>   [SELL, or an open plan]
+Lots (FIFO, <account>): <Q sh, gain ₹N ST/LT, tax ₹N, net ₹N>                          [SELL, one line per account]
+Break-even drop N% vs typical pullback N% — <the script's advice>                      [SELL with short-term lots]
 Next check-in: <date/time, if a calendar reminder exists or was just set>
 ```
 
 Never fabricate a timestamp: if the user didn't give an exact purchase time, write "not logged"
 rather than guessing, and offer to correct the line if they supply it. Omit the 3-Year case line
-entirely for a HOLD, the same conditional rule note-template.md already uses.
+entirely for a HOLD, the same conditional rule note-template.md already uses. The three sell lines
+are copied from `sell_signals.py TICKER` and appear only for a SELL, or for a HOLD whose sell plan
+is still open; `sell-review.md` has a worked example.
 
 After the scorecard(s), give the user the fuller summary: what changed versus the previous note
 (corrections first), and any rotation worth considering: where to trim and where that money could
