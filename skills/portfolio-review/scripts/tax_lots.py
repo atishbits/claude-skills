@@ -62,6 +62,121 @@ def is_long_term(buy_date, as_of):
     return as_of > add_months(buy_date, 12)
 
 
+# Lots bought before this date are grandfathered (cost stepped up to the
+# 31 Jan 2018 price); this skill does not estimate tax on them.
+# Verify against the current Finance Act.
+GRANDFATHER_CUTOFF = date(2018, 2, 1)
+
+
+def _parse_date(text):
+    try:
+        return date.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def fifo_match(lots, qty, broker, already_sold=0.0, fallback_cost=None):
+    """Lots a sale of `qty` shares consumes, FIFO within one demat account
+    (broker), after skipping `already_sold` units. Each piece is
+    {date, qty, cost, cost_is_estimate, taxable}; taxable is False for a
+    pre-2018 or unparseable date (the lot still consumes quantity)."""
+    if broker is None:
+        brokers = {lot.get("broker") for lot in lots}
+        if len(brokers) > 1:
+            raise ValueError("lots span several accounts; name the account (broker) to match against")
+        pool = list(lots)
+    else:
+        pool = [lot for lot in lots if lot.get("broker") == broker]
+    available = sum(lot.get("qty") or 0 for lot in pool)
+    label = broker if broker is not None else "the account"
+    if already_sold + qty > available + 1e-9:
+        raise ValueError(f"{label} holds {available - already_sold:g} share(s) unsold, "
+                         f"cannot match {qty:g}")
+    pool.sort(key=lambda lot: _parse_date(lot.get("date")) or date.min)
+    skip, need, out = already_sold, qty, []
+    for lot in pool:
+        lq = lot.get("qty") or 0
+        if skip >= lq:
+            skip -= lq
+            continue
+        lq -= skip
+        skip = 0
+        take = min(lq, need)
+        if take <= 0:
+            break
+        d = _parse_date(lot.get("date"))
+        cost, estimate = lot.get("cost"), False
+        if not isinstance(cost, (int, float)):
+            cost, estimate = (fallback_cost, True) if fallback_cost is not None else (None, False)
+        out.append({"date": lot.get("date"), "qty": take, "cost": cost,
+                    "cost_is_estimate": estimate,
+                    "taxable": d is not None and d >= GRANDFATHER_CUTOFF})
+        need -= take
+        if need <= 1e-9:
+            break
+    return out
+
+
+def sale_tax(matched, price, sell_date):
+    """Gain split and tax for selling `matched` at `price` on `sell_date`.
+    est_tax is before the FY exemption. Non-taxable lots (and lots with no
+    cost) add to untaxed_qty only."""
+    stcg = ltcg = untaxed = 0.0
+    for m in matched:
+        d = _parse_date(m.get("date"))
+        if not m.get("taxable") or m.get("cost") is None or d is None:
+            untaxed += m["qty"]
+            continue
+        gain = (price - m["cost"]) * m["qty"]
+        if is_long_term(d, sell_date):
+            ltcg += gain
+        else:
+            stcg += gain
+    est = LTCG_RATE_PCT / 100 * max(0.0, ltcg) + STCG_RATE_PCT / 100 * max(0.0, stcg)
+    return {"stcg": stcg, "ltcg": ltcg, "untaxed_qty": untaxed, "est_tax": est}
+
+
+def fy_tax(stcg, ltcg):
+    """Tax for one FY's realised gains: a net short-term loss offsets LTCG,
+    then the exemption applies to the net LTCG."""
+    net_st = stcg
+    net_lt = ltcg + min(0.0, stcg) if stcg < 0 else ltcg
+    taxable_lt = max(0.0, net_lt)
+    exempt_used = min(taxable_lt, LTCG_EXEMPTION_PER_FY)
+    tax = LTCG_RATE_PCT / 100 * (taxable_lt - exempt_used) + STCG_RATE_PCT / 100 * max(0.0, net_st)
+    return {"net_st": net_st, "net_lt": net_lt, "exempt_used": exempt_used,
+            "exempt_left": LTCG_EXEMPTION_PER_FY - exempt_used, "tax": tax}
+
+
+def breakeven_drop_pct(matched, price, today, lt_headroom):
+    """% fall from `price` at which selling later, with every taxable matched
+    lot long-term, leaves the same post-tax rupees as selling now. None when
+    no taxable matched lot is short-term (nothing to wait for)."""
+    taxable = [m for m in matched
+               if m.get("taxable") and m.get("cost") is not None and _parse_date(m.get("date"))]
+    if not any(not is_long_term(_parse_date(m["date"]), today) for m in taxable):
+        return None
+    now = sum(m["qty"] for m in taxable) * price - sale_tax(taxable, price, today)["est_tax"]
+
+    def later(p):
+        gain = sum((p - m["cost"]) * m["qty"] for m in taxable)
+        tax = LTCG_RATE_PCT / 100 * max(0.0, gain - lt_headroom)
+        return sum(m["qty"] for m in taxable) * p - tax
+
+    lo, hi = 0.0, price
+    if later(hi) < now:
+        return 0.0
+    if later(lo) >= now:
+        return 100.0
+    while hi - lo > 1e-4:
+        mid = (lo + hi) / 2
+        if later(mid) >= now:
+            hi = mid
+        else:
+            lo = mid
+    return (price - hi) / price * 100
+
+
 def lot_status(lot, price, today, near_lt_days=60, fallback_cost=None):
     """Pure per-lot computation: LT/ST status, days held, days to LT
     conversion, unrealized gain. Returns None if the lot's date can't be

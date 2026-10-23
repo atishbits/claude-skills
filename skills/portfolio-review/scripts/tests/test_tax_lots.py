@@ -136,5 +136,79 @@ class TestLotStatus(unittest.TestCase):
         self.assertAlmostEqual(status["gain"], -500.0)
 
 
+LOTS = [{"date": "2026-01-10", "qty": 10, "cost": 100.0, "broker": "brokera"},
+        {"date": "2025-06-01", "qty": 5, "cost": 80.0, "broker": "brokera"},
+        {"date": "2026-03-01", "qty": 8, "cost": 120.0, "broker": "brokerb"}]
+
+
+class TestFifoAndSaleTax(unittest.TestCase):
+    def test_fifo_oldest_first_within_account(self):
+        m = tax_lots.fifo_match(LOTS, 8, "brokera")
+        self.assertEqual([(x["date"], x["qty"]) for x in m], [("2025-06-01", 5), ("2026-01-10", 3)])
+
+    def test_fifo_skips_already_sold(self):
+        m = tax_lots.fifo_match(LOTS, 2, "brokera", already_sold=5)
+        self.assertEqual([(x["date"], x["qty"]) for x in m], [("2026-01-10", 2)])
+
+    def test_fifo_never_spills_into_other_account(self):
+        with self.assertRaisesRegex(ValueError, "brokera.*15"):
+            tax_lots.fifo_match(LOTS, 16, "brokera")
+
+    def test_fifo_requires_account_when_split(self):
+        with self.assertRaises(ValueError):
+            tax_lots.fifo_match(LOTS, 1, None)
+
+    def test_fifo_no_account_ok_when_single_broker(self):
+        m = tax_lots.fifo_match(LOTS[:2], 5, None)
+        self.assertEqual([(x["date"], x["qty"]) for x in m], [("2025-06-01", 5)])
+
+    def test_demerger_cost_estimated_and_pre2018_untaxed(self):
+        lots = [{"date": "2017-05-01", "qty": 2, "cost": 50.0, "broker": "a"},
+                {"date": "2024-01-01", "qty": 3, "cost": "demerger", "broker": "a"}]
+        m = tax_lots.fifo_match(lots, 5, "a", fallback_cost=60.0)
+        self.assertFalse(m[0]["taxable"])
+        self.assertTrue(m[1]["cost_is_estimate"])
+        self.assertEqual(m[1]["cost"], 60.0)
+
+    def test_unparseable_date_untaxed_but_consumes_quantity(self):
+        lots = [{"date": "n/a", "qty": 2, "cost": 50.0, "broker": "a"},
+                {"date": "2024-01-01", "qty": 3, "cost": 70.0, "broker": "a"}]
+        m = tax_lots.fifo_match(lots, 3, "a")
+        self.assertFalse(m[0]["taxable"])
+        self.assertEqual([x["qty"] for x in m], [2, 1])
+        t = tax_lots.sale_tax(m, 100.0, date(2026, 10, 23))
+        self.assertEqual(t["untaxed_qty"], 2)
+
+    def test_sale_tax_split(self):
+        m = tax_lots.fifo_match(LOTS, 8, "brokera")       # 5 LT @80, 3 ST @100
+        t = tax_lots.sale_tax(m, 150.0, date(2026, 10, 23))
+        self.assertEqual((t["ltcg"], t["stcg"]), (350.0, 150.0))
+        self.assertAlmostEqual(t["est_tax"], 0.125 * 350 + 0.20 * 150)
+
+    def test_fy_tax_offsets_and_exemption(self):
+        r = tax_lots.fy_tax(stcg=-10_000, ltcg=200_000)
+        self.assertEqual((r["net_lt"], r["exempt_used"]), (190_000, 125_000))
+        self.assertAlmostEqual(r["tax"], 0.125 * 65_000)
+
+
+class TestBreakevenDrop(unittest.TestCase):
+    LOT = [{"date": "2026-06-01", "qty": 1, "cost": 100.0, "cost_is_estimate": False, "taxable": True}]
+
+    def test_breakeven_drop_without_headroom(self):
+        # now: 150 - 0.20*50 = 140; later: p - 0.125*(p-100) = 140 -> p = 145.714...
+        self.assertAlmostEqual(tax_lots.breakeven_drop_pct(self.LOT, 150.0, date(2026, 10, 23), 0), 2.86, places=2)
+
+    def test_breakeven_drop_with_full_headroom(self):
+        self.assertAlmostEqual(tax_lots.breakeven_drop_pct(self.LOT, 150.0, date(2026, 10, 23), 1e9), 6.67, places=2)
+
+    def test_breakeven_none_when_all_long_term(self):
+        m = [{"date": "2024-06-01", "qty": 1, "cost": 100.0, "cost_is_estimate": False, "taxable": True}]
+        self.assertIsNone(tax_lots.breakeven_drop_pct(m, 150.0, date(2026, 10, 23), 0))
+
+    def test_breakeven_none_when_untaxable(self):
+        m = [dict(self.LOT[0], taxable=False)]
+        self.assertIsNone(tax_lots.breakeven_drop_pct(m, 150.0, date(2026, 10, 23), 0))
+
+
 if __name__ == "__main__":
     unittest.main()
