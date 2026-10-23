@@ -327,3 +327,50 @@ class TestLogDirParam(Base):
         self.assertEqual(len(gains_log.read_entries(other)), 1)
         self.assertEqual(sell_signals.sold_since("STOCKA", "2026-10-20", log_dir=other), 2)
         self.assertEqual(sell_signals.sold_since("STOCKA", "2026-10-20"), 0)
+
+
+class TestReconcileUnmatched(Base):
+    csv = TestReconcile.csv
+
+    def test_account_labels_normalised(self):
+        snap = snapshot()
+        for lot in snap["stocks"][0]["lots"]:
+            if lot["broker"] == "a":
+                lot["broker"] = "brokera"
+        rec = gains_log.record("STOCKA", 10, 150, "2026-10-20", "Brokera ", snapshot=snap)
+        self.assertEqual(rec["account"], "brokera")
+        legacy = dict(rec, id="legacy", account="Brokera ", sell_date="2026-10-21")
+        gains_log.logdir.append(gains_log.LOG_DIR, legacy, self.tmp.name, "2026-10-21")
+        path = self.csv(["brokera,STOCKA,2026-10-20,10,150,2026-01-15,100,500,ST,0\n",
+                         " BrokerA ,STOCKA,2026-10-21,10,150,2026-01-15,100,500,ST,0\n"])
+        self.assertEqual(gains_log.read_broker_csv(path)[1]["account"], "brokera")
+        res = gains_log.reconcile(path)
+        self.assertEqual(sorted(res["confirmed"]), sorted([rec["id"], "legacy"]))
+        self.assertEqual(res["imported"], [])
+
+    def test_logged_sale_missing_from_report_listed_unmatched(self):
+        wrong = gains_log.record("STOCKA", 10, 150, "2026-10-22", "a", snapshot=self.snap)  # really 10-20
+        outside = gains_log.record("STOCKA", 1, 150, "2026-10-28", "a", snapshot=self.snap)
+        other = gains_log.record("STOCKA", 1, 150, "2026-10-23", "b", snapshot=self.snap)
+        path = self.csv(["a,STOCKA,2026-10-20,10,150,2026-01-15,100,500,ST,0\n",
+                         "a,STOCKA,2026-10-25,2,150,2026-03-15,120,60,ST,0\n"])
+        res = gains_log.reconcile(path)
+        self.assertEqual(len(res["imported"]), 2)
+        self.assertEqual([u["id"] for u in res["unmatched"]], [wrong["id"]])
+        ids = {s["id"]: s for s in gains_log.fold(gains_log.read_entries())}
+        self.assertEqual(ids[wrong["id"]]["status"], "unconfirmed")      # not confirmed, not deleted
+        self.assertIn(outside["id"], ids)
+        self.assertIn(other["id"], ids)
+
+    def test_cli_prints_unmatched(self):
+        import io
+        from contextlib import redirect_stdout
+        wrong = gains_log.record("STOCKA", 10, 150, "2026-10-22", "a", snapshot=self.snap)
+        path = self.csv(["a,STOCKA,2026-10-20,10,150,2026-01-15,100,500,ST,0\n",
+                         "a,STOCKA,2026-10-25,2,150,2026-03-15,120,60,ST,0\n"])
+        buf = io.StringIO()
+        with mock.patch.object(sys, "argv", ["gains_log.py", "reconcile", path]), redirect_stdout(buf):
+            gains_log.main()
+        out = buf.getvalue()
+        self.assertIn("unmatched 1", out)
+        self.assertIn(f"{wrong['id']}: logged a STOCKA 10 on 2026-10-22, not in the broker report", out)

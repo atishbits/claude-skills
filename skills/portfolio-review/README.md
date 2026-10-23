@@ -124,7 +124,8 @@ scripts carry its arithmetic:
   different days are each judged by their own date. Account labels are compared stripped and
   lower-cased. `report [--fy 2026-27]`
   prints the year's totals and the unconfirmed entries. `reconcile PATH` matches the log against
-  the broker's tax report and `export [--fy]` writes the hand-off file.
+  the broker's tax report (and lists as `unmatched` logged sales the report should have but does
+  not) and `export [--fy]` writes the hand-off file.
 
 Tax rates (20% short-term, 12.5% long-term, Rs 1,25,000 long-term exemption per year) are constants
 in `scripts/tax_lots.py`; check them against the current Finance Act.

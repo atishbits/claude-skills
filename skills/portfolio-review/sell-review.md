@@ -113,8 +113,8 @@ python3 scripts/gains_log.py report
 
 `--charges` is the deductible sale expenses (brokerage, exchange charges, GST on them; not STT).
 The script matches the sale FIFO against that account's lots and stores the gain and estimated tax
-as unconfirmed. It refuses a sale dated on or before the export's holdings date, because the export
-already contains it. Quantity and average cost still come only from the broker export, so until a
+as unconfirmed. It refuses a sale dated on or before that account's export date, because the
+export already contains it. Quantity and average cost still come only from the broker export, so until a
 newer one arrives write "sold on <date>, not yet in the export" beside the position. Then re-run
 `sell_signals.py TICKER` so an open plan shows the step as done.
 
@@ -123,13 +123,18 @@ newer one arrives write "sold on <date>, not yet in the export" beside the posit
 1. Convert the report to the CSV in `realised-gains-template.md` (beside this file). Which report
    to download, and where, is in the user's `data/notes.md`.
 2. `python3 scripts/gains_log.py reconcile PATH` confirms the logged sales with the broker's
-   figures, imports sales never logged, and lists mismatches. Show the user every mismatch; do not
-   resolve one by guessing.
+   figures, imports sales never logged, and lists mismatches. It also lists as `unmatched` every
+   logged, unconfirmed sale at an account the report covers, dated inside the report's date range,
+   that no report row matches (usually a mistyped date or quantity). Those stay unconfirmed and
+   still count in the totals. Show the user every mismatch and unmatched sale; do not resolve one
+   by guessing.
 3. `python3 scripts/gains_log.py export` writes `data/skill-data/realised-gains-FY<fy>.json`, the
    hand-off file for tax planning (format in the README).
 
-FY totals are the broker's own figure up to the export date plus the logged sales after it, so
-nothing is counted twice; that baseline can include mutual funds where the broker reports them.
+FY totals are each account's broker figure up to that account's export date plus the logged
+sales after it, so nothing is counted twice; an account exported as a plain CSV has no broker
+figure, so all its sales are added. A baseline can include mutual funds where the broker reports
+them.
 
 ## The scorecard and the close
 

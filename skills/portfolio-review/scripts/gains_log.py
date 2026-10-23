@@ -242,7 +242,7 @@ def read_broker_csv(path):
     sales = {}
     with open(path, encoding="utf-8", newline="") as fh:
         for row in csv.DictReader(fh):
-            key = (row["account"].strip(), row["symbol"].strip().upper(), row["sell_date"].strip())
+            key = (norm_account(row["account"]), row["symbol"].strip().upper(), row["sell_date"].strip())
             date.fromisoformat(key[2])
             sale = sales.setdefault(key, {"account": key[0], "ticker": key[1], "sell_date": key[2],
                                           "qty": 0.0, "stcg": 0.0, "ltcg": 0.0, "charges": 0.0,
@@ -264,15 +264,22 @@ def read_broker_csv(path):
 
 def reconcile(path, entries=None, log_dir=None):
     """Confirm logged sales against a broker report, import the ones not logged.
-    Broker figures win. Idempotent: confirmed or already imported sales are skipped."""
+    Broker figures win. Idempotent: confirmed or already imported sales are skipped.
+    `unmatched` lists every unconfirmed logged sale at an account the report
+    covers, dated within the report's first..last sale date, that no report
+    row claimed (a mistyped date or quantity, or a sale the broker does not
+    have). Those are neither confirmed nor deleted."""
     log_dir = log_dir or LOG_DIR
     entries = list(entries if entries is not None else read_entries(log_dir))
-    result = {"confirmed": [], "imported": [], "mismatched": []}
+    result = {"confirmed": [], "imported": [], "mismatched": [], "unmatched": []}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    for b in read_broker_csv(path):
+    broker_sales = read_broker_csv(path)
+    claimed = set()
+    for b in broker_sales:
         key = (b["account"], b["ticker"], b["sell_date"])
         same = [s for s in fold(entries)
-                if (s["account"], s["ticker"], s["sell_date"]) == key]
+                if (norm_account(s["account"]), s["ticker"], s["sell_date"]) == key]
+        claimed.update(s["id"] for s in same)
         if any(s.get("status") == "confirmed" or s.get("source") == "broker" for s in same):
             continue
         if not same:
@@ -302,6 +309,16 @@ def reconcile(path, entries=None, log_dir=None):
         logdir.append(log_dir, rec, ROOT, b["sell_date"])
         entries.append(rec)
         result["confirmed"].append(match["id"])
+    if broker_sales:
+        first = min(b["sell_date"] for b in broker_sales)
+        last = max(b["sell_date"] for b in broker_sales)
+        accounts = {b["account"] for b in broker_sales}
+        for s in fold(entries):
+            if (s.get("status") == "unconfirmed" and s["id"] not in claimed
+                    and norm_account(s["account"]) in accounts and first <= s["sell_date"] <= last):
+                result["unmatched"].append({"id": s["id"], "account": s["account"],
+                                            "ticker": s["ticker"], "qty": s["qty"],
+                                            "sell_date": s["sell_date"]})
     return result
 
 
@@ -351,9 +368,13 @@ def main():
         elif a.cmd == "reconcile":
             res = reconcile(a.path)
             print(f"confirmed {len(res['confirmed'])}, imported {len(res['imported'])}, "
-                  f"mismatched {len(res['mismatched'])}")
+                  f"mismatched {len(res['mismatched'])}, unmatched {len(res['unmatched'])}")
             for m in res["mismatched"]:
                 print(f"  {m['id']}: {m['field']} logged {m['logged']:g} vs broker {m['broker']:g}")
+            for u in res["unmatched"]:
+                print(f"  {u['id']}: logged {u['account']} {u['ticker']} {u['qty']:g} on "
+                      f"{u['sell_date']}, not in the broker report (left unconfirmed; check the "
+                      f"date, quantity and account)")
         else:
             fy = a.fy or fy_of(date.today())
             if a.cmd == "report":
