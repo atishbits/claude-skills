@@ -109,7 +109,11 @@ scripts carry its arithmetic:
 
 - **`scripts/sell_signals.py`** splits a stock's 3- and 6-month rise into the part from profit
   growth and the part from a higher P/E, places the P/E in the stock's own long-run band, runs the
-  peak tests, and grades the case: none, watch, trim a third, or trim half. `TICKER` prints the full
+  peak tests, and grades the case: none, watch, trim a third, or trim half. The P/E-high and
+  profit-above-trend tests read as unknown, not true, when the trailing figures are distorted (an
+  other-income spike in any of the last four quarters, or a trailing P/E 3x+ the run-rate), and
+  P/E-high alone when today's P/E is over 3x the own band's high (a band from another business,
+  such as a pre-demerger parent). `TICKER` prints the full
   case, a staged plan (step 1 now, step 2 on a price trigger, a core kept), and for each demat
   account the lots FIFO would sell (after any sales logged since the export) with gain, estimated
   tax after the year's unused long-term exemption, and net, plus the break-even drop: how far the

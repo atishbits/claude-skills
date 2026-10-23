@@ -12,6 +12,11 @@ STRETCH_PE_SHARE = 0.6        # ... and at least this share of it must come from
 PE_PCT_HIGH = 80              # own-band percentile at or above this is "P/E high"
 MIN_BAND_YEARS = 5            # a shorter (or low-confidence) own band leaves "P/E high" unknown
 RESULT_LAG_DAYS = 45          # a quarter's profit is public about this long after period end
+# Mirrors fetch_fundamentals.ONE_OFF_SHARE / ONE_OFF_SPIKE (not imported, see docstring).
+ONE_OFF_SHARE = 0.15          # excess other income above this share of PBT distorts a quarter
+ONE_OFF_SPIKE = 2.0           # ...when other income is at least this multiple of its norm
+RUNRATE_DISTORT = 3.0         # trailing P/E this many times the run-rate P/E: trailing is distorted
+BAND_IMPLAUSIBLE = 3.0        # today's P/E above this multiple of the band high: band is another business
 MACHINE_ROCE = 25.0
 MACHINE_GROWTH_PCT = 15.0
 TIERS = ("none", "watch", "trim_third", "trim_half")
@@ -62,16 +67,83 @@ def _band_usable(stock):
             and (band.get("years") or 0) >= MIN_BAND_YEARS)
 
 
+def one_off_quarters(quarters):
+    """period_end of each of the trailing four quarters whose other income spikes
+    far above the company's own norm (same rule as fetch_fundamentals.one_off_check:
+    at least ONE_OFF_SPIKE x the median of the other non-negative quarters, and the
+    excess above ONE_OFF_SHARE of that quarter's PBT). Lender tables are skipped."""
+    if not isinstance(quarters, dict) or quarters.get("lender_format"):
+        return []
+    oi, pbt = quarters.get("other_income") or [], quarters.get("pbt") or []
+    ends = quarters.get("period_end") or []
+    n = min(len(oi), len(pbt))
+    if n < 3:
+        return []
+    oi, pbt = oi[-n:], pbt[-n:]
+    ends = list(ends[-n:]) if len(ends) >= n else [None] * n
+    hits = []
+    for i in range(max(0, n - 4), n):
+        if oi[i] is None or pbt[i] is None or pbt[i] <= 0:
+            continue
+        others = [v for j, v in enumerate(oi) if j != i and v is not None and v >= 0]
+        if len(others) < 2:
+            continue
+        others.sort()
+        m = len(others)
+        typical = others[m // 2] if m % 2 else (others[m // 2 - 1] + others[m // 2]) / 2
+        excess = max(0.0, oi[i] - typical)
+        if oi[i] >= ONE_OFF_SPIKE * typical and excess > ONE_OFF_SHARE * pbt[i]:
+            hits.append(ends[i])
+    return hits
+
+
+def distortions(stock):
+    """Reasons the trailing profit (and so trailing ROE and P/E) is not a usable
+    read of the business. Any reason makes both earnings-based peak tests unknown."""
+    out = []
+    hits = one_off_quarters(stock.get("quarters"))
+    oo = stock.get("one_offs")
+    latest = oo.get("latest") if isinstance(oo, dict) else None
+    if isinstance(latest, dict) and latest.get("flag") and not hits:
+        hits = [stock.get("latest_quarter_end")]
+    if hits:
+        when = ", ".join(h for h in hits if h)
+        out.append("one-off other income in a trailing quarter" + (f" ({when})" if when else ""))
+    pe, rr = stock.get("pe"), stock.get("pe_runrate")
+    if stock.get("pe_runrate_diverges") and pe and rr and rr > 0 and pe >= RUNRATE_DISTORT * rr:
+        out.append(f"trailing P/E {pe:g} is {pe / rr:.1f}x the run-rate P/E {rr:g}")
+    return out
+
+
+def band_implausible(stock):
+    """True when today's P/E is far outside anything the own band has seen (more
+    than BAND_IMPLAUSIBLE x its high): the band likely describes another business,
+    e.g. a pre-demerger parent, so its percentile says nothing."""
+    band = stock.get("own_pe_band")
+    pe = stock.get("pe")
+    high = band.get("high") if isinstance(band, dict) else None
+    return bool(pe and high and high > 0 and pe > BAND_IMPLAUSIBLE * high)
+
+
 def peak_tests(stock, consensus_avg):
+    """The three peak tests. A test is None (unknown) when its input is missing
+    or distorted; `distorted` lists why, and only True tests count."""
+    distorted = distortions(stock)
     pct = _percentile(stock)
     pe_high = None if pct is None or not _band_usable(stock) else pct >= PE_PCT_HIGH
     gr = stock.get("growth_ranges")
     eat = bool(gr.get("earnings_above_trend")) if isinstance(gr, dict) else False
+    if distorted:
+        pe_high = eat = None
+    if band_implausible(stock):
+        pe_high = None
+        distorted.append(f"own P/E band (high {stock['own_pe_band']['high']:g}) implausible "
+                         f"against today's P/E {stock['pe']:g}, low confidence")
     price = stock.get("price")
     above = None if consensus_avg is None or price is None else price > consensus_avg
     count = sum(1 for v in (pe_high, eat, above) if v is True)
     return {"pe_high": pe_high, "earnings_above_trend": eat,
-            "above_consensus": above, "count": count}
+            "above_consensus": above, "count": count, "distorted": distorted}
 
 
 def business_kind(stock):
@@ -151,6 +223,8 @@ def flag_text(ticker, ev):
         parts.append("profit above trend")
     if tests.get("above_consensus"):
         parts.append("price above consensus target")
+    if tests.get("distorted"):
+        parts.append("peak tests unknown (distorted): " + "; ".join(tests["distorted"]))
     tier = ev["tier"]
     verdict = "watch" if tier == "watch" else f"{tier} candidate"
     parts.append(f"{ev.get('kind', 'ordinary')} business - {verdict}")

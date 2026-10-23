@@ -51,7 +51,7 @@ class PeakTests(unittest.TestCase):
               "growth_ranges": {"earnings_above_trend": True}}
         t = sell_signals.peak_tests(st, 100.0)
         self.assertEqual(t, {"pe_high": True, "earnings_above_trend": True,
-                             "above_consensus": True, "count": 3})
+                             "above_consensus": True, "count": 3, "distorted": []})
 
     def test_unknowns_never_raise(self):
         t = sell_signals.peak_tests({"growth_ranges": None, "own_pe_band": None}, None)
@@ -76,6 +76,90 @@ class PeakTests(unittest.TestCase):
         self.assertEqual(sell_signals.MIN_BAND_YEARS, 5)
         self.assertTrue(sell_signals.peak_tests(
             {"own_pe_band": {"percentile": 90, "years": 5, "low_confidence": False}}, None)["pe_high"])
+
+
+Q8_ENDS = ["2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30",
+           "2025-12-31", "2026-03-31", "2026-06-30", "2026-09-30"]
+STEADY_Q = {"period_end": Q8_ENDS, "net_profit": [10] * 8,
+            "other_income": [2, 3, 2, 3, 2, 3, 2, 3], "pbt": [14] * 8}
+# Third quarter of the trailing four books a one-off gain: other income 110 against
+# a norm of ~2, on PBT of 100. Later quarters show profit falling back.
+ONE_OFF_Q = {"period_end": Q8_ENDS, "net_profit": [10, 10, 10, 10, 10, 80, 2, 2],
+             "other_income": [2, 2, 2, 2, 2, 110, 2, 2], "pbt": [14, 14, 14, 14, 14, 100, 3, 3]}
+
+
+def _peaky(**kw):
+    """Weak business whose snapshot reads as a peak on both earnings-based tests."""
+    base = {"price": 100.0, "pe": 40.0, "pe_runrate": 40.0, "pe_runrate_diverges": False,
+            "roce": 12.0, "signal_row": 3, "quarters": STEADY_Q,
+            "technicals": {"return_3m_pct": -20.0, "return_6m_pct": -30.0},
+            "growth_ranges": {"earnings_above_trend": True, "roe_vs_trend": 2.0},
+            "ratio_history": None,
+            "own_pe_band": {"years": 10, "low": 10.0, "high": 30.0, "percentile": 100}}
+    base.update(kw)
+    return base
+
+
+class DistortionTests(unittest.TestCase):
+    TODAY = date(2026, 12, 1)
+
+    def test_one_off_quarter_found_in_trailing_four(self):
+        self.assertEqual(sell_signals.one_off_quarters(ONE_OFF_Q), ["2026-03-31"])
+        self.assertEqual(sell_signals.one_off_quarters(STEADY_Q), [])
+
+    def test_one_off_outside_trailing_four_ignored(self):
+        old = dict(ONE_OFF_Q, other_income=[2, 110, 2, 2, 2, 2, 2, 2],
+                   pbt=[14, 100, 14, 14, 14, 14, 14, 14])
+        self.assertEqual(sell_signals.one_off_quarters(old), [])
+
+    def test_lender_and_missing_series_never_flag(self):
+        self.assertEqual(sell_signals.one_off_quarters(dict(ONE_OFF_Q, lender_format=True)), [])
+        self.assertEqual(sell_signals.one_off_quarters(Q), [])
+        self.assertEqual(sell_signals.one_off_quarters(None), [])
+
+    def test_one_off_gain_no_longer_trims(self):
+        # Before the fix: pe_high + earnings_above_trend = 2 tests -> trim_half on a weak business.
+        st = _peaky(quarters=ONE_OFF_Q, pe=100.0, pe_runrate=200.0, pe_runrate_diverges=True,
+                    own_pe_band={"years": 10, "low": 1.0, "high": 10.0, "percentile": 100})
+        ev = sell_signals.evaluate(st, self.TODAY)
+        self.assertIsNone(ev["tests"]["pe_high"])
+        self.assertIsNone(ev["tests"]["earnings_above_trend"])
+        self.assertEqual(ev["tests"]["count"], 0)
+        self.assertEqual(ev["tier"], "none")
+        self.assertTrue(any("one-off" in d for d in ev["tests"]["distorted"]))
+        self.assertIsNone(sell_signals.flag_text("STOCKD", ev))
+
+    def test_one_offs_latest_flag_also_counts(self):
+        st = _peaky(one_offs={"latest": {"flag": True}}, latest_quarter_end="2026-09-30")
+        t = sell_signals.peak_tests(st, None)
+        self.assertIsNone(t["pe_high"])
+        self.assertIsNone(t["earnings_above_trend"])
+
+    def test_trailing_pe_far_above_runrate_is_distorted(self):
+        t = sell_signals.peak_tests(_peaky(pe=90.0, pe_runrate=30.0, pe_runrate_diverges=True), None)
+        self.assertIsNone(t["pe_high"])
+        self.assertIsNone(t["earnings_above_trend"])
+        self.assertEqual(t["count"], 0)
+        # diverging, but only 2.5x: not distorted enough to override
+        t = sell_signals.peak_tests(_peaky(pe=75.0, pe_runrate=30.0, pe_runrate_diverges=True), None)
+        self.assertEqual(t["count"], 2)
+
+    def test_implausible_band_leaves_only_pe_high_unknown(self):
+        st = _peaky(pe=100.0, pe_runrate=100.0,
+                    own_pe_band={"years": 10, "low": 1.0, "high": 10.0, "percentile": 100})
+        t = sell_signals.peak_tests(st, None)
+        self.assertIsNone(t["pe_high"])
+        self.assertTrue(t["earnings_above_trend"])
+        self.assertEqual(t["count"], 1)
+        self.assertTrue(any("low confidence" in d for d in t["distorted"]))
+
+    def test_ordinary_stretched_stock_still_flags(self):
+        st = _peaky(technicals={"return_3m_pct": 33.0, "return_6m_pct": 5.0})
+        ev = sell_signals.evaluate(st, self.TODAY)
+        self.assertEqual(ev["tests"]["distorted"], [])
+        self.assertTrue(ev["tests"]["pe_high"])
+        self.assertTrue(ev["tests"]["earnings_above_trend"])
+        self.assertEqual(ev["tier"], "trim_half")
 
 
 class KindTests(unittest.TestCase):
