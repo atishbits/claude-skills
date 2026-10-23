@@ -161,5 +161,105 @@ class FlagTextTests(unittest.TestCase):
         self.assertTrue(txt.endswith("ordinary business - watch"))
 
 
+class TrimPlanTests(unittest.TestCase):
+    def test_weak_half_on_90(self):
+        self.assertEqual(sell_signals.trim_plan(90, "trim_half", "weak"),
+                         {"step1_qty": 45, "step2_qty": 45, "core_qty": 0})
+
+    def test_machine_third_on_90(self):
+        self.assertEqual(sell_signals.trim_plan(90, "trim_third", "machine"),
+                         {"step1_qty": 30, "step2_qty": 15, "core_qty": 45})
+
+    def test_full_exit_ignores_kind(self):
+        for kind in ("weak", "machine", "ordinary"):
+            self.assertEqual(sell_signals.trim_plan(90, "trim_third", kind, full_exit=True),
+                             {"step1_qty": 45, "step2_qty": 45, "core_qty": 0})
+
+    def test_watch_and_none_sell_nothing(self):
+        for tier in ("watch", "none"):
+            p = sell_signals.trim_plan(90, tier, "ordinary")
+            self.assertEqual(p["step1_qty"], 0)
+            self.assertEqual(sum(p.values()), 90)
+
+    def test_quantities_always_sum_to_qty(self):
+        for qty in (1, 7, 10, 91):
+            for tier in sell_signals.TIERS:
+                for kind in sell_signals.CORE_FRACTION:
+                    p = sell_signals.trim_plan(qty, tier, kind)
+                    self.assertEqual(sum(p.values()), qty)
+
+
+class Step2Tests(unittest.TestCase):
+    def test_off_peak_from_recent_high(self):
+        t = sell_signals.step2_triggers(100.0, {"recent_high_60d": 120.0, "dma50": 95.0})
+        self.assertAlmostEqual(t["off_peak_price"], 105.6)
+        self.assertEqual(t["peak"], 120.0)
+        self.assertEqual(t["dma50"], 95.0)
+
+    def test_price_above_high_is_the_peak(self):
+        t = sell_signals.step2_triggers(130.0, {"recent_high_60d": 120.0})
+        self.assertEqual(t["peak"], 130.0)
+        self.assertIsNone(t["dma50"])
+
+
+class PlanStoreTests(unittest.TestCase):
+    def test_round_trip_and_close(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "nested", "sell-plans.json")
+            self.assertEqual(sell_signals.load_plans(path), {})
+            plan = {"opened": "2026-10-23", "step1_qty": 30}
+            sell_signals.save_plan("stocka", plan, path)
+            self.assertEqual(sell_signals.load_plans(path), {"STOCKA": plan})
+            sell_signals.close_plan("STOCKA", path)
+            self.assertEqual(sell_signals.load_plans(path), {})
+
+
+class ConsensusTests(unittest.TestCase):
+    def _note(self, d, as_of):
+        import os
+        with open(os.path.join(d, "STOCKA.md"), "w", encoding="utf-8") as fh:
+            fh.write("# STOCKA\n\n**Research:**\n"
+                     f"- consensus: avg TP ₹1,234, 3 of 5 post-result — http://x as of {as_of}\n\n")
+
+    def test_fresh_and_stale(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self._note(d, "2026-10-10")
+            self.assertEqual(sell_signals.consensus_avg("stocka", d, date(2026, 10, 23)), 1234.0)
+            self._note(d, "2026-08-01")
+            self.assertIsNone(sell_signals.consensus_avg("STOCKA", d, date(2026, 10, 23)))
+            self.assertIsNone(sell_signals.consensus_avg("NOPE", d, date(2026, 10, 23)))
+
+
+class AdviceTests(unittest.TestCase):
+    ST_NEAR = [{"date": "2025-10-01", "qty": 10, "cost": 100.0, "cost_is_estimate": False, "taxable": True}]
+
+    def test_wait_for_lot_only_on_watch(self):
+        a = sell_signals.advice("watch", [40], 5.0, 20.0)
+        self.assertIn("wait for that lot", a)
+        self.assertIn("trim now", sell_signals.advice("trim_third", [40], 5.0, 20.0))
+
+    def test_trim_now_when_breakeven_small(self):
+        self.assertIn("trim now", sell_signals.advice("trim_third", [], 5.0, -20.0))
+
+    def test_close_call(self):
+        self.assertIn("close call", sell_signals.advice("trim_third", [], 15.0, -20.0))
+
+    def test_no_wait_case(self):
+        self.assertIn("no short-term", sell_signals.advice("trim_third", [], None, -20.0))
+
+
+class HeadroomTests(unittest.TestCase):
+    def test_no_gains_log_assumes_full_exemption(self):
+        import tax_lots
+        from unittest import mock
+        with mock.patch.object(sell_signals, "_gains_log", return_value=None):
+            h, note = sell_signals.lt_headroom(date(2026, 10, 23))
+        self.assertEqual(h, tax_lots.LTCG_EXEMPTION_PER_FY)
+        self.assertIn("no gains log yet", note)
+
+
 if __name__ == "__main__":
     unittest.main()

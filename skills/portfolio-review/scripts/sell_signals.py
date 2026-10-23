@@ -4,6 +4,7 @@ Works on plain snapshot stock dicts; deliberately does not import fetch_fundamen
 Missing or None fields are treated as unknown and never raise.
 """
 import math
+import re
 from datetime import date, timedelta
 
 STRETCH_MIN_RISE_PCT = 15.0   # a window's price rise must be at least this to count as stretched
@@ -147,3 +148,244 @@ def flag_text(ticker, ev):
     verdict = "watch" if tier == "watch" else f"{tier} candidate"
     parts.append(f"{ev.get('kind', 'ordinary')} business - {verdict}")
     return f"{ticker}: " + "; ".join(parts)
+
+
+# ---------------------------------------------------------------- sell plan
+import argparse
+import json
+import os
+
+import freshness
+import tax_lots
+
+STEP2_OFF_PEAK_PCT = 12.0
+TRIM_FRACTION = {"trim_third": 1 / 3, "trim_half": 0.5}
+CORE_FRACTION = {"weak": 0.0, "machine": 0.5, "ordinary": 1 / 3}
+NEAR_LT_DAYS = 60
+PLANS_PATH = os.path.join(tax_lots.SKILL_DATA_DIR, "sell-plans.json")
+NO_LOG_NOTE = "no gains log yet — assuming the full exemption is unused"
+
+
+def trim_plan(qty, tier, kind, full_exit=False):
+    """Split a position into step 1 (sell now), step 2 (sell on a trigger) and a
+    core held on. Floored; the three always add up to qty."""
+    qty = int(qty)
+    if full_exit:
+        step1 = qty // 2
+        return {"step1_qty": step1, "step2_qty": qty - step1, "core_qty": 0}
+    if tier not in TRIM_FRACTION:
+        return {"step1_qty": 0, "step2_qty": 0, "core_qty": qty}
+    core = int(math.floor(qty * CORE_FRACTION.get(kind, CORE_FRACTION["ordinary"]) + 1e-9))
+    step1 = min(int(math.floor(qty * TRIM_FRACTION[tier] + 1e-9)), qty - core)
+    return {"step1_qty": step1, "step2_qty": qty - step1 - core, "core_qty": core}
+
+
+def step2_triggers(price, technicals):
+    technicals = technicals or {}
+    high = technicals.get("recent_high_60d")
+    peak = max(price, high) if high is not None else price
+    return {"off_peak_price": peak * (1 - STEP2_OFF_PEAK_PCT / 100),
+            "dma50": technicals.get("dma50"), "peak": peak}
+
+
+def _default_stocks_dir():
+    return os.path.join(tax_lots.SKILL_DATA_DIR, "stocks")
+
+
+def consensus_avg(ticker, stocks_dir=None, today=None):
+    """Average target price from the note's Research block, only if fresh."""
+    path = os.path.join(stocks_dir or _default_stocks_dir(), f"{ticker.upper()}.md")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            research = freshness.parse_research(fh.read())
+    except OSError:
+        return None
+    item = research.get("consensus")
+    if not item:
+        return None
+    age = ((today or date.today()) - date.fromisoformat(item["as_of"])).days
+    if age > freshness.WINDOW_DAYS["consensus"]:
+        return None
+    m = re.search(r"avg TP\s*₹\s*([\d,]+(?:\.\d+)?)", item["value"])
+    return float(m.group(1).replace(",", "")) if m else None
+
+
+def load_plans(path=None):
+    try:
+        with open(path or PLANS_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_plans(plans, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plans, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+
+def save_plan(ticker, plan, path=None):
+    path = path or PLANS_PATH
+    plans = load_plans(path)
+    plans[ticker.upper()] = plan
+    _write_plans(plans, path)
+
+
+def close_plan(ticker, path=None):
+    path = path or PLANS_PATH
+    plans = load_plans(path)
+    removed = plans.pop(ticker.upper(), None)
+    _write_plans(plans, path)
+    return removed
+
+
+def _gains_log():
+    """Task 5's module, or None until it exists. The one place the log is touched."""
+    try:
+        import gains_log
+        return gains_log
+    except ImportError:
+        return None
+
+
+def _fy_label(today):
+    start = today.year if today.month >= 4 else today.year - 1
+    return f"{start}-{str(start + 1)[-2:]}"
+
+
+def lt_headroom(today):
+    """(unused LTCG exemption this FY, note or None)."""
+    gl = _gains_log()
+    if gl is None:
+        return float(tax_lots.LTCG_EXEMPTION_PER_FY), NO_LOG_NOTE
+    return float(gl.fy_running(_fy_label(today))["fy_tax"]["exempt_left"]), None
+
+
+def sold_since(ticker, opened):
+    """Quantity of `ticker` sold in the gains log after `opened` (ISO date); None if no log."""
+    gl = _gains_log()
+    if gl is None:
+        return None
+    total = 0.0
+    for e in gl.fold(gl.read_entries()):
+        if e.get("ticker") == ticker.upper() and e.get("sell_date", "") > opened:
+            total += e.get("qty") or 0
+    return total
+
+
+def advice(tier, days_to_lt_list, breakeven, max_drawdown_1y_pct):
+    near = any(d is not None and d <= NEAR_LT_DAYS for d in days_to_lt_list)
+    if near and tier == "watch":
+        return "wait for that lot: it turns long-term within 60 days"
+    if breakeven is None:
+        return "no short-term lot in step 1: nothing to wait for"
+    dd = abs(max_drawdown_1y_pct or 0)
+    if breakeven < dd / 2:
+        return "trim now: a typical pullback is larger than the tax saved"
+    return (f"close call: waiting saves tax only if the price stays above "
+            f"{breakeven:.1f}% below today; a typical pullback is {dd:.0f}%")
+
+
+def _stock(snap, ticker):
+    for s in snap.get("stocks", []):
+        if s.get("ticker") == ticker:
+            return s
+    return None
+
+
+def _account_split(stock):
+    brokers = stock.get("brokers") or {}
+    return sorted(brokers.items()) if brokers else [(None, stock.get("qty") or 0)]
+
+
+def _report(stock, ev, today, plan):
+    ticker, price = stock["ticker"], stock["price"]
+    tech = stock.get("technicals") or {}
+    print(flag_text(ticker, ev) or f"{ticker}: no sell case (tier none)")
+    print(f"tier {ev['tier']}, kind {ev['kind']}, tests {ev['tests']}")
+    tp = ({k: plan[k] for k in ("step1_qty", "step2_qty", "core_qty")} if plan
+          else trim_plan(stock.get("qty") or 0, ev["tier"], ev["kind"]))
+    trig = step2_triggers(price, tech)
+    print(f"plan: step 1 {tp['step1_qty']}, step 2 {tp['step2_qty']}, core {tp['core_qty']}; "
+          f"step 2 on close below {trig['off_peak_price']:.2f} (peak {trig['peak']:.2f})"
+          + (f" or 50DMA {trig['dma50']:.2f}" if trig["dma50"] else ""))
+    headroom, note = lt_headroom(today)
+    if note:
+        print(note)
+    total = stock.get("qty") or 0
+    for broker, bq in _account_split(stock):
+        share = int(round(tp["step1_qty"] * bq / total)) if total else 0
+        print(f"-- account {broker or '(single)'}: holds {bq:g}, step-1 share {share}")
+        if share <= 0:
+            continue
+        try:
+            matched = tax_lots.fifo_match(stock.get("lots") or [], share, broker,
+                                          fallback_cost=stock.get("avg_cost"))
+        except ValueError as exc:
+            print(f"   cannot match lots: {exc}")
+            continue
+        days = []
+        for m in matched:
+            st = tax_lots.lot_status(m, price, today, NEAR_LT_DAYS, stock.get("avg_cost"))
+            if not m["taxable"] or m["cost"] is None or st is None:
+                print(f"   {m['date']}: {m['qty']:g} sh - tax not estimated")
+                continue
+            t = tax_lots.sale_tax([m], price, today)
+            tax = t["est_tax"]
+            term = "LT" if st["is_lt"] else f"ST ({st['days_to_lt']}d to LT)"
+            if not st["is_lt"]:
+                days.append(st["days_to_lt"])
+            print(f"   {m['date']}: {m['qty']:g} sh gain ₹{st['gain']:,.0f} {term} "
+                  f"tax ₹{tax:,.0f} net ₹{m['qty'] * price - tax:,.0f}")
+        be = tax_lots.breakeven_drop_pct(matched, price, today, headroom)
+        print("   " + (f"break-even drop {be:.1f}%; " if be is not None else "")
+              + advice(ev["tier"], days, be, tech.get("max_drawdown_1y_pct")))
+    if plan:
+        sold = sold_since(ticker, plan["opened"])
+        done = "unknown (no gains log yet)" if sold is None else f"{sold:g} sold since {plan['opened']}"
+        print(f"open plan from {plan['opened']}: \"{plan['deciding_sentence']}\" "
+              f"step1 {plan['step1_qty']}, step2 {plan['step2_qty']}, core {plan['core_qty']}; "
+              f"steps done: {done}")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("ticker", nargs="?")
+    ap.add_argument("--open-plan", metavar="SENTENCE", help="save a sell plan with this deciding sentence")
+    ap.add_argument("--full-exit", action="store_true", help="with --open-plan: half now, rest on trigger, no core")
+    ap.add_argument("--close-plan", action="store_true")
+    ap.add_argument("--flags", action="store_true", help="one line per held stock with a sell case")
+    args = ap.parse_args(argv)
+    snap, _ = tax_lots.latest_snapshot()
+    today = date.today()
+    if args.flags:
+        for s in snap.get("stocks", []):
+            line = flag_text(s["ticker"], evaluate(s, today, consensus_avg(s["ticker"], today=today)))
+            if line:
+                print(line)
+        return
+    if not args.ticker:
+        ap.error("a ticker is required unless --flags is given")
+    ticker = args.ticker.upper()
+    if args.close_plan:
+        print(f"closed plan for {ticker}" if close_plan(ticker) else f"no open plan for {ticker}")
+        return
+    stock = _stock(snap, ticker)
+    if not stock:
+        raise SystemExit(f"{ticker} is not in the newest snapshot.")
+    ev = evaluate(stock, today, consensus_avg(ticker, today=today))
+    if args.open_plan:
+        tp = trim_plan(stock.get("qty") or 0, ev["tier"], ev["kind"], args.full_exit)
+        trig = step2_triggers(stock["price"], stock.get("technicals"))
+        save_plan(ticker, {"opened": today.isoformat(), "deciding_sentence": args.open_plan,
+                           "qty_at_open": stock.get("qty"), "tier": ev["tier"], "kind": ev["kind"],
+                           **tp, "triggers": trig,
+                           "core_ends_on": None})
+        print(f"saved plan for {ticker}: {tp}")
+        return
+    _report(stock, ev, today, load_plans().get(ticker))
+
+
+if __name__ == "__main__":
+    main()
