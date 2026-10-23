@@ -667,3 +667,70 @@ class TestPruneKeepsLongChart(_TmpCache):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _sf(t, tier, price=100.0, dma50=90.0):
+    return {"ticker": t, "price": price, "technicals": {"dma50": dma50},
+            "sell_flag": {"tier": tier, "text": f"{t}: stretched - {tier} candidate"}}
+
+
+class TestSellFlagLines(unittest.TestCase):
+    def test_new_flag_shown(self):
+        lines, still = ff.sell_flag_lines([_sf("STOCKA", "trim_third")], {}, {})
+        self.assertEqual(lines, [("STOCKA", "stretched - trim_third candidate")])
+        self.assertEqual(still, [])
+
+    def test_same_tier_goes_to_summary(self):
+        lines, still = ff.sell_flag_lines([_sf("STOCKA", "watch")], {"STOCKA": "watch"}, {})
+        self.assertEqual((lines, still), ([], ["STOCKA"]))
+
+    def test_raised_tier_shown(self):
+        lines, still = ff.sell_flag_lines([_sf("STOCKA", "trim_half")],
+                                          {"STOCKA": "watch"}, {})
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(still, [])
+
+    def test_none_tier_ignored(self):
+        self.assertEqual(ff.sell_flag_lines([_sf("STOCKA", "none"), {"ticker": "B"}],
+                                            {}, {}), ([], []))
+
+    def test_open_plan_shows_plan_line_only(self):
+        plan = {"opened": "2026-10-01", "step1_qty": 10,
+                "triggers": {"off_peak_price": 80.0, "dma50": 85.0}}
+        lines, still = ff.sell_flag_lines([_sf("STOCKA", "trim_third")], {}, {"STOCKA": plan},
+                                          sold=lambda t, o: 10)
+        self.assertEqual(lines, [("STOCKA", "sell plan open (step 1 done); step 2 at ₹80")])
+        self.assertEqual(still, [])
+
+    def test_step1_pending(self):
+        plan = {"opened": "2026-10-01", "step1_qty": 10,
+                "triggers": {"off_peak_price": 80.0}}
+        lines, _ = ff.sell_flag_lines([_sf("STOCKA", "watch")], {"STOCKA": "watch"},
+                                      {"STOCKA": plan}, sold=lambda t, o: 0)
+        self.assertIn("step 1 pending", lines[0][1])
+
+    def test_trigger_hit_marked(self):
+        plan = {"opened": "2026-10-01", "step1_qty": 10,
+                "triggers": {"off_peak_price": 80.0}}
+        lines, _ = ff.sell_flag_lines([_sf("STOCKA", "trim_third", price=79.0, dma50=70.0)],
+                                      {}, {"STOCKA": plan}, sold=lambda t, o: 10)
+        self.assertIn("STEP 2 TRIGGER HIT", lines[0][1])
+        lines, _ = ff.sell_flag_lines([_sf("STOCKA", "trim_third", price=85.0, dma50=90.0)],
+                                      {}, {"STOCKA": plan}, sold=lambda t, o: 10)
+        self.assertIn("STEP 2 TRIGGER HIT", lines[0][1])  # below the 50-day
+
+    def test_render_lines(self):
+        out = ff.sell_flag_md([("STOCKA", "x")], ["STOCKB", "STOCKC"])
+        self.assertEqual(out, ["- **STOCKA** — sell: x",
+                               "- still stretched, no change: STOCKB, STOCKC"])
+        self.assertEqual(ff.sell_flag_md([], []), [])
+
+    def test_previous_tiers_uses_newest_earlier_snapshot(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            for day, tier in (("2026-10-01", "watch"), ("2026-10-10", "trim_third"),
+                              ("2026-10-23", "trim_half")):
+                with open(os.path.join(d, f"snapshot-{day}.json"), "w") as fh:
+                    json.dump({"stocks": [_sf("STOCKA", tier), {"ticker": "B"}]}, fh)
+            self.assertEqual(ff.previous_tiers(d, "2026-10-23"), {"STOCKA": "trim_third"})
+            self.assertEqual(ff.previous_tiers(d, "2026-10-01"), {})

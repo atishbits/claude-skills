@@ -31,6 +31,7 @@ import requests
 
 import nse_disclosures
 import nse_index
+import sell_signals
 
 # The project root is where the *data* lives. Two tiers under it, both
 # gitignored wholesale by the repo's `data/` rule regardless of which root is
@@ -1633,6 +1634,94 @@ def evidence_flags(s):
     return why
 
 
+TIER_RANK = {t: i for i, t in enumerate(sell_signals.TIERS)}
+
+
+def sell_flag_lines(stocks, previous, plans, sold=None):
+    """(lines, still_stretched): lines are (ticker, text) worth showing today.
+
+    A flag shows when its tier is above "none" and is new or higher than in the
+    previous snapshot; an unchanged one only joins the summary list. A ticker
+    with an open plan gets one plan line instead."""
+    sold = sold or sell_signals.sold_since
+    lines, still = [], []
+    for s in stocks:
+        flag = s.get("sell_flag") or {}
+        tier, t = flag.get("tier", "none"), s.get("ticker")
+        if s.get("fetch_error") or tier == "none":
+            continue
+        plan = plans.get(t)
+        if plan:
+            trig = plan.get("triggers") or {}
+            done = None
+            try:
+                done = sold(t, plan.get("opened", ""))
+            except Exception:
+                pass
+            step1 = "step 1 done" if (done or 0) >= (plan.get("step1_qty") or 0) \
+                else "step 1 pending"
+            level = trig.get("off_peak_price")
+            text = f"sell plan open ({step1}); step 2 at ₹{level:,.0f}" if level \
+                else f"sell plan open ({step1})"
+            price, dma50 = s.get("price"), (s.get("technicals") or {}).get("dma50")
+            hit = price is not None and ((level is not None and price <= level)
+                                         or (dma50 is not None and price < dma50))
+            lines.append((t, f"{text} STEP 2 TRIGGER HIT" if hit else text))
+            continue
+        prev = previous.get(t)
+        if prev is None or TIER_RANK.get(tier, 0) > TIER_RANK.get(prev, 0):
+            text = flag.get("text") or tier
+            lines.append((t, text[len(t) + 2:] if text.startswith(f"{t}: ") else text))
+        else:
+            still.append(t)
+    return lines, still
+
+
+def sell_flag_md(lines, still):
+    out = [f"- **{t}** — sell: {text}" for t, text in lines]
+    if still:
+        out.append(f"- still stretched, no change: {', '.join(still)}")
+    return out
+
+
+def previous_tiers(skill_data_dir, today):
+    """ticker -> sell tier from the newest snapshot dated before `today`."""
+    older = sorted(p for p in glob.glob(os.path.join(skill_data_dir, "snapshot-*.json"))
+                   if re.search(r"snapshot-(\d{4}-\d{2}-\d{2})\.json$", p)
+                   and re.search(r"snapshot-(\d{4}-\d{2}-\d{2})", p).group(1) < today)
+    if not older:
+        return {}
+    try:
+        with open(older[-1], encoding="utf-8") as fh:
+            stocks = json.load(fh).get("stocks", [])
+    except (OSError, ValueError):
+        return {}
+    return {s["ticker"]: s["sell_flag"]["tier"] for s in stocks
+            if s.get("ticker") and (s.get("sell_flag") or {}).get("tier")}
+
+
+def add_sell_flags(stocks, today):
+    """Set stocks[i]["sell_flag"]; a sell_signals failure never fails the run."""
+    for s in stocks:
+        s["sell_flag"] = None
+        if s.get("fetch_error"):
+            continue
+        try:
+            avg = sell_signals.consensus_avg(s["ticker"], stocks_dir=STOCKS_DIR, today=today)
+            ev = sell_signals.evaluate(s, today, avg)
+            s["sell_flag"] = {"tier": ev["tier"], "text": sell_signals.flag_text(s["ticker"], ev)}
+        except Exception:
+            s["sell_flag"] = None
+
+
+def sell_review(stocks, today):
+    try:
+        plans = sell_signals.load_plans(os.path.join(SKILL_DATA_DIR, "sell-plans.json"))
+        return sell_flag_lines(stocks, previous_tiers(SKILL_DATA_DIR, today.isoformat()), plans)
+    except Exception:
+        return [], []
+
+
 def write_portfolio_md(results, csv_name, full_refresh_at=None, risk=None):
     rows = []
     for s in results:
@@ -1789,11 +1878,14 @@ def write_portfolio_md(results, csv_name, full_refresh_at=None, risk=None):
         why.extend(evidence_flags(s))
         if why:
             flags.append(f"- **{t}** — {', '.join(why)}")
-    if flags:
+    sell_lines, sell_still = sell_review(results, date.today())
+    sell_md = sell_flag_md(sell_lines, sell_still)
+    if flags or sell_md:
         L.append("\n## Worth a look\n")
         L.append("Mechanical flags only, not ratings. Run `/portfolio-review <TICKER>` "
                  "to research any of these.\n")
         L.extend(sorted(flags))
+        L.extend(sell_md)
 
     old = [(s["ticker"], note["missing"]) for s, note in rows if note.get("missing")]
     if old:
@@ -2176,6 +2268,7 @@ def main():
         stocks, missing = merge_stocks([], results, held)
         full_refresh_at = now
     add_portfolio_context(stocks)
+    add_sell_flags(stocks, date.today())
     risk = portfolio_risk(stocks, bench)
 
     with open(out, "w", encoding="utf-8") as fh:
