@@ -47,7 +47,7 @@ class RiseSplitTests(unittest.TestCase):
 
 class PeakTests(unittest.TestCase):
     def test_counts_only_true(self):
-        st = {"price": 120, "own_pe_band": {"percentile": 90},
+        st = {"price": 120, "own_pe_band": {"percentile": 90, "years": 10},
               "growth_ranges": {"earnings_above_trend": True}}
         t = sell_signals.peak_tests(st, 100.0)
         self.assertEqual(t, {"pe_high": True, "earnings_above_trend": True,
@@ -63,7 +63,19 @@ class PeakTests(unittest.TestCase):
 
     def test_percentile_none_and_low(self):
         self.assertIsNone(sell_signals.peak_tests({"own_pe_band": {"percentile": None}}, None)["pe_high"])
-        self.assertFalse(sell_signals.peak_tests({"own_pe_band": {"percentile": 50}}, None)["pe_high"])
+        self.assertFalse(sell_signals.peak_tests({"own_pe_band": {"percentile": 50, "years": 10}},
+                                                 None)["pe_high"])
+
+    def test_short_or_low_confidence_band_is_unknown(self):
+        for band in ({"percentile": 100, "years": 1}, {"percentile": 100, "years": 3},
+                     {"percentile": 100, "years": 4}, {"percentile": 100},
+                     {"percentile": 95, "years": 10, "low_confidence": True}):
+            t = sell_signals.peak_tests({"own_pe_band": band}, None)
+            self.assertIsNone(t["pe_high"], band)
+            self.assertEqual(t["count"], 0)
+        self.assertEqual(sell_signals.MIN_BAND_YEARS, 5)
+        self.assertTrue(sell_signals.peak_tests(
+            {"own_pe_band": {"percentile": 90, "years": 5, "low_confidence": False}}, None)["pe_high"])
 
 
 class KindTests(unittest.TestCase):
@@ -250,6 +262,26 @@ class AdviceTests(unittest.TestCase):
     def test_no_wait_case(self):
         self.assertIn("no short-term", sell_signals.advice("trim_third", [], None, -20.0))
 
+    def test_tier_none_gives_information_not_advice(self):
+        a = sell_signals.advice("none", [], 5.0, -20.0)
+        self.assertEqual(a, "if you ever trim: break-even drop 5.0%, typical 1y pullback 20%")
+        self.assertNotIn("trim now", sell_signals.advice("none", [40], 5.0, -20.0))
+        self.assertNotIn("trim now", sell_signals.advice("none", [], None, -20.0))
+
+    def test_other_tiers_show_both_numbers_and_the_threshold(self):
+        a = sell_signals.advice("trim_third", [], 5.0, -20.0)
+        self.assertIn("break-even drop 5.0%", a)
+        self.assertIn("typical 1y pullback 20%", a)
+        self.assertIn("trim now when break-even < half the pullback (10.0%)", a)
+        self.assertTrue(a.endswith("trim now"))
+        c = sell_signals.advice("trim_half", [], 15.0, -20.0)
+        self.assertIn("break-even drop 15.0%", c)
+        self.assertIn("typical 1y pullback 20%", c)
+        self.assertIn("close call", c)
+        w = sell_signals.advice("watch", [40], 5.0, -20.0)
+        self.assertIn("break-even drop 5.0%", w)
+        self.assertIn("wait for that lot", w)
+
 
 class HeadroomTests(unittest.TestCase):
     def test_no_gains_log_assumes_full_exemption(self):
@@ -392,6 +424,26 @@ class CliTests(unittest.TestCase):
         out = self.run_cli("STOCKA")
         self.assertIn("-- step 2: if sold from a (holds 30, 30 logged since the export): 30 share(s)", out)
         self.assertIn("-- step 2: if sold from b (holds 30): 30 share(s)", out)
+
+    def test_account_total_applies_the_exemption_left(self):
+        from unittest import mock
+        self.open_plan()
+        with mock.patch.object(sell_signals, "lt_headroom", return_value=(1000.0, None)):
+            out = self.run_cli("STOCKA")
+        b = out.split("-- if sold from b")[1]
+        self.assertIn("2025-09-01: 20 sh gain ₹1,200 LT, tax ₹150 before exemption", b)
+        self.assertIn("est. tax ₹25 (after ₹1,000 exemption left)", b)     # 12.5% of (1,200 - 1,000)
+        a = out.split("-- if sold from b")[0]
+        self.assertIn("est. tax ₹300 (after ₹1,000 exemption left)", a)    # short-term: 20% of 1,500
+        with mock.patch.object(sell_signals, "lt_headroom", return_value=(123610.0, None)):
+            out = self.run_cli("STOCKA")
+        self.assertIn("est. tax ₹0 (after ₹123,610 exemption left)", out.split("-- if sold from b")[1])
+
+    def test_tier_none_prints_no_trim_advice(self):
+        with mock_tier("none"):
+            out = self.run_cli("STOCKA")
+        self.assertNotIn("trim now", out)
+        self.assertIn("if you ever trim: break-even drop", out)
 
     def test_open_plan_refused_for_watch_and_when_open(self):
         with mock_tier("watch"):

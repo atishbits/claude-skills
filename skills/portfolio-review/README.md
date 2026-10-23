@@ -111,8 +111,10 @@ scripts carry its arithmetic:
   growth and the part from a higher P/E, places the P/E in the stock's own long-run band, runs the
   peak tests, and grades the case: none, watch, trim a third, or trim half. `TICKER` prints the full
   case, a staged plan (step 1 now, step 2 on a price trigger, a core kept), and for each demat
-  account the lots FIFO would sell with gain, estimated tax and net, plus the break-even drop: how
-  far the price could fall before waiting for the long-term rate stops paying. `--open-plan
+  account the lots FIFO would sell (after any sales logged since the export) with gain, estimated
+  tax after the year's unused long-term exemption, and net, plus the break-even drop: how far the
+  price could fall before waiting for the long-term rate stops paying, beside the typical 1-year
+  pullback. "P/E high" needs at least 5 years of the stock's own P/E band. `--open-plan
   "sentence"` (with `--full-exit` for a deliberate exit) saves the plan to
   `data/skill-data/sell-plans.json`; `--close-plan` removes it; `--flags` prints one line per
   flagged holding. Every portfolio run puts the flags in `PORTFOLIO.md`'s "Worth a look".

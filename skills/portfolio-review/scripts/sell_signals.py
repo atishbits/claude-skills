@@ -10,6 +10,7 @@ from datetime import date, timedelta
 STRETCH_MIN_RISE_PCT = 15.0   # a window's price rise must be at least this to count as stretched
 STRETCH_PE_SHARE = 0.6        # ... and at least this share of it must come from P/E expansion
 PE_PCT_HIGH = 80              # own-band percentile at or above this is "P/E high"
+MIN_BAND_YEARS = 5            # a shorter (or low-confidence) own band leaves "P/E high" unknown
 RESULT_LAG_DAYS = 45          # a quarter's profit is public about this long after period end
 MACHINE_ROCE = 25.0
 MACHINE_GROWTH_PCT = 15.0
@@ -55,9 +56,15 @@ def _percentile(stock):
     return band.get("percentile") if isinstance(band, dict) else None
 
 
+def _band_usable(stock):
+    band = stock.get("own_pe_band")
+    return (isinstance(band, dict) and not band.get("low_confidence")
+            and (band.get("years") or 0) >= MIN_BAND_YEARS)
+
+
 def peak_tests(stock, consensus_avg):
     pct = _percentile(stock)
-    pe_high = None if pct is None else pct >= PE_PCT_HIGH
+    pe_high = None if pct is None or not _band_usable(stock) else pct >= PE_PCT_HIGH
     gr = stock.get("growth_ranges")
     eat = bool(gr.get("earnings_above_trend")) if isinstance(gr, dict) else False
     price = stock.get("price")
@@ -277,16 +284,35 @@ def sold_since(ticker, opened, log_dir=None):
 
 
 def advice(tier, days_to_lt_list, breakeven, max_drawdown_1y_pct):
+    """One line on selling now vs waiting for the long-term rate. At tier
+    "none" there is no sell case, so it gives the numbers only. Otherwise it
+    always shows the break-even drop, the 1-year drawdown and the threshold:
+    "trim now" when break-even < half the drawdown."""
+    dd = abs(max_drawdown_1y_pct or 0)
+    pullback = f"typical 1y pullback {dd:.0f}%"
+    if tier == "none":
+        if breakeven is None:
+            return f"if you ever trim: no short-term lot, nothing to wait for; {pullback}"
+        return f"if you ever trim: break-even drop {breakeven:.1f}%, {pullback}"
+    if breakeven is None:
+        return f"no short-term lot in step 1: nothing to wait for; {pullback}"
+    numbers = (f"break-even drop {breakeven:.1f}%, {pullback}; "
+               f"trim now when break-even < half the pullback ({dd / 2:.1f}%)")
     near = any(d is not None and d <= NEAR_LT_DAYS for d in days_to_lt_list)
     if near and tier == "watch":
-        return "wait for that lot: it turns long-term within 60 days"
-    if breakeven is None:
-        return "no short-term lot in step 1: nothing to wait for"
-    dd = abs(max_drawdown_1y_pct or 0)
+        return f"{numbers} — wait for that lot: it turns long-term within {NEAR_LT_DAYS} days"
     if breakeven < dd / 2:
-        return "trim now: a typical pullback is larger than the tax saved"
-    return (f"close call: waiting saves tax only if the price stays above "
-            f"{breakeven:.1f}% below today; a typical pullback is {dd:.0f}%")
+        return f"{numbers} — trim now"
+    return (f"{numbers} — close call: waiting saves tax only if the price stays above "
+            f"{breakeven:.1f}% below today")
+
+
+def account_tax(matched, price, today, headroom):
+    """Tax on selling `matched` now with `headroom` of the FY LTCG exemption
+    left: 12.5% of long-term gain above the headroom, 20% of short-term gain."""
+    t = tax_lots.sale_tax(matched, price, today)
+    return (tax_lots.LTCG_RATE_PCT / 100 * max(0.0, t["ltcg"] - headroom)
+            + tax_lots.STCG_RATE_PCT / 100 * max(0.0, t["stcg"]))
 
 
 def _stock(snap, ticker):
@@ -353,7 +379,7 @@ def _report(stock, ev, today, plan, snap=None):
         except ValueError as exc:
             print(f"   cannot match lots: {exc}")
             continue
-        days, gain_sum, tax_sum, net_sum, untaxed = [], 0.0, 0.0, 0.0, 0.0
+        days, taxed, gain_sum, untaxed = [], [], 0.0, 0.0
         for m in matched:
             st = tax_lots.lot_status(m, price, today, NEAR_LT_DAYS, stock.get("avg_cost"))
             if not m["taxable"] or m["cost"] is None or st is None:
@@ -364,16 +390,18 @@ def _report(stock, ev, today, plan, snap=None):
             term = "LT" if st["is_lt"] else f"ST ({st['days_to_lt']}d to LT)"
             if not st["is_lt"]:
                 days.append(st["days_to_lt"])
-            net = m["qty"] * price - tax
-            gain_sum, tax_sum, net_sum = gain_sum + st["gain"], tax_sum + tax, net_sum + net
-            print(f"   {m['date']}: {m['qty']:g} sh gain ₹{st['gain']:,.0f} {term} "
-                  f"tax ₹{tax:,.0f} net ₹{net:,.0f}")
-        print(f"   total: gain ₹{gain_sum:,.0f}, est. tax ₹{tax_sum:,.0f}, net ₹{net_sum:,.0f}")
+            taxed.append(m)
+            gain_sum += st["gain"]
+            print(f"   {m['date']}: {m['qty']:g} sh gain ₹{st['gain']:,.0f} {term}, "
+                  f"tax ₹{tax:,.0f} before exemption")
+        tax_sum = account_tax(taxed, price, today, headroom)
+        net_sum = sum(m["qty"] for m in taxed) * price - tax_sum
+        print(f"   total: gain ₹{gain_sum:,.0f}, est. tax ₹{tax_sum:,.0f} "
+              f"(after ₹{headroom:,.0f} exemption left), net ₹{net_sum:,.0f}")
         if untaxed > 0:
             print(f"   {untaxed:g} shares tax not estimated (pre-2018/undated), excluded")
         be = tax_lots.breakeven_drop_pct(matched, price, today, headroom)
-        print("   " + (f"break-even drop {be:.1f}%; " if be is not None else "")
-              + advice(ev["tier"], days, be, tech.get("max_drawdown_1y_pct")))
+        print("   " + advice(ev["tier"], days, be, tech.get("max_drawdown_1y_pct")))
     if plan:
         sold = sold_since(ticker, plan["opened"])
         done = "unknown (no gains log yet)" if sold is None else f"{sold:g} sold since {plan['opened']}"

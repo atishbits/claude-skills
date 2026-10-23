@@ -22,10 +22,17 @@ script; none is worked out in prose.
    and how much from P/E, the P/E's percentile in the stock's own band, the three peak tests), the
    suggested plan (step 1 now, step 2 on a trigger, a core kept), the step-2 trigger prices, and,
    for each account the holding sits in, the lots FIFO would sell with gain, short- or long-term,
-   estimated tax and net, and a total line. Under each account it gives the break-even drop against
-   the stock's typical pullback (`max_drawdown_1y_pct`) and the advice that follows from it. If a
-   plan is already open, it prints that plan and how many shares have been sold since it opened.
-   For a stock only on watch it shows "if you trimmed a third" as a preview, not a plan.
+   and each lot's tax before the exemption, then a total line whose estimated tax applies the
+   year's unused long-term exemption ("after ₹N exemption left"); quote that total, not the
+   per-lot figures. Under each account it gives the break-even drop, the stock's typical 1-year
+   pullback (`max_drawdown_1y_pct`), the threshold (trim now when break-even is under half the
+   pullback) and the advice that follows. At tier none there is no advice, only "if you ever trim:"
+   with the two numbers. Sales logged since the broker export are taken off first: the holding
+   shown is what is left, and FIFO starts after the lots already sold. If a plan is already open,
+   it previews what is left of it (step 2 once step 1 is logged) and prints how many shares have
+   been sold since it opened. For a stock only on watch it shows "if you trimmed a third" as a
+   preview, not a plan. "P/E high" needs at least 5 years of the stock's own P/E band; a shorter or
+   low-confidence band leaves that test unknown.
 3. **The judgment the script cannot make**, by reference to SKILL.md: 3b validation of the inputs,
    3c consensus and red-flag searches (auditor, governance, pledge, promoter selling, value
    migration), the 3d peak test and the rest of 3d, and 3g verification for any SELL. This is
@@ -152,8 +159,8 @@ Consensus Hold, avg TP ₹140 = 7% downside (2026-10-15, 3 of 4 post-result)
 3-Year case: base 4% vs bear -8% vs Nifty hurdle 11%/yr — doesn't clear
 Action: sell 50 from brokera now (step 1); the rest only if step 2 triggers
 Sell plan: step 1 of 2 — sell 50 of 100 now; step 2 below ₹132 or the 50 DMA ₹140; no core
-Lots (FIFO, brokera): 50 sh, gain ₹2,500 ST, tax ₹500, net ₹7,000
-Break-even drop 3% vs typical pullback 25% — trim now
+Lots (FIFO, brokera): 50 sh, gain ₹2,500 ST, est. tax ₹500 after exemption, net ₹7,000
+Break-even drop 3% vs typical 1y pullback 25% (trim now below 12.5%) — trim now
 Next check-in: 2026-11-10 08:30 IST (step-2 re-check)
 ```
 
