@@ -665,8 +665,6 @@ class TestPruneKeepsLongChart(_TmpCache):
         self.assertFalse(os.path.exists(old))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 def _sf(t, tier, price=100.0, dma50=90.0):
@@ -724,6 +722,17 @@ class TestSellFlagLines(unittest.TestCase):
         self.assertEqual(out, ["- **STOCKA** — sell: x",
                                "- still stretched, no change: STOCKB, STOCKC"])
         self.assertEqual(ff.sell_flag_md([], []), [])
+        self.assertEqual(ff.sell_flag_md([("STOCKA", "sell plan open (step 1 done)")], []),
+                         ["- **STOCKA** — sell plan open (step 1 done)"])
+
+    def test_open_plan_shown_even_when_tier_none(self):
+        plan = {"opened": "2026-10-01", "step1_qty": 10,
+                "triggers": {"off_peak_price": 80.0}}
+        lines, still = ff.sell_flag_lines([_sf("STOCKA", "none", price=75.0)], {},
+                                          {"STOCKA": plan}, sold=lambda t, o: 10)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("STEP 2 TRIGGER HIT", lines[0][1])
+        self.assertEqual(still, [])
 
     def test_previous_tiers_uses_newest_earlier_snapshot(self):
         import json
@@ -734,3 +743,7 @@ class TestSellFlagLines(unittest.TestCase):
                     json.dump({"stocks": [_sf("STOCKA", tier), {"ticker": "B"}]}, fh)
             self.assertEqual(ff.previous_tiers(d, "2026-10-23"), {"STOCKA": "trim_third"})
             self.assertEqual(ff.previous_tiers(d, "2026-10-01"), {})
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1648,9 +1648,11 @@ def sell_flag_lines(stocks, previous, plans, sold=None):
     for s in stocks:
         flag = s.get("sell_flag") or {}
         tier, t = flag.get("tier", "none"), s.get("ticker")
-        if s.get("fetch_error") or tier == "none":
+        if s.get("fetch_error"):
             continue
         plan = plans.get(t)
+        if not plan and tier == "none":
+            continue
         if plan:
             trig = plan.get("triggers") or {}
             done = None
@@ -1678,7 +1680,8 @@ def sell_flag_lines(stocks, previous, plans, sold=None):
 
 
 def sell_flag_md(lines, still):
-    out = [f"- **{t}** — sell: {text}" for t, text in lines]
+    out = [f"- **{t}** — " + (text if text.startswith("sell plan open") else f"sell: {text}")
+           for t, text in lines]
     if still:
         out.append(f"- still stretched, no change: {', '.join(still)}")
     return out
