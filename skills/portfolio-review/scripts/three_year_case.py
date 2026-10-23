@@ -52,85 +52,10 @@ import requests  # noqa: E402
 LONG_CHART_YEARS_DEFAULT = 10
 
 
-def fetch_long_chart(ticker, company_id, session, days):
-    """Same idea as fetch_fundamentals.fetch_chart, but a longer window and a
-    distinct cache file -- the daily chart cache is only 365 days and is
-    reused by technicals/beta, so this must not touch it."""
-    cache = os.path.join(ff.CACHE_DIR, f"{ticker}-chart-long-{date.today().isoformat()}.json")
-    if os.path.exists(cache):
-        try:
-            with open(cache, encoding="utf-8") as fh:
-                return json.load(fh)
-        except ValueError:
-            pass
-    url = (f"https://www.screener.in/api/company/{company_id}/chart/"
-           f"?q=Price&days={days}&consolidated=true")
-    body = ff.get(url, session)
-    time.sleep(ff.REQUEST_DELAY)
-    if not body:
-        return None
-    data = json.loads(body)
-    with open(cache, "w", encoding="utf-8") as fh:
-        json.dump(data, fh)
-    return data
-
-
-def price_series(chart):
-    if not chart:
-        return []
-    for ds in chart.get("datasets", []):
-        if ds.get("metric") == "Price":
-            return [(d, float(v)) for d, v in ds["values"]]
-    return []
-
-
-def close_on_or_before(series, target_date):
-    prior = [c for c in series if c[0] <= target_date]
-    return prior[-1] if prior else None
-
-
-def pe_band(doc, series, years):
-    """Trailing P/E for each of the last `years` fiscal year-ends: that
-    year's closing price (nearest trading day on or before the year end)
-    divided by that year's EPS. Returns the valid (year, pe) pairs and the
-    excluded years with a reason."""
-    dates, rows = ff.parse_table(doc, "profit-loss")
-    eps_row = rows.get("EPS in Rs")
-    if not eps_row or not dates:
-        return [], [], None
-    fiscal_dates = [d for d in dates if d != "TTM"]
-    eps_by_year = dict(zip(fiscal_dates, eps_row))
-    window = fiscal_dates[-years:]
-    # A near-zero (but positive) EPS year -- a merger write-off, a one-off
-    # provision -- divides into a P/E in the hundreds or thousands that would
-    # otherwise corrupt the band's low/high. Screen it out relative to the
-    # window's own typical earnings, not just against zero: one bank's EPS
-    # of Rs 0.30 (vs ~Rs 25-90 in surrounding years) produced a 978x "P/E".
-    positive_eps = sorted(e for y in window if (e := eps_by_year.get(y)) is not None and e > 0)
-    median_eps = positive_eps[len(positive_eps) // 2] if positive_eps else None
-    near_zero_floor = 0.1 * median_eps if median_eps else None
-    valid, excluded = [], []
-    for y in window:
-        eps = eps_by_year.get(y)
-        if eps is None or eps <= 0:
-            excluded.append((y, "no EPS" if eps is None else f"EPS {eps:.2f} <= 0"))
-            continue
-        if near_zero_floor and eps < near_zero_floor:
-            excluded.append((y, f"EPS {eps:.2f} is a near-zero outlier "
-                                 f"(< 10% of the window's median {median_eps:.2f})"))
-            continue
-        close = close_on_or_before(series, y)
-        if not close:
-            excluded.append((y, "before the chart's history starts"))
-            continue
-        pe = close[1] / eps
-        valid.append((y, round(pe, 2)))
-    latest_eps = None
-    if "TTM" in dates:
-        latest_eps = eps_row[dates.index("TTM")]
-    elif fiscal_dates:
-        latest_eps = eps_by_year.get(fiscal_dates[-1])
-    return valid, excluded, latest_eps
+from fetch_fundamentals import (  # noqa: E402,F401
+    fetch_long_chart, price_series, close_on_or_before, percentile_of, median_of)
+# ff.pe_band is already a sector-P/E lookup, so the historical band is renamed there.
+from fetch_fundamentals import historical_pe_band as pe_band  # noqa: E402
 
 
 def nifty_hurdle_cagr(session, years):
@@ -147,22 +72,6 @@ def nifty_hurdle_cagr(session, years):
     cagr = (last_price / first_price) ** (1 / span_years) - 1
     return {"cagr_pct": round(cagr * 100, 1), "from": first_date, "to": last_date,
             "span_years": round(span_years, 1)}
-
-
-def percentile_of(value, series):
-    if not series:
-        return None
-    below = sum(1 for _, v in series if v <= value)
-    return round(100 * below / len(series))
-
-
-def median_of(values):
-    """Plain median of a non-empty list -- pulled out once since the band and
-    the 3-year case both need it and disagreeing implementations would be
-    worse than one shared, tested one."""
-    s = sorted(values)
-    mid = len(s) // 2
-    return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
 
 
 DEFAULT_HORIZON_YEARS = 3.0

@@ -1,6 +1,8 @@
 import os
 import sys
+import tempfile
 import unittest
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import fetch_fundamentals as ff  # noqa: E402
@@ -536,3 +538,36 @@ class TestSlugOverrides(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOwnPeBand(unittest.TestCase):
+    def test_summary(self):
+        valid = [("2022-03-31", 20.0), ("2023-03-31", 30.0), ("2024-03-31", 40.0), ("2025-03-31", 50.0)]
+        s = ff.own_pe_band_summary(valid, 45.0)
+        self.assertEqual((s["low"], s["median"], s["high"], s["percentile"]), (20.0, 35.0, 50.0, 75))
+        self.assertFalse(s["low_confidence"])
+
+    def test_empty_and_thin(self):
+        self.assertIsNone(ff.own_pe_band_summary([], 30.0))
+        self.assertTrue(ff.own_pe_band_summary([("2025-03-31", 30.0)], 30.0)["low_confidence"])
+
+    def test_loss_making_has_no_percentile(self):
+        self.assertIsNone(ff.own_pe_band_summary([("2025-03-31", 30.0)], None)["percentile"])
+
+
+class TestPruneKeepsLongChart(unittest.TestCase):
+    def test_long_chart_kept_html_pruned(self):
+        old = ff.CACHE_DIR
+        with tempfile.TemporaryDirectory() as d:
+            ff.CACHE_DIR = d
+            try:
+                day = (date.today() - timedelta(days=5)).isoformat()
+                long_path = os.path.join(d, f"STOCKA-chart-long-{day}.json")
+                html_path = os.path.join(d, f"STOCKA-{day}.html")
+                for p in (long_path, html_path):
+                    open(p, "w").close()
+                ff.prune_cache()
+                self.assertTrue(os.path.exists(long_path))
+                self.assertFalse(os.path.exists(html_path))
+            finally:
+                ff.CACHE_DIR = old

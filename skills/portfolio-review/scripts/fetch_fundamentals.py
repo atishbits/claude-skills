@@ -595,6 +595,152 @@ def fetch_chart(ticker, company_id, session, stats, force=False):
     return data
 
 
+
+def fetch_long_chart(ticker, company_id, session, days, max_age_days=0):
+    """Same idea as fetch_fundamentals.fetch_chart, but a longer window and a
+    distinct cache file -- the daily chart cache is only 365 days and is
+    reused by technicals/beta, so this must not touch it."""
+    today = date.today()
+    cache = os.path.join(CACHE_DIR, f"{ticker}-chart-long-{today.isoformat()}.json")
+    candidates = [cache]
+    for back in range(1, max_age_days + 1):
+        day = date.fromordinal(today.toordinal() - back).isoformat()
+        candidates.append(os.path.join(CACHE_DIR, f"{ticker}-chart-long-{day}.json"))
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    return json.load(fh)
+            except ValueError:
+                pass
+    url = (f"https://www.screener.in/api/company/{company_id}/chart/"
+           f"?q=Price&days={days}&consolidated=true")
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    body = get(url, session)
+    time.sleep(REQUEST_DELAY)
+    if not body:
+        return None
+    data = json.loads(body)
+    with open(cache, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+    return data
+
+
+def price_series(chart):
+    if not chart:
+        return []
+    for ds in chart.get("datasets", []):
+        if ds.get("metric") == "Price":
+            return [(d, float(v)) for d, v in ds["values"]]
+    return []
+
+
+def close_on_or_before(series, target_date):
+    prior = [c for c in series if c[0] <= target_date]
+    return prior[-1] if prior else None
+
+
+def historical_pe_band(doc, series, years):
+    """Trailing P/E for each of the last `years` fiscal year-ends: that
+    year's closing price (nearest trading day on or before the year end)
+    divided by that year's EPS. Returns the valid (year, pe) pairs and the
+    excluded years with a reason."""
+    dates, rows = parse_table(doc, "profit-loss")
+    eps_row = rows.get("EPS in Rs")
+    if not eps_row or not dates:
+        return [], [], None
+    fiscal_dates = [d for d in dates if d != "TTM"]
+    eps_by_year = dict(zip(fiscal_dates, eps_row))
+    window = fiscal_dates[-years:]
+    # A near-zero (but positive) EPS year -- a merger write-off, a one-off
+    # provision -- divides into a P/E in the hundreds or thousands that would
+    # otherwise corrupt the band's low/high. Screen it out relative to the
+    # window's own typical earnings, not just against zero: one bank's EPS
+    # of Rs 0.30 (vs ~Rs 25-90 in surrounding years) produced a 978x "P/E".
+    positive_eps = sorted(e for y in window if (e := eps_by_year.get(y)) is not None and e > 0)
+    median_eps = positive_eps[len(positive_eps) // 2] if positive_eps else None
+    near_zero_floor = 0.1 * median_eps if median_eps else None
+    valid, excluded = [], []
+    for y in window:
+        eps = eps_by_year.get(y)
+        if eps is None or eps <= 0:
+            excluded.append((y, "no EPS" if eps is None else f"EPS {eps:.2f} <= 0"))
+            continue
+        if near_zero_floor and eps < near_zero_floor:
+            excluded.append((y, f"EPS {eps:.2f} is a near-zero outlier "
+                                 f"(< 10% of the window's median {median_eps:.2f})"))
+            continue
+        close = close_on_or_before(series, y)
+        if not close:
+            excluded.append((y, "before the chart's history starts"))
+            continue
+        pe = close[1] / eps
+        valid.append((y, round(pe, 2)))
+    latest_eps = None
+    if "TTM" in dates:
+        latest_eps = eps_row[dates.index("TTM")]
+    elif fiscal_dates:
+        latest_eps = eps_by_year.get(fiscal_dates[-1])
+    return valid, excluded, latest_eps
+
+
+def percentile_of(value, series):
+    if not series:
+        return None
+    below = sum(1 for _, v in series if v <= value)
+    return round(100 * below / len(series))
+
+
+def median_of(values):
+    """Plain median of a non-empty list -- pulled out once since the band and
+    the 3-year case both need it and disagreeing implementations would be
+    worse than one shared, tested one."""
+    s = sorted(values)
+    mid = len(s) // 2
+    return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
+
+
+LONG_CHART_CACHE_DAYS = 7
+OWN_BAND_YEARS = 10
+
+
+def own_band_for(ticker, doc, current_pe, session, stats):
+    """The stock's own 10-year P/E band, or None: a failed fetch costs the
+    band, never the stock."""
+    try:
+        company_id = parse_company_id(doc)
+        if not company_id:
+            return None
+        days = OWN_BAND_YEARS * 365 + 30
+        was_cached = any(
+            os.path.exists(os.path.join(
+                CACHE_DIR, f"{ticker}-chart-long-"
+                f"{date.fromordinal(date.today().toordinal() - b).isoformat()}.json"))
+            for b in range(LONG_CHART_CACHE_DAYS + 1))
+        chart = fetch_long_chart(ticker, company_id, session, days,
+                                 max_age_days=LONG_CHART_CACHE_DAYS)
+        series = price_series(chart)
+        if not series:
+            return None
+        stats["long_chart_cached" if was_cached else "long_chart_fetched"] += 1
+        valid, _excluded, _eps = historical_pe_band(doc, series, OWN_BAND_YEARS)
+        return own_pe_band_summary(valid, current_pe)
+    except Exception:
+        return None
+
+
+def own_pe_band_summary(valid, current_pe):
+    """Low / median / high of a stock's own year-end P/Es and where today's
+    P/E sits in them (percentile). None when there is no valid year."""
+    if not valid:
+        return None
+    pes = [v for _, v in valid]
+    return {"years": len(valid), "low": min(pes), "median": median_of(pes),
+            "high": max(pes),
+            "percentile": percentile_of(current_pe, valid) if current_pe is not None else None,
+            "low_confidence": len(valid) < 3}
+
+
 # ----------------------------------------------------------------------- parsing
 
 def clean(s):
@@ -1676,10 +1822,15 @@ def prune_cache():
     cutoff = date.fromordinal(date.today().toordinal() - (CACHE_KEEP_DAYS - 1)).isoformat()
     nse_cutoff = date.fromordinal(
         date.today().toordinal() - (nse_disclosures.CACHE_DAYS - 1)).isoformat()
+    long_cutoff = date.fromordinal(
+        date.today().toordinal() - (LONG_CHART_CACHE_DAYS - 1)).isoformat()
     removed = 0
     for path in glob.glob(os.path.join(CACHE_DIR, "*")):
         m = re.search(r"(\d{4}-\d{2}-\d{2})\.(?:html|json)$", path)
-        if m and m.group(1) < (nse_cutoff if "-nse-" in os.path.basename(path) else cutoff):
+        name = os.path.basename(path)
+        keep_from = (nse_cutoff if "-nse-" in name
+                     else long_cutoff if "-chart-long-" in name else cutoff)
+        if m and m.group(1) < keep_from:
             os.remove(path)
             removed += 1
     if removed:
@@ -1986,7 +2137,8 @@ def main():
     prune_cache()
 
     stats = {"fetched": 0, "cached": 0, "chart_fetched": 0, "chart_cached": 0,
-             "nse_fetched": 0, "nse_cached": 0}
+             "nse_fetched": 0, "nse_cached": 0,
+             "long_chart_fetched": 0, "long_chart_cached": 0}
     bench = fetch_benchmark(session, stats, force)
     if not bench:
         print("Benchmark series unavailable, so this run carries no beta.\n")
@@ -2000,6 +2152,7 @@ def main():
             chart = fetch_chart(t, parse_company_id(doc), session, stats, force)
             rec = build(h, doc, chart, csv_date, bench,
                         fetch_nse(t, nse_session, stats, use_nse))
+            rec["own_pe_band"] = own_band_for(t, doc, rec.get("pe"), session, stats)
             rec["fetched_at"] = datetime.now().isoformat(timespec="seconds")
             results.append(rec)
             row = rec["signal_row"]
@@ -2042,6 +2195,8 @@ def main():
     print(f"\nFetched {stats['fetched']}, from cache {stats['cached']}, failed {len(failures)}")
     print(f"Charts fetched {stats['chart_fetched']}, from cache {stats['chart_cached']}"
           + (f", no technicals for {len(no_tech)}: {', '.join(no_tech)}" if no_tech else ""))
+    print(f"Long charts (own P/E band) fetched {stats['long_chart_fetched']}, from cache "
+          f"{stats['long_chart_cached']} (cached {LONG_CHART_CACHE_DAYS} days)")
     if use_nse:
         print(f"NSE disclosures fetched {stats['nse_fetched']}, from cache "
               f"{stats['nse_cached']} (cached {nse_disclosures.CACHE_DAYS} days)")
