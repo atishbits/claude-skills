@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -536,10 +538,6 @@ class TestSlugOverrides(unittest.TestCase):
         self.assertEqual(self.run_in('["EXAMPLEA"]'), {})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestOwnPeBand(unittest.TestCase):
     def test_summary(self):
         valid = [("2022-03-31", 20.0), ("2023-03-31", 30.0), ("2024-03-31", 40.0), ("2025-03-31", 50.0)]
@@ -555,19 +553,117 @@ class TestOwnPeBand(unittest.TestCase):
         self.assertIsNone(ff.own_pe_band_summary([("2025-03-31", 30.0)], None)["percentile"])
 
 
-class TestPruneKeepsLongChart(unittest.TestCase):
+class _TmpCache(unittest.TestCase):
+    def setUp(self):
+        self._old = ff.CACHE_DIR
+        self._tmp = tempfile.TemporaryDirectory()
+        ff.CACHE_DIR = self._tmp.name
+        self._old_get, self._old_delay = ff.get, ff.REQUEST_DELAY
+        ff.REQUEST_DELAY = 0
+        self.calls = []
+
+    def tearDown(self):
+        ff.CACHE_DIR, ff.get, ff.REQUEST_DELAY = self._old, self._old_get, self._old_delay
+        self._tmp.cleanup()
+
+    def stub_get(self, body='{"datasets": []}'):
+        def fake(url, session):
+            self.calls.append(url)
+            if isinstance(body, Exception):
+                raise body
+            return body
+        ff.get = fake
+
+    def put(self, ticker, age, content='{"datasets": [{"metric": "Price", "values": [["2025-01-01", 1]]}]}'):
+        day = (date.today() - timedelta(days=age)).isoformat()
+        path = os.path.join(self._tmp.name, f"{ticker}-chart-long-{day}.json")
+        with open(path, "w") as fh:
+            fh.write(content)
+        return path
+
+
+class TestFetchLongChartCache(_TmpCache):
+    def test_reuses_file_within_max_age(self):
+        self.stub_get()
+        self.put("STOCKA", 3)
+        out = ff.fetch_long_chart("STOCKA", "1", None, 365, max_age_days=7)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(out["datasets"][0]["metric"], "Price")
+
+    def test_reuses_file_at_boundary(self):
+        self.stub_get()
+        self.put("STOCKA", 7)
+        ff.fetch_long_chart("STOCKA", "1", None, 365, max_age_days=7)
+        self.assertEqual(self.calls, [])
+
+    def test_refetches_file_older_than_max_age(self):
+        self.stub_get()
+        self.put("STOCKA", 8)
+        ff.fetch_long_chart("STOCKA", "1", None, 365, max_age_days=7)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_default_reuses_only_today(self):
+        self.stub_get()
+        self.put("STOCKA", 1)
+        ff.fetch_long_chart("STOCKA", "1", None, 365)
+        self.assertEqual(len(self.calls), 1)
+        ff.fetch_long_chart("STOCKA", "1", None, 365)
+        self.assertEqual(len(self.calls), 1)
+
+
+class TestOwnBandFor(_TmpCache):
+    DOC = '<div company-id="42"></div>'
+
+    def stats(self):
+        return {"long_chart_fetched": 0, "long_chart_cached": 0}
+
+    def test_fetch_raises_returns_none(self):
+        self.stub_get(RuntimeError("boom"))
+        st = self.stats()
+        self.assertIsNone(ff.own_band_for("STOCKA", self.DOC, 20.0, None, st))
+        self.assertEqual(st, self.stats())
+
+    def test_no_company_id(self):
+        self.stub_get()
+        self.assertIsNone(ff.own_band_for("STOCKA", "<html></html>", 20.0, None, self.stats()))
+        self.assertEqual(self.calls, [])
+
+    def test_empty_chart(self):
+        self.stub_get('{"datasets": []}')
+        st = self.stats()
+        self.assertIsNone(ff.own_band_for("STOCKA", self.DOC, 20.0, None, st))
+        self.assertEqual(st["long_chart_fetched"], 0)
+
+    def test_counters_fetch_then_cache(self):
+        chart = '{"datasets": [{"metric": "Price", "values": [["2025-01-01", 10]]}]}'
+        self.stub_get(chart)
+        st = self.stats()
+        ff.own_band_for("STOCKA", self.DOC, 20.0, None, st)
+        self.assertEqual((st["long_chart_fetched"], st["long_chart_cached"]), (1, 0))
+        ff.own_band_for("STOCKA", self.DOC, 20.0, None, st)
+        self.assertEqual((st["long_chart_fetched"], st["long_chart_cached"]), (1, 1))
+        self.assertEqual(len(self.calls), 1)
+
+
+class TestPruneKeepsLongChart(_TmpCache):
+    def prune(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            ff.prune_cache()
+
     def test_long_chart_kept_html_pruned(self):
-        old = ff.CACHE_DIR
-        with tempfile.TemporaryDirectory() as d:
-            ff.CACHE_DIR = d
-            try:
-                day = (date.today() - timedelta(days=5)).isoformat()
-                long_path = os.path.join(d, f"STOCKA-chart-long-{day}.json")
-                html_path = os.path.join(d, f"STOCKA-{day}.html")
-                for p in (long_path, html_path):
-                    open(p, "w").close()
-                ff.prune_cache()
-                self.assertTrue(os.path.exists(long_path))
-                self.assertFalse(os.path.exists(html_path))
-            finally:
-                ff.CACHE_DIR = old
+        long_path = self.put("STOCKA", 5)
+        html_path = os.path.join(self._tmp.name,
+                                 f"STOCKA-{(date.today() - timedelta(days=5)).isoformat()}.html")
+        open(html_path, "w").close()
+        self.prune()
+        self.assertTrue(os.path.exists(long_path))
+        self.assertFalse(os.path.exists(html_path))
+
+    def test_long_chart_older_than_week_removed(self):
+        old = self.put("STOCKA", 8)
+        self.prune()
+        self.assertFalse(os.path.exists(old))
+
+
+if __name__ == "__main__":
+    unittest.main()
