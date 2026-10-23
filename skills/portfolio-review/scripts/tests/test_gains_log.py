@@ -120,6 +120,25 @@ class TestFixes(Base):
             flags = {x["date"]: x["in_baseline"] for x in json.load(fh)["sales"]}
         self.assertEqual(flags, {"2026-10-19": True, "2026-10-20": False})
 
+    def test_report_marks_baseline_sales(self):
+        import io
+        from contextlib import redirect_stdout
+        old = {"kind": "sale", "id": "x", "ticker": "STOCKA", "account": "b", "sell_date": "2026-10-19",
+               "qty": 5, "price": 150, "stcg": 0.0, "ltcg": 777.0, "status": "unconfirmed"}
+        new = dict(old, id="y", sell_date="2026-10-20", ticker="STOCKB")
+        gains_log.logdir.append(gains_log.LOG_DIR, old, self.tmp.name, "2026-10-19")
+        gains_log.logdir.append(gains_log.LOG_DIR, new, self.tmp.name, "2026-10-20")
+        with open(os.path.join(self.sd, "snapshot-2026-10-19.json"), "w") as fh:
+            json.dump(self.snap, fh)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            gains_log._report("2026-27")
+        lines = buf.getvalue().splitlines()
+        first = next(x for x in lines if "2026-10-19 STOCKA" in x)
+        second = next(x for x in lines if "2026-10-20 STOCKB" in x)
+        self.assertIn("(in broker baseline, not added)", first)
+        self.assertNotIn("(in broker baseline, not added)", second)
+
     def test_sale_on_or_before_export_rejected(self):
         with self.assertRaises(ValueError) as cm:
             gains_log.record("STOCKA", 1, 150, "2026-10-19", "a", snapshot=self.snap)
