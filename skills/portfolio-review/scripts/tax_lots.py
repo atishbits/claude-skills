@@ -151,12 +151,16 @@ def fy_tax(stcg, ltcg):
 def breakeven_drop_pct(matched, price, today, lt_headroom):
     """% fall from `price` at which selling later, with every taxable matched
     lot long-term, leaves the same post-tax rupees as selling now. None when
-    no taxable matched lot is short-term (nothing to wait for)."""
+    no taxable matched lot is short-term (nothing to wait for). `lt_headroom`
+    is the FY LTCG exemption still unused; both legs apply it to long-term gain."""
     taxable = [m for m in matched
                if m.get("taxable") and m.get("cost") is not None and _parse_date(m.get("date"))]
     if not any(not is_long_term(_parse_date(m["date"]), today) for m in taxable):
         return None
-    now = sum(m["qty"] for m in taxable) * price - sale_tax(taxable, price, today)["est_tax"]
+    t = sale_tax(taxable, price, today)
+    now_tax = (STCG_RATE_PCT / 100 * max(0.0, t["stcg"])
+               + LTCG_RATE_PCT / 100 * max(0.0, t["ltcg"] - lt_headroom))
+    now = sum(m["qty"] for m in taxable) * price - now_tax
 
     def later(p):
         gain = sum((p - m["cost"]) * m["qty"] for m in taxable)

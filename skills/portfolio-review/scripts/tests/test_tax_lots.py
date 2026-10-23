@@ -201,6 +201,12 @@ class TestBreakevenDrop(unittest.TestCase):
     def test_breakeven_drop_with_full_headroom(self):
         self.assertAlmostEqual(tax_lots.breakeven_drop_pct(self.LOT, 150.0, date(2026, 10, 23), 1e9), 6.67, places=2)
 
+    def test_breakeven_mixed_lt_and_st_lots_with_headroom(self):
+        m = [{"date": "2024-06-01", "qty": 1, "cost": 100.0, "cost_is_estimate": False, "taxable": True},
+             {"date": "2026-06-01", "qty": 1, "cost": 100.0, "cost_is_estimate": False, "taxable": True}]
+        # now: 300 - 0.20*50 - 0.125*max(0, 50-50) = 290; later: p = 147.857
+        self.assertAlmostEqual(tax_lots.breakeven_drop_pct(m, 150.0, date(2026, 10, 23), 50), 1.43, places=2)
+
     def test_breakeven_none_when_all_long_term(self):
         m = [{"date": "2024-06-01", "qty": 1, "cost": 100.0, "cost_is_estimate": False, "taxable": True}]
         self.assertIsNone(tax_lots.breakeven_drop_pct(m, 150.0, date(2026, 10, 23), 0))
