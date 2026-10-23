@@ -24,6 +24,9 @@ class TestPortfolioConfig(unittest.TestCase):
         self.assertTrue(ds.synced("skill-data/stocks/TESTCO.md"))
         self.assertTrue(ds.synced("examplebroker-portfolio-2026-09-27.md"))  # same rule as fetch_fundamentals
         self.assertTrue(ds.synced("skill-data/ratings-ledger/2026-10-18-abcdef.jsonl"))
+        self.assertTrue(ds.synced("skill-data/realised-gains/2026-10-20-abcdef.jsonl"))
+        self.assertTrue(ds.synced("skill-data/sell-plans.json"))
+        self.assertTrue(ds.synced("skill-data/realised-gains-FY2026-27.json"))
         self.assertTrue(ds.synced("skill-data/calendar.conflict-2026-10-18.md"))
         self.assertFalse(ds.synced("skill-data/snapshot-2026-10-18.json"))
         self.assertFalse(ds.synced("skill-data/.cache/x.json"))
@@ -38,11 +41,15 @@ class TestPortfolioConfig(unittest.TestCase):
     def test_scopes(self):
         note, other = "skill-data/stocks/TESTCO.md", "skill-data/stocks/EXAMPLEA.md"
         ledger = "skill-data/ratings-ledger/2026-10-01-abcdef.jsonl"
+        gains = "skill-data/realised-gains/2026-10-01-abcdef.jsonl"
         scan = "skill-data/scan-history/2026-10-01-abcdef.jsonl"
         self.assertTrue(ds.in_scope("skill-data/digest.json", "ticker", ["TESTCO"]))
         self.assertTrue(ds.in_scope(note, "ticker", ["TESTCO"]))
         self.assertFalse(ds.in_scope(other, "ticker", ["TESTCO"]))
         self.assertFalse(ds.in_scope(ledger, "ticker", ["TESTCO"]))
+        self.assertTrue(ds.in_scope(gains, "ticker", ["TESTCO"]))
+        self.assertTrue(ds.in_scope(gains, "sweep", []))
+        self.assertFalse(ds.in_scope(gains, "scan", []))
         self.assertTrue(ds.in_scope(ledger, "sweep", []))
         self.assertTrue(ds.in_scope(other, "sweep", []))
         self.assertFalse(ds.in_scope(scan, "sweep", []))

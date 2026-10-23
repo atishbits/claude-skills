@@ -6,14 +6,16 @@
   "note": {"patterns": ["skill-data/stocks/*.md"]},
   "scan": {"patterns": ["skill-data/scan-history/*.jsonl"]},
   "ledger": {"patterns": ["skill-data/ratings-ledger/*.jsonl"]},
+  "gains": {"patterns": ["skill-data/realised-gains/*.jsonl"]},
   "shared": {"patterns": ["*holdings*.csv", "*-portfolio-*.md", "slug-overrides.json",
                           "skill-data/digest.json", "skill-data/PORTFOLIO.md",
                           "skill-data/entry-budgets.json", "skill-data/calendar.md",
+                          "skill-data/sell-plans.json", "skill-data/realised-gains-FY*.json",
                           "*.conflict-*", "skill-data/*.conflict-*"]}
  },
  "scopes": {
-  "ticker": ["shared", "note:named"],
-  "sweep": ["shared", "note", "ledger"],
+  "ticker": ["shared", "note:named", "gains"],
+  "sweep": ["shared", "note", "ledger", "gains"],
   "scan": ["shared", "scan"]
  },
  "_comment": "The ledger is pulled only for a sweep: the digest already carries each ticker's ledger."
