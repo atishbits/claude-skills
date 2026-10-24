@@ -55,7 +55,8 @@ script; none is worked out in prose.
    `--close-plan`.
 5. **Scorecard** in the Step 4 format, with the sell lines Step 4 lists.
 6. **Offer a calendar reminder for the step-2 re-check** at the trigger's review date or the next
-   result, at 8–9 AM IST by default (the user's preference), not as an all-day event.
+   result (for a result, the date `calendar_notes.py --recheck` prints, per SKILL.md Step 4), at
+   8–9 AM IST by default (the user's preference), not as an all-day event.
 7. **If the user reports a sale**, record it and show the year's totals (next sections).
 8. **End with the glossary footer** (`python3 scripts/glossary.py --terms "..."`, SKILL.md Step 4)
    and then the disclaimer, then sync out with Step 5.

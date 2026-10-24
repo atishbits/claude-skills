@@ -22,6 +22,18 @@ re-fetch, no network call of its own:
   - Price re-look levels: the 200 DMA (or 50 DMA, where 200 is unreliable)
     and the 60-day low from `technicals`, flagged DUE NOW when today's price
     is within ~3% of the level, otherwise listed as a standing watch level.
+
+Once a results date is confirmed, the post-result re-check goes on a later
+date than the result itself:
+
+    python3 scripts/calendar_notes.py --recheck 2026-10-23 --announced after-close \
+        [--holiday YYYY-MM-DD ...]
+
+A re-check needs the market to have traded on the result for one full
+session (the price) and a trading day after that for the first broker
+notes (the consensus). A result out after the close, or on a Friday, is
+not priced until the next trading day, so a reminder for the morning after
+the result finds neither.
 """
 import argparse
 import calendar as _cal
@@ -41,6 +53,9 @@ RESULTS_LAG_MAX_DAYS = 45
 RESULTS_LAG_MAX_DAYS_YEAR_END = 60
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 NEAR_LEVEL_PCT = 3.0
+# When a result is announced relative to the NSE session (09:15-15:30 IST).
+ANNOUNCED = ("pre-open", "during", "after-close", "unknown")
+RECHECK_TIME_IST = "08:30"
 
 
 def newest_snapshot(data_dir=None):
@@ -71,6 +86,35 @@ def next_results_window(latest_quarter_end, fiscal_year_end="Mar"):
     return (next_quarter_end,
             next_quarter_end + timedelta(days=RESULTS_LAG_MIN_DAYS),
             next_quarter_end + timedelta(days=max_days))
+
+
+def next_trading_day(d, holidays=()):
+    """The first weekday after `d` that is not in `holidays`."""
+    d += timedelta(days=1)
+    while d.weekday() >= 5 or d in holidays:
+        d += timedelta(days=1)
+    return d
+
+
+def first_reacting_session(result_date, announced="unknown", holidays=()):
+    """The first trading session whose close reflects the result. A result
+    before or during the session is priced the same day if that day trades;
+    after the close (or when the timing is unknown, the safe assumption) it
+    is priced the next trading day."""
+    if announced not in ANNOUNCED:
+        raise ValueError(f"announced must be one of {ANNOUNCED}, got {announced!r}")
+    trades = result_date.weekday() < 5 and result_date not in holidays
+    if announced in ("pre-open", "during") and trades:
+        return result_date
+    return next_trading_day(result_date, holidays)
+
+
+def post_result_recheck(result_date, announced="unknown", holidays=()):
+    """(first reacting session, re-check date). The re-check is the morning
+    of the trading day after the first reacting session: by then that
+    session's close is in and the first broker notes are out."""
+    first = first_reacting_session(result_date, announced, holidays)
+    return first, next_trading_day(first, holidays)
 
 
 def near_level(current_price, level, pct_threshold=NEAR_LEVEL_PCT):
@@ -167,7 +211,21 @@ def merge_rows(existing, new_rows, tickers):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("tickers", nargs="*")
+    p.add_argument("--recheck", metavar="RESULT_DATE",
+                   help="confirmed result date (YYYY-MM-DD): print the post-result re-check date and exit")
+    p.add_argument("--announced", choices=ANNOUNCED, default="unknown",
+                   help="when the result came out relative to market hours (default: unknown, treated as after-close)")
+    p.add_argument("--holiday", action="append", default=[], metavar="YYYY-MM-DD",
+                   help="an exchange holiday between the result and the re-check; repeat as needed")
     args = p.parse_args()
+    if args.recheck:
+        holidays = {date.fromisoformat(h) for h in args.holiday}
+        result = date.fromisoformat(args.recheck)
+        first, recheck = post_result_recheck(result, args.announced, holidays)
+        print(f"Result {result.isoformat()} ({args.announced}): first session to price it "
+              f"{first.strftime('%a %Y-%m-%d')}; re-check {recheck.strftime('%a %Y-%m-%d')} "
+              f"{RECHECK_TIME_IST} IST.")
+        return
     data, snapshot_file = newest_snapshot()
     if not data:
         raise SystemExit("No snapshot found -- run fetch_fundamentals.py first.")

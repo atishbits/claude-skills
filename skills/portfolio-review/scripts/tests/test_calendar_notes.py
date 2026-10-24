@@ -120,6 +120,37 @@ class TestWriteCalendarMd(unittest.TestCase):
             self.assertIn("# Calendar candidates", content)
 
 
+
+class TestPostResultRecheck(unittest.TestCase):
+    def test_friday_after_close_result_rechecks_tuesday(self):
+        # Out Fri after the close: priced Mon, re-checked Tue morning, not Sat.
+        first, recheck = calendar_notes.post_result_recheck(date(2026, 10, 23), "after-close")
+        self.assertEqual(first, date(2026, 10, 26))
+        self.assertEqual(recheck, date(2026, 10, 27))
+
+    def test_unknown_timing_is_treated_as_after_close(self):
+        self.assertEqual(calendar_notes.post_result_recheck(date(2026, 10, 21)),
+                         calendar_notes.post_result_recheck(date(2026, 10, 21), "after-close"))
+
+    def test_result_during_session_is_priced_same_day(self):
+        first, recheck = calendar_notes.post_result_recheck(date(2026, 10, 21), "during")
+        self.assertEqual(first, date(2026, 10, 21))
+        self.assertEqual(recheck, date(2026, 10, 22))
+
+    def test_weekend_result_is_priced_monday_whatever_the_timing(self):
+        first, _ = calendar_notes.post_result_recheck(date(2026, 10, 24), "pre-open")
+        self.assertEqual(first, date(2026, 10, 26))
+
+    def test_holidays_are_skipped(self):
+        hol = {date(2026, 10, 26)}
+        first, recheck = calendar_notes.post_result_recheck(date(2026, 10, 23), "after-close", hol)
+        self.assertEqual(first, date(2026, 10, 27))
+        self.assertEqual(recheck, date(2026, 10, 28))
+
+    def test_rejects_unknown_timing_label(self):
+        with self.assertRaises(ValueError):
+            calendar_notes.post_result_recheck(date(2026, 10, 23), "evening")
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -781,6 +781,22 @@ estimate (the filing deadline after the next quarter end), and many companies re
 same date every year. Check last year's date for that quarter and any board-meeting intimation
 before proposing a reminder date.
 
+**A post-result re-check never goes on the result date or the morning after it.** Once the result
+date is confirmed (and whether it comes out before, during or after market hours), get the
+reminder date from the script, passing any exchange holidays in between:
+
+```
+python3 scripts/calendar_notes.py --recheck YYYY-MM-DD --announced after-close [--holiday YYYY-MM-DD ...]
+```
+
+It puts the re-check on the morning of the trading day after the first session that prices the
+result, so the run has a post-result close and the first broker notes. When the timing is not
+known, leave `--announced` off; it is then treated as after the close.
+
+**When a run is a post-result re-check, run that same command first.** If today is before the
+date it prints, the result has not been priced or covered yet: do not do the full review. Say so in
+one line, give the printed date, and offer to move the reminder there.
+
 **On a portfolio-wide sweep, or when the user asks how past calls have done, score the ledger:**
 
 ```
