@@ -1,0 +1,9 @@
+Scheme Code;Scheme Name;Plan;Option;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Net Asset Value;Date
+
+Open Ended Schemes(Equity Scheme - Large Cap Fund)
+
+Example One Mutual Fund
+
+900001;Example Large Cap Fund - Direct Plan - Growth;Direct;Growth;INF000X01AA1;-;120.0000;23-Oct-2026
+900002;Example Large Cap Fund - Direct Plan - IDCW;Direct;IDCW;INF000X01AB9;INF000X01AC7;30.5000;23-Oct-2026
+900003;Example Liquid Fund - Direct Plan - Growth;Direct;Growth;INF000X01ZZ1;-;N.A.;23-Oct-2026
