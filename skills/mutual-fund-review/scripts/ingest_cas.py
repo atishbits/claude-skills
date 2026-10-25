@@ -45,9 +45,12 @@ RE_CLOSE = re.compile(r"Closing Unit Balance\s*:\s*(" + NUM + r").*?NAV on\s+(\S
 
 def tx_type(desc):
     d = desc.lower()
-    rules = [("systematic withdrawal", "sell"), ("swp", "sell"), ("stamp duty", "stamp"), ("stt", "stt"), ("switch in", "switch_in"),
-             ("switch-in", "switch_in"), ("switch out", "switch_out"),
-             ("switch-out", "switch_out"), ("redemption", "sell"),
+    # Sales are written "Redemption less TDS, STT", so the sale words come
+    # before the bare "stt" that marks the tax line itself.
+    rules = [("systematic withdrawal", "sell"), ("swp", "sell"), ("stamp duty", "stamp"),
+             ("switch in", "switch_in"), ("switch-in", "switch_in"),
+             ("switch out", "switch_out"), ("switch-out", "switch_out"),
+             ("redemption", "sell"), ("stt", "stt"),
              ("reinvest", "dividend_reinvest"), ("idcw paid", "dividend_payout"),
              ("dividend paid", "dividend_payout"), ("payout", "dividend_payout"),
              ("systematic", "sip"), ("sip", "sip"), ("purchase", "buy")]
@@ -111,6 +114,16 @@ def parse_cas_text(text, owner="self"):
         amount = abs(common.parse_num((tm or am).group(3)))
         units = abs(common.parse_num(tm.group(4))) if tm else ""
         nav = common.parse_num(tm.group(5)) if tm else ""
+        if re.search(r"rejection|reversal", desc, re.I):
+            # A bounced instalment: the purchase it undoes never happened.
+            match = [i for i, x in enumerate(txs)
+                     if (x["folio_ref"], x["isin"]) == (cur["folio_ref"], cur["isin"])
+                     and x["type"] in ("buy", "sip") and x["units"] == units
+                     and x["amount"] == amount]
+            if not match:
+                raise ValueError(f"{date} {desc!r}: no purchase of {units} units to cancel")
+            del txs[match[-1]]
+            continue
         raw = f"{cur['folio_ref']}|{cur['isin']}|{line.strip()}"
         n = raw_seen.get(raw, 0)
         raw_seen[raw] = n + 1

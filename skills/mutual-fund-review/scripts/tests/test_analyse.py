@@ -232,6 +232,28 @@ class TestReviewFixes(unittest.TestCase):
         self.assertTrue({"lots_error", "transactions_incomplete"} & set(f["flags"]))
 
 
+    def test_sold_fund_not_flagged_for_fees(self):
+        rows = ledger.read_transactions(self.p["transactions"])
+        held = sum(r["units"] for r in rows if r["isin"] == "INF000X01AA1")
+        rows.append({**rows[0], "type": "sell", "date": "2026-01-05", "units": held,
+                     "amount": 30000.0, "row_id": "srca:sold"})
+        ledger.write_transactions(self.p["transactions"], rows)
+        snap = ledger.latest_snapshot(self.tmp.name)
+        with open(snap) as f:
+            sj = json.load(f)
+        for h in sj["holdings"]:
+            if h["isin"] == "INF000X01AA1":
+                h["units"], h["current_value"] = 0.0, 0.0
+        sj["reconciliation"] = ledger.reconcile(rows, sj["holdings"])
+        common.write_json(snap, sj)
+        self.meta("INF000X01AA1", expense_ratio_pct=None, exit_load_pct=None)
+        a = analyse.run(self.tmp.name, AS_OF, fetch=stub_fetch)
+        f = {x["isin"]: x for x in a["funds"]}["INF000X01AA1"]
+        self.assertIn("sold", f["flags"])
+        self.assertNotIn("er_missing", f["flags"])
+        self.assertNotIn("exit_load_period_unknown", f["flags"])
+        self.assertEqual(a["costs"]["missing_er"], [])
+
 class TestReport(unittest.TestCase):
     def test_short_holding_shows_absolute_return(self):
         with tempfile.TemporaryDirectory() as tmp:

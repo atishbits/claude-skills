@@ -28,7 +28,7 @@ FLAG_TEXT = {
     "keeps_fee": "earns its fee", "fails_fee_test": "fee not earned", "index_fund": "index fund",
     "below_fd_hurdle_rolling": "below FD hurdle", "short_history": "short history",
     "transactions_incomplete": "history incomplete", "idcw_growth_proxy": "IDCW plan",
-    "er_missing": "ER missing", "exit_load_period_unknown": "exit-load period unknown",
+    "er_missing": "ER missing", "sold": "sold", "exit_load_period_unknown": "exit-load period unknown",
     "held_under_1y": "held under a year", "no_benchmark": "no benchmark",
     "idcw_no_growth_series": "IDCW plan, no growth series", "lots_error": "tax lots don't add up",
 }

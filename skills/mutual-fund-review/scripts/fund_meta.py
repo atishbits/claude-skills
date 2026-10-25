@@ -29,6 +29,7 @@ ALLOWED = {"amfi_code", "growth_amfi_code", "scheme", "category", "benchmark_key
            "er_basis", "er_source", "exit_load_pct", "exit_load_days", "lock_in_days", "option",
            "tax_class"}
 NEEDED = ("amfi_code", "category", "benchmark_key", "expense_ratio_pct", "exit_load_pct")
+SOLD_NEEDED = ("amfi_code", "category", "benchmark_key")
 
 
 def load(root):
@@ -82,13 +83,19 @@ def missing(root):
     with open(snap_path) as f:
         holdings = json.load(f).get("holdings", [])
     meta = load(root)
+    held = {}
+    for h in holdings:  # no unit count means held, not sold
+        u = h.get("units")
+        held[h["isin"]] = held.get(h["isin"], 0.0) + (1.0 if u in (None, "") else float(u))
     out, seen = [], set()
     for h in holdings:
         if h["isin"] in seen:
             continue
         seen.add(h["isin"])
         row = meta.get(h["isin"], {})
-        gaps = [k for k in NEEDED if row.get(k) in (None, "")]
+        # A fund sold in full costs nothing to hold and nothing to leave.
+        needed = NEEDED if held[h["isin"]] > 0 else SOLD_NEEDED
+        gaps = [k for k in needed if row.get(k) in (None, "")]
         if gaps:
             out.append({"isin": h["isin"], "scheme": h.get("scheme", ""), "fields": gaps})
     return out

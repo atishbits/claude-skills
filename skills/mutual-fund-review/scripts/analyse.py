@@ -16,6 +16,7 @@ Each fund gets deterministic flags; Claude words verdicts from them:
   transactions_incomplete  history does not add up to units held: no XIRR or tax lots
   idcw_growth_proxy        IDCW plan compared with a growth-plan index proxy
   er_missing               no expense ratio recorded
+  sold                     sold in full: kept for its realised return, no fee or exit load
   exit_load_period_unknown a load applies but its period is not recorded: switch cost unknown
 """
 import argparse
@@ -150,7 +151,9 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
             f["rolling"] = returns.rolling(record, bseries, prof["rolling_years"], as_of,
                                            hurdle_pct=hurdle_pre)
         roll = f["rolling"] or {}
-        if f["er_pct"] is None:
+        if not h["units"]:
+            flags.append("sold")  # sold in full: no fee or exit load left to pay
+        elif f["er_pct"] is None:
             flags.append("er_missing")
         else:
             f["er_gap_vs_index"] = costs.vs_index(f["er_pct"], prof.get("index_fund_er_pct", 0.2))
@@ -226,14 +229,15 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
             sw["exit_load_inr"] = costs.exit_load_inr(lot_map.get(hk, []), as_of,
                                                       m.get("exit_load_pct"),
                                                       m.get("exit_load_days"), f["nav"])
-            if sw["exit_load_inr"] is None:
+            if sw["exit_load_inr"] is None and f["units"]:
                 f["flags"].append("exit_load_period_unknown")
             if not is_index and f["er_pct"] is not None:
                 sw["breakeven_years_to_index"] = costs.switch_breakeven(
                     f["value"], sw["exit_load_inr"], sw["tax_if_sold_inr"],
                     prof["expected_return_pct"], f["er_pct"], prof.get("index_fund_er_pct", 0.2))
 
-    cost = costs.weighted_er([{"isin": f["isin"], "value": f["value"]} for f in funds], meta)
+    cost = costs.weighted_er([{"isin": f["isin"], "value": f["value"]} for f in funds
+                              if f["units"]], meta)
 
     period_out = None
     if period:
