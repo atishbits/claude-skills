@@ -1,0 +1,18 @@
+{
+ "owner": "self",
+ "tax_profile_path": null,
+ "tax_person": null,
+ "fd_rate_pct": 6.5,
+ "fd_rate_as_of": null,
+ "fd_rate_source": null,
+ "stale_after_days": 30,
+ "keep_min_window_win_pct": 65,
+ "rolling_years": 3,
+ "max_switch_breakeven_years": 3,
+ "sector_cap_pct": 10,
+ "all_sectoral_cap_pct": 15,
+ "tilt_cap_pct": 25,
+ "equity_risk_premium_pts": 3,
+ "horizon_years": 5,
+ "expected_return_pct": 10
+}

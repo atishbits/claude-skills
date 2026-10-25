@@ -1,0 +1,10 @@
+{
+ "fy": "2026-27",
+ "_note": "Indian mutual-fund capital-gains rules for a resident individual. Rates are before surcharge and cess; the user's multipliers come from their tax profile. Check after every Union Budget.",
+ "equity": {"stcg_pct": 20, "ltcg_pct": 12.5, "lt_months": 12},
+ "ltcg_exemption_inr": 125000,
+ "specified_debt": {"slab": true, "from": "2023-04-01"},
+ "hybrid_gold_intl": {"ltcg_pct": 12.5, "lt_months": 24},
+ "grandfather_date": "2018-01-31",
+ "ltcg_surcharge_cap_multiplier": 1.15
+}
