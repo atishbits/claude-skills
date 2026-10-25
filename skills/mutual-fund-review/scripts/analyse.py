@@ -94,9 +94,19 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
         hurdle["equity_with_premium_pct"] = round(hurdle["required_pretax_pct"]["equity"]
                                                   + prof["equity_risk_premium_pts"], 2)
 
+    skip = set(prof.get("not_reviewed_isins") or [])
+    not_reviewed = {}
+    for h in snap["holdings"]:  # tracked, but the user keeps them out of the review
+        if h["isin"] in skip:
+            nr = not_reviewed.setdefault(h["isin"], {"isin": h["isin"], "scheme": h.get("scheme", ""),
+                                                     "holdings": 0, "units": 0.0, "value": 0.0})
+            nr["holdings"] += 1
+            nr["units"] = round(nr["units"] + float(h.get("units") or 0), 3)
+            nr["value"] = round(nr["value"] + float(h.get("current_value") or 0), 2)
+
     funds, complete_rows, all_flows, by_source = [], [], [], {}
     keys = {}
-    for h in snap["holdings"]:
+    for h in [h for h in snap["holdings"] if h["isin"] not in skip]:
         m = meta.get(h["isin"], {})
         rows = _rows_for(h, txs)
         s = series(m.get("amfi_code"))
@@ -266,6 +276,7 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
     out = {"as_of": as_of, "snapshot": os.path.basename(snap_path), "totals": totals,
            "by_source": sources, "funds": sorted(funds, key=lambda f: -f["value"]),
            "costs": cost, "tax": tax_out, "hurdle": hurdle, "period": period_out,
+           "not_reviewed": sorted(not_reviewed.values(), key=lambda x: -x["value"]),
            "notes": [] if person else ["no tax rates: run `tax.py import --write`"]}
     common.write_json(os.path.join(p["skill_data"], f"analysis-{as_of}.json"), out)
     return out

@@ -254,6 +254,19 @@ class TestReviewFixes(unittest.TestCase):
         self.assertNotIn("exit_load_period_unknown", f["flags"])
         self.assertEqual(a["costs"]["missing_er"], [])
 
+    def test_not_reviewed_fund_listed_but_left_out(self):
+        with open(self.p["profile"]) as f:
+            own = json.load(f)
+        own["not_reviewed_isins"] = ["INF000X01AA1"]
+        common.write_json(self.p["profile"], own)
+        a = analyse.run(self.tmp.name, AS_OF, fetch=stub_fetch)
+        self.assertEqual([f["isin"] for f in a["funds"]], ["INF000X01BB2"])
+        nr = a["not_reviewed"]
+        self.assertEqual([x["isin"] for x in nr], ["INF000X01AA1"])
+        self.assertGreater(nr[0]["value"], 0)
+        self.assertEqual(a["totals"]["value"], a["funds"][0]["value"])
+        self.assertIn("not reviewed", report.render(a))
+
 class TestReport(unittest.TestCase):
     def test_short_holding_shows_absolute_return(self):
         with tempfile.TemporaryDirectory() as tmp:

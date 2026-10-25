@@ -16,5 +16,5 @@
  "horizon_years": 5,
  "expected_return_pct": 10,
  "index_fund_er_pct": 0.2,
- "exclude_isins": []
+ "not_reviewed_isins": []
 }

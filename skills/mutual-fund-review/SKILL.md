@@ -73,10 +73,10 @@ name an ITR working folder, read its capital-gains conclusions for gains already
 and brought-forward losses before asking the user anything. Ask only for what no sibling skill
 holds.
 
-**Leaving a fund out.** When the user wants a fund kept out of this review (held for another
-purpose, managed elsewhere), add its ISIN to `exclude_isins` in `data/profile.json`; every
-ingest drops it and reports how many rows it dropped. Funds already in the ledger leave on the
-next ingest of their source.
+**Leaving a fund out.** When the user wants a fund tracked but kept out of this review (held
+for another purpose, managed elsewhere), add its ISIN to `not_reviewed_isins` in
+`data/profile.json`. Its holdings and history are still stored and synced; the analysis leaves
+it out of totals, returns, costs and tax, and the report lists it as held but not reviewed.
 
 **FD rate.** If `fd_rate_age_days` is missing or over 30, read the user's bank FD-rates page (from
 notes) and set `fd_rate_pct` (the rate for 3–5 years, general public, below ₹3 crore),

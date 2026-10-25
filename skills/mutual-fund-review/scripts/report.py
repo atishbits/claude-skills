@@ -107,6 +107,12 @@ def render(a):
         lines.append(f"**{p['start']} → {p['end']}:** gain {_inr(p['pnl'])} on "
                      f"{_inr(p['start_value'])} start value and {_inr(p['net_flows'])} added; "
                      f"XIRR {_pct(p['xirr'])}.")
+    nr = a.get("not_reviewed") or []
+    if nr:
+        lines.append("**Also held, not reviewed** (by your choice): "
+                     + "; ".join(f"{x['scheme']} {_inr(x['value'])}"
+                                 + (f" ({x['holdings']} folios)" if x["holdings"] > 1 else "")
+                                 for x in nr) + ".")
     for n in a.get("notes", []):
         lines.append(f"_Note: {n}_")
     lines += ["", "Advisory only: nothing here buys or sells anything.", "", "**Terms used**", ""]
