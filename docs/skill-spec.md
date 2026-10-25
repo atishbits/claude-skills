@@ -72,11 +72,17 @@ WORKROOT/data/                  personal, gitignored, mirrored to cloud storage
   user shared (desktop app), or uses a temporary folder with the cloud copy as the only lasting
   one (Claude app).
 - Run every command from `${CLAUDE_SKILL_DIR}`.
-- `raw/` is what came in; `skill-data/` is what the skill made. Anything a script can rebuild from
-  `raw/` (a cache, a parsed ledger) can be left out of sync.
+- State that both the user and the skill edit (settings, a payment ledger, `fds.csv`) sits at the
+  top of `data/`. `raw/` is what came in; `skill-data/` is what the skill generated. Anything a
+  script can rebuild from `raw/` (a cache, a parsed ledger) can be left out of sync.
 
-Older skills (`advance-tax`, for one) keep a flat working folder (`data_dir: "."`). Move a skill to
-this layout when it is next reworked; do not add new skills in the flat form.
+Documented exceptions, each explained in the skill's README:
+
+- `itr2-filing-assistant` works in one folder per assessee per assessment year, chosen by the user,
+  with their documents directly in it (`data_dir: "."`).
+- `pdf-unlock` keeps no state at all: no `data/`, no cloud copy, no `--where`.
+
+A new skill uses this layout unless it has a reason as strong as those.
 
 ## 3. Local and cloud copies
 
@@ -87,8 +93,12 @@ The phone app cannot see this laptop, so every skill whose data a later run need
   marker file named exactly `<name>-sync.json`; never hard-code a folder name or ID in a tracked
   file (if one is needed, it goes in `notes.md`).
 - **`scripts/drive_sync.py` decides every move.** The skill ships `scripts/drive-sync.json` (format
-  in `shared/README.md`) and a `references/cloud_sync.md` copied from the newest skill and adjusted.
-  Run `shared/sync-copies.sh` after adding the config; the hook refuses a stale copy.
+  in `shared/README.md`) and the sync steps, preferably as a `references/cloud_sync.md` copied from
+  the newest skill and adjusted (`portfolio-review` keeps them in SKILL.md). Run
+  `shared/sync-copies.sh` after adding the config; the hook refuses a stale copy.
+- **One small file needs no sync engine.** A skill whose whole state is one small profile can keep
+  a single shared copy, found by exact name, and merge it with a script, as `news-briefing` does
+  with `news-briefing-profile.json`.
 - **What syncs:**
   - both ways: `notes.md`, `profile.json`, other settings, and the reports and analyses in
     `skill-data/` that the phone needs to answer from;

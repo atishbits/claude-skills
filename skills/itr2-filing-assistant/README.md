@@ -42,6 +42,12 @@ Point the skill at a working folder of your own and every conclusions file, work
 lookup lands there. Your Form 16, AIS, 26AS and broker statements are read from where you keep them;
 nothing is sent to any other service or shared.
 
+**Why there is no `data/` folder here.** The repo's other skills keep their state in a working
+root's `data/` folder (`docs/skill-spec.md`). This one deliberately does not: its working folder is
+one assessee's folder for one assessment year, which you choose, and your documents sit directly in
+it and in its cloud copy. Wrapping that in `data/raw/` would change every path in folders you
+already keep, for no gain.
+
 ## Where it runs
 
 It works in Claude Code and in Cowork. Its working files always live in a local folder:
