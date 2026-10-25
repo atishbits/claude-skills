@@ -1,0 +1,10 @@
+DETAILED STATEMENT,,,,,,,
+Account Number,XXXXXXXX1234 - JANE DOE,,,,,,
+Transaction Date from,01/04/2026,to,30/04/2026,,,,
+,,,,,,,
+S No.,Value Date,Transaction Date,Cheque Number,Transaction Remarks,Withdrawal Amount(INR),Deposit Amount(INR),Balance(INR)
+1,01/04/2026,01/04/2026,,CMS/ SALARY 2026APR EXAMPLE CORP,0.00,"100,000.00","110,000.00"
+2,02/04/2026,02/04/2026,,UPI/FUELCO PUMP/fuelco@okx/Pay/ACME BANK/6001,"2,000.00",0.00,"108,000.00"
+3,02/04/2026,02/04/2026,,UPI/CAFE ROSE/rose@okx/UPI/ACME BANK/6002,500.00,0.00,"107,500.00"
+4,03/04/2026,03/04/2026,,UPI/CARDPAY/cardpay@acme/payment on/ACME BANK/6003,"20,000.00",0.00,"87,500.00"
+Legends,,,,,,,

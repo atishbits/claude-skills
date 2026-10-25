@@ -1,0 +1,13 @@
+{
+ "marker": "my-spendings-sync.json",
+ "root_env": "SPENDINGS_ROOT",
+ "data_dir": "data",
+ "kinds": {
+  "state": {"patterns": ["profile.json", "notes.md", "accounts.json", "rules.csv", "holdings.csv",
+                         "adapters/*.json", "offers/*.json", "cards/*.json",
+                         "*.conflict-*", "skill-data/*.conflict-*"]},
+  "run": {"patterns": ["skill-data/analysis-*.json", "skill-data/REPORT-*.md"]},
+  "statement": {"patterns": ["raw/*"], "upload": false}
+ },
+ "_comment": "Settings, labels and saved reports go both ways, so the Claude app works from the newest analysis (it carries the 12-month spend the card calculator needs). Statements only come down: the user may drop one into the cloud folder's raw/, but nothing is uploaded from raw/. The ledger and coverage stay local: they are rebuilt from statements, and large files cost tokens to move through a connector."
+}

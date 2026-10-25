@@ -1,0 +1,9 @@
+{
+ "_comment": "Reads a hand-made CSV in the format of manual-import-template.csv. Copy to data/adapters/ and set account to the alias the rows belong to.",
+ "account": "manual",
+ "kind": "table",
+ "header_contains": ["date", "description", "amount"],
+ "columns": {"date": "date", "description": "description", "amount": "amount", "drcr": null,
+             "debit": null, "credit": null, "balance": "balance", "reference": "reference"},
+ "date_format": "%Y-%m-%d"
+}

@@ -1,0 +1,10 @@
+{
+ "_comment": "Copy to data/accounts.json. One entry per bank account or card: an alias you choose, its type, and the last 4 digits only. bill_payment_pattern (cards) is a regex that picks out this card's bill payments in a bank statement. addons lists add-on cards on this card: their spending is yours, marked with the label. self_patterns pick out transfers between your own accounts (your name as banks print it); family_patterns pick out money sent to family. All values here are invented.",
+ "accounts": [
+  {"alias": "savings-main", "type": "bank", "last4": "1234"},
+  {"alias": "card-1", "type": "card", "last4": "4321", "bill_payment_pattern": "CARDPAY",
+   "addons": [{"last4": "9876", "label": "Spouse"}]}
+ ],
+ "self_patterns": ["JANE DOE"],
+ "family_patterns": ["JOHN DOE"]
+}

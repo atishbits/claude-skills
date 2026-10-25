@@ -1,0 +1,4 @@
+asset_type,name,value_inr,as_of,source
+fd,Example Bank FD 1,500000,2026-10-01,bank statement
+mf,Example Index Fund,250000,2026-10-01,fund skill report
+stocks,Example Ltd,100000,2026-10-01,stock skill report

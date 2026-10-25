@@ -1,0 +1,11 @@
+                ACME CARD STATEMENT
+Statement period 01/04/2026 to 30/04/2026
+JANE DOE    Card ending 4321
+01/04/2026   FUELCO PUMP CITY                    1,500.00
+05/04/2026   SHOPMART ONLINE                      3,000.00
+05/04/2026   SHOPMART ONLINE                      3,000.00
+10/04/2026   PAYMENT RECEIVED THANK YOU          20,000.00 Cr
+JOHN DOE    Card ending 9876
+12/04/2026   FUELCO PUMP HIGHWAY                 2,000.00
+14/04/2026   SHOPMART REFUND                        500.00 Cr
+Total due                                         9,000.00
