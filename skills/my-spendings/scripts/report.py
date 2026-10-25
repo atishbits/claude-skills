@@ -76,6 +76,8 @@ def _savings(a):
            f"| Income | {r['income']:,.0f} |", f"| Spending | {r['spend']:,.0f} |",
            f"| Tax | {r['tax']:,.0f} |", f"| Sent to family | {r['family']:,.0f} |",
            f"| Invested (net) | {r['invest_net']:,.0f} |"]
+    if r.get("other_in"):
+        out.append(f"| Other money in, not labelled (not counted as income) | {r['other_in']:,.0f} |")
     if r.get("own_moved_out"):
         out.append(f"| Moved to your untracked accounts | {r['own_moved_out']:,.0f} |")
     out += ["", f"**Savings rate** {_pct(r['savings_rate'])} · **Investing rate** {_pct(r['investing_rate'])}"]

@@ -68,6 +68,13 @@ class TestResolve(unittest.TestCase):
         self.assertEqual(run(rows, {})[0],
                          ["income", "income", "invest", "tax", "family", "spend", "spend"])
 
+    def test_unlabelled_money_in_is_not_negative_spend(self):
+        rows = [t("2026-05-01", "savings-main", 5000, "uncategorised"),
+                t("2026-05-01", "savings-main", 300, "refund"),
+                t("2026-05-02", "card-1", 500, "refund"),
+                t("2026-05-02", "savings-main", 900, "dining")]
+        self.assertEqual(run(rows, {})[0], ["other_in", "spend", "spend", "other_in"])
+
 
 if __name__ == "__main__":
     unittest.main()

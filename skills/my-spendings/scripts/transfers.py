@@ -6,7 +6,8 @@ own statement (and so its purchases) is in the ledger, and is counted once as
 tracked accounts drop out; money moved to an untracked account of your own is
 shown separately, never as spending.
 
-Buckets: spend, income, invest, tax, family, own_moved_out, excluded.
+Buckets: spend, income, invest, tax, family, own_moved_out, other_in (money in
+that is not labelled as income or a refund), excluded.
 """
 import datetime as dt
 import re
@@ -82,6 +83,8 @@ def resolve(txns, accounts, coverage):
                 t["bucket"] = "own_moved_out" if amt < 0 else "excluded"
             continue
         t["bucket"] = _bucket_for(cat)
+        if t["bucket"] == "spend" and amt > 0 and cat != "refund":
+            t["bucket"] = "other_in"   # unlabelled money in: neither income nor less spending
     for j in used:
         if out[j].get("bucket") is None or out[j]["category"] == "own_transfer":
             out[j]["bucket"] = "excluded"

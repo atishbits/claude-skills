@@ -9,7 +9,7 @@
   ["CLEARING|BROKING|BROKERAGE|SECURITIES|\\bDEMAT\\b|STOCK ?BROK", "investment:stocks", "any"],
   ["\\bBONDS?\\b|DEBENTURE|\\bNCD\\b", "investment:bonds", "any"],
   ["\\bGOLD\\b|\\bSGB\\b", "investment:gold", "any"],
-  ["ANNUAL FEE|LATE PAY|FINANCE CH(AR)?GE?|PENALTY|MARK-?UP|\\bCHGS?\\b|CHARGES?\\b|\\bFEES?\\b|MIN(IMUM)? BAL|SMS ALERT|\\b[CSI]?GST\\b", "fees_charges", "out"],
+  ["(ANNUAL|LATE( PAYMENT)?|PROCESSING|JOINING|RENEWAL|CASH ADVANCE|OVERLIMIT|OVER LIMIT|REPLACEMENT|ISSUANCE) FEE|FINANCE CH(AR)?GE?|PENALTY|MARK-?UP|\\bCHGS?\\b|\\bCHARGES?\\b|MIN(IMUM)? BAL|SMS ALERT|\\b[CSI]?GST\\b|DEBIT CARD (AMC|FEE)", "fees_charges", "out"],
   ["\\bLOAN\\b|\\bEMI\\b", "loan_emi", "out"],
   ["INSURANCE|ASSURANCE|PREMIUM", "insurance", "out"],
   ["\\bFUEL|PETROL|DIESEL|FILLING STATION|SERVICE STATION|SERVICE STN|PETROLEUM|\\bCNG\\b|EV CHARG", "fuel", "out"],

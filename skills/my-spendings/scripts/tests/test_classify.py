@@ -53,6 +53,11 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(cat("UPI/DTAX/advance tax", -40000), "tax")
         self.assertEqual(cat("TRF TO FD no. 1234", -350000), "investment:fd")
 
+    def test_fee_word_in_upi_note_is_not_bank_fee(self):
+        self.assertNotEqual(cat("UPI/ACADEMY/academy@okx/Paying Fee/ACME BANK/1", -8000), "fees_charges")
+        self.assertEqual(cat("LATE PAYMENT FEE", -500, "card-1"), "fees_charges")
+        self.assertEqual(cat("PROCESSING FEE", -199, "card-1"), "fees_charges")
+
     def test_unknown_is_uncategorised(self):
         self.assertEqual(cat("UPI/ZQXWV/abc@okx", -999), "uncategorised")
 

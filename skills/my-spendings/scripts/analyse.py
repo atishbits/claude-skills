@@ -55,7 +55,7 @@ def rates(txns):
     income = _r(s.get("income", 0.0))
     r = {"income": income, "spend": _r(-s.get("spend", 0.0)), "invest_net": _r(-s.get("invest", 0.0)),
          "tax": _r(-s.get("tax", 0.0)), "family": _r(-s.get("family", 0.0)),
-         "own_moved_out": _r(-s.get("own_moved_out", 0.0))}
+         "own_moved_out": _r(-s.get("own_moved_out", 0.0)), "other_in": _r(s.get("other_in", 0.0))}
     r["savings_rate"] = (round((income - r["spend"] - r["tax"] - r["family"]) / income, 4)
                          if income > 0 else None)
     r["investing_rate"] = round(r["invest_net"] / income, 4) if income > 0 else None
@@ -103,12 +103,18 @@ def fees(txns):
     return {"total": _r(sum(i["amount"] for i in items)), "items": items}
 
 
+def _spend(t):
+    """Real spending: not investments, tax or transfers, and not a card bill
+    whose purchases are unknown (its size says nothing about a single charge)."""
+    return t["bucket"] == "spend" and t["category"] != "card_spend_unexpanded"
+
+
 def anomalies(txns, profile, history=None):
     history = sorted(history if history is not None else txns, key=lambda t: t["date"])
     out = []
     groups = {}
     for t in txns:
-        if _a(t) < 0:
+        if _a(t) < 0 and _spend(t):
             groups.setdefault((t["account"], t["payee"], t["amount"], t["date"]), []).append(t)
     for (acct, payee, amt, date), g in groups.items():
         if len(g) >= 2:
@@ -123,10 +129,10 @@ def anomalies(txns, profile, history=None):
                 "description": t["description"]}
         if a < 0 and -a <= profile["tiny_debit_max"] and t["category"] != "fees_charges":
             out.append(dict(base, kind="tiny_debit"))
-        if (a < 0 and -a >= profile["new_payee_min"] and t["bucket"] == "spend"
+        if (a < 0 and -a >= profile["new_payee_min"] and _spend(t)
                 and first_seen.get(t["payee"]) is t):
             out.append(dict(base, kind="new_payee_large"))
-        if a < 0:
+        if a < 0 and _spend(t):
             prior = [-_a(h) for h in history if h["payee"] == t["payee"] and _a(h) < 0
                      and h["date"] < t["date"]]
             if len(prior) >= 3 and -a >= profile["outlier_multiple"] * statistics.median(prior):

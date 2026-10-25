@@ -80,6 +80,22 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(kinds, [("duplicate", "CAFE"), ("foreign", "WEBSHOP"), ("new_payee_large", "NEWGUY"),
                                  ("outlier", "GROCER"), ("tiny_debit", "ODD")])
 
+    def test_rates_report_other_money_in(self):
+        r = analyse.rates([t("2026-04-01", 100000, "income"),
+                           t("2026-04-02", 7000, "uncategorised", "other_in")])
+        self.assertEqual((r["income"], r["other_in"], r["spend"]), (100000.0, 7000.0, 0.0))
+
+    def test_anomalies_ignore_non_spend_and_card_bills(self):
+        hist = [t("2026-03-0%d" % d, -1000, "investment:stocks", "invest", payee="BROKER") for d in (1, 2, 3)]
+        hist += [t("2026-03-0%d" % d, -1000, "card_spend_unexpanded", payee="BILLAPP") for d in (1, 2, 3)]
+        rows = [t("2026-04-01", -10000, "investment:stocks", "invest", payee="BROKER"),
+                t("2026-04-01", -10000, "investment:stocks", "invest", payee="BROKER"),
+                t("2026-04-02", -35000, "card_spend_unexpanded", payee="BILLAPP"),
+                t("2026-04-02", -35000, "card_spend_unexpanded", payee="BILLAPP"),
+                t("2026-04-03", -49000, "tax", "tax", payee="TAXDEPT"),
+                t("2026-04-03", -49000, "tax", "tax", payee="TAXDEPT")]
+        self.assertEqual(analyse.anomalies(rows, PROFILE, hist + rows), [])
+
     def test_mix_flags_concentration(self):
         h = [{"asset_type": "fd", "name": "FD A", "value_inr": "600000"},
              {"asset_type": "stocks", "name": "Stock X", "value_inr": "300000"},
