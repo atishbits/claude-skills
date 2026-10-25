@@ -1,0 +1,33 @@
+{
+ "_comment": "Generic keywords only, checked in order after the user's own data/rules.csv and accounts.json patterns. Never add a merchant, bank, platform or brand name here: those go in the user's rules.csv. direction: out = money out, in = money in, any = either.",
+ "rules": [
+  ["\\bSALARY\\b|PAYROLL", "income", "in"],
+  ["DIVIDEND|\\bINT\\.?\\s?PD\\b|INTEREST (CREDIT|PAID)|\\bINT CR\\b|SAVINGS INTEREST", "interest", "in"],
+  ["DIRECT ?TAX|\\bDTAX\\b|ADVANCE TAX|SELF ASSESSMENT TAX|INCOME TAX|\\bCBDT\\b", "tax", "any"],
+  ["TRF TO FD|\\bFD\\b|FIXED DEPOSIT|TERM DEPOSIT|RECURRING DEPOSIT|\\bRD\\b", "investment:fd", "any"],
+  ["MUTUAL FUND|\\bMF\\b|\\bSIP\\b|\\bAMC\\b", "investment:mf", "any"],
+  ["CLEARING|BROKING|BROKERAGE|SECURITIES|\\bDEMAT\\b|STOCK ?BROK", "investment:stocks", "any"],
+  ["\\bBONDS?\\b|DEBENTURE|\\bNCD\\b", "investment:bonds", "any"],
+  ["\\bGOLD\\b|\\bSGB\\b", "investment:gold", "any"],
+  ["ANNUAL FEE|LATE PAY|FINANCE CH(AR)?GE?|PENALTY|MARK-?UP|\\bCHGS?\\b|CHARGES?\\b|\\bFEES?\\b|MIN(IMUM)? BAL|SMS ALERT|\\b[CSI]?GST\\b", "fees_charges", "out"],
+  ["\\bLOAN\\b|\\bEMI\\b", "loan_emi", "out"],
+  ["INSURANCE|ASSURANCE|PREMIUM", "insurance", "out"],
+  ["\\bFUEL|PETROL|DIESEL|FILLING STATION|SERVICE STATION|SERVICE STN|PETROLEUM|\\bCNG\\b|EV CHARG", "fuel", "out"],
+  ["\\bATM\\b|CASH WDL|CASH WITHDRAWAL", "cash", "out"],
+  ["ELECTRICITY|BROADBAND|RECHARGE|GAS BILL|\\bWATER\\b|POSTPAID|PREPAID|\\bDTH\\b|INTERNET|UTILITY", "utilities", "out"],
+  ["SOCIETY|MAINTENANCE|\\bRENT\\b|APARTMENT|HOUSING", "housing", "out"],
+  ["GROCER|SUPERMARKET|HYPERMARKET|KIRANA|VEGETABLE|FRUITS|DAIRY|\\bMILK\\b|PROVISION", "groceries", "out"],
+  ["FOOD DELIVERY", "food_delivery", "out"],
+  ["RESTAURANT|\\bCAFE|BAKERY|\\bFOOD|KITCHEN|DHABA|BISTRO|PIZZA|BIRYANI|SWEETS|EATERY", "dining", "out"],
+  ["AIRLINE|AIRWAYS|AIRPORT|HOTEL|RAILWAY|TRAVEL|\\bTOURS?\\b|RESORT|FLIGHT", "travel", "out"],
+  ["\\bCAB\\b|TAXI|\\bMETRO\\b|PARKING|\\bTOLL\\b|FASTAG|RIDES?\\b", "transport", "out"],
+  ["HOSPITAL|CLINIC|PHARMA|MEDICAL|CHEMIST|DIAGNOSTIC|DOCTOR|DENTAL|HEALTH", "health", "out"],
+  ["SCHOOL|COLLEGE|EDUCATION|TUITION|ACADEMY|UNIVERSITY|COURSE", "education", "out"],
+  ["SUBSCRIPTION|MEMBERSHIP|STREAMING", "subscriptions", "out"],
+  ["CINEMA|MOVIE|THEATRE|TICKETS|\\bEVENTS?\\b|GAMING", "entertainment", "out"],
+  ["SALON|\\bSPA\\b|PARLOU?R|GROOMING|\\bGYM\\b|FITNESS", "personal_care", "out"],
+  ["DONATION|CHARITY|TEMPLE|FOUNDATION|\\bGIFTS?\\b", "gifts_donations", "out"],
+  ["\\bSHOP|\\bSTORES?\\b|\\bMALL\\b|RETAIL|ONLINE|\\bMART\\b", "shopping", "out"],
+  ["REFUND|REVERSAL|CASHBACK", "refund", "in"]
+ ]
+}
