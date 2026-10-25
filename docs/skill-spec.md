@@ -30,7 +30,10 @@ The repo invariant in `README.md` and `CLAUDE.md` applies in full. In short:
   - real amounts of any kind, and generated reports built from any of the above.
 
   Examples and test fixtures use invented names, invented tickers (`STOCKA`, `FUNDX`), round numbers,
-  and card numbers that fail the Luhn checksum.
+  and card numbers that fail the Luhn checksum: `hooks/pre-commit` (through `hooks/card_numbers.py`)
+  blocks any staged line holding a card number that passes it, or a masked one with real leading
+  digits, examples included. A user's own card names and last 4 digits go in the gitignored
+  `.private-terms`.
 - No vendor, platform, bank or broker the user uses is named in a generic skill, and no skill that
   is specific to one. Describe the input by its format ("a broker export with these columns").
 - What is personal, including which vendor a figure comes from and how to refresh it, goes in the

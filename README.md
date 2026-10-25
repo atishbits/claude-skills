@@ -23,7 +23,7 @@ Four things enforce it, and all four should stay:
    `holdings-template.csv`, which contains only made-up rows.
 2. **`hooks/pre-commit`** blocks a commit whose staged files look like data: broker exports, tax
    documents, spreadsheets and statements (`.xlsx`, `.pdf`, `.ofx`, …), generated reports, or
-   content matching a PAN, Aadhaar, demat ID or a broker export header. Enable it in a fresh clone
+   content matching a PAN, Aadhaar, demat ID, payment-card number or a broker export header. Enable it in a fresh clone
    with:
 
    ```

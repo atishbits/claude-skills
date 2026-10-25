@@ -60,7 +60,7 @@ class TestParse(unittest.TestCase):
     def test_table_card_addon_sections(self):
         # Invented card CSV: a bare card-number row starts each holder's section.
         rows = [["Date", "Ref", "Details", "Amount", "Sign"],
-                ["1111222233334444"],
+                ["1111222233334440"],
                 ["01/09/2026", "1", "GROCER", "500.00", ""],
                 ["02/09/2026", "2", "PAYMENT RECEIVED", "500.00", "CR"],
                 ["1111222233335555"],

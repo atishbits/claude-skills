@@ -1,8 +1,8 @@
 # Working in this repo
 
 This repo holds Claude Code skills as tooling. **It must never contain personal or financial
-data** — bank account details, statements or transactions; credit or debit card numbers (full or
-masked), bills or spends; stock holdings, broker exports, per-stock notes with quantities and cost;
+data** — bank account details, statements or transactions; credit or debit card numbers (full,
+masked or last 4), bills or spends; stock holdings, broker exports, per-stock notes with quantities and cost;
 the mutual funds held, folio numbers, units or SIPs; bond or FD holdings; generated reports; tax
 paperwork (ITR, Form 16, 26AS, AIS, capital-gains statements, contract notes); or identifiers such
 as PAN, Aadhaar, demat, folio, card or bank account numbers. Full list: `docs/skill-spec.md` §1. The README states the invariant in

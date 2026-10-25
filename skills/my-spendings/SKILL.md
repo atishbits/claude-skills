@@ -49,6 +49,12 @@ is for the user to review; you never act on an account.
 - **Numbers come from scripts.** Every total, rate, fee, yearly cost and card value you quote is
   read from a script's output. Do not add up, annualise or compare figures yourself; if no script
   gives a number you need, say so.
+- **No card information in the repository, ever.** Card numbers (full or masked), last 4
+  digits, card names, add-on holders, statements and anything read from them stay in WORKROOT's
+  `data/` (and its private cloud copy). Examples and test fixtures use invented numbers that
+  fail the card checksum. Never commit a file from `data/` or one written from a statement;
+  `hooks/pre-commit` blocks card numbers, and its gitignored private-terms list blocks the
+  user's card names and last 4 digits.
 - **Names stay out of this skill.** Which banks and cards the user has, their statement pages and
   quirks live in `data/notes.md` (personal, gitignored). Never copy them into a file outside
   `data/`.

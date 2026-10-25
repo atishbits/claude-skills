@@ -89,6 +89,16 @@ scan '\bIN[0-9]{14}\b'                      "an NSDL demat ID"
 scan '\b12[0-9]{14}\b'                      "a CDSL demat ID"
 scan '\b[0-9]{9,18}\b.*(IFSC|ifsc)'         "bank account details"
 
+# Payment-card numbers, full (13-19 digits passing the Luhn checksum) or masked
+# as statements print them (leading digits, X's, last 4). Every added line is
+# checked, examples included: an invented card number in a test must fail the
+# checksum. The report shows only the last 4 digits.
+all_added=$(git diff --cached --unified=0 --diff-filter=ACMR | grep '^+' | grep -v '^+++' || true)
+cards=$(printf '%s\n' "$all_added" | python3 "$(git rev-parse --show-toplevel)/hooks/card_numbers.py")
+if [ $? -ne 0 ]; then
+  note "staged content contains what looks like a payment-card number (ending ${cards:-?})"
+fi
+
 # A broker export's header row, allowed only in the template handled above.
 if printf '%s' "$added" | grep -qE '"?Instrument"?,\s*"?Qty\."?,\s*"?Avg\. cost'; then
   if ! printf '%s' "$staged" | grep -q -- '-template\.'; then
@@ -201,6 +211,7 @@ if printf '%s\n' "$staged" | grep -q '\.py$'; then
   echo "pre-commit: running unit tests"
   test_fail=0
   while IFS= read -r tests_dir; do
+    [ -d "$tests_dir" ] || continue
     skill_scripts=$(dirname "$tests_dir")
     if ! (cd "$skill_scripts" && python3 -m unittest discover -s tests -p 'test_*.py' >/tmp/pretest.$$ 2>&1); then
       echo "  ✗ $skill_scripts: tests failed"
@@ -208,7 +219,7 @@ if printf '%s\n' "$staged" | grep -q '\.py$'; then
       test_fail=1
     fi
     rm -f /tmp/pretest.$$
-  done < <(find skills shared -type d -name tests -path '*/scripts/tests')
+  done < <(find skills shared -type d -name tests -path '*/scripts/tests'; echo hooks/tests)
 
   if [ "$test_fail" -ne 0 ]; then
     cat <<'MSG'

@@ -19,6 +19,13 @@ account.
 | Current investments (optional) | `data/holdings.csv` in the format of `holdings-template.csv`, filled from your other finance skills' reports | `analyse.py` |
 | Card offers | One JSON per card in `data/offers/` (and `data/cards/` for your current cards) | `card_offer.py` |
 
+**No card information ever enters the repository**: no card number, masked number, last 4
+digits, card name or statement. The repository's pre-commit hook blocks any staged line holding
+a payment-card number (13–19 digits passing the Luhn checksum, or a masked one such as
+`4XXX…1234` with real leading digits); test fixtures therefore use invented numbers that fail the
+checksum. The user's own card names and last 4 digits go in the repository's gitignored
+`.private-terms`, which the hook also enforces.
+
 Nothing personal ships with the skill. Your data lives in a working folder's `data/`
 (gitignored): `--root`, else `$SPENDINGS_ROOT`, else this folder's own `data/` in a checkout.
 `data/notes.md` records which banks and cards you use, where their statements are and which
