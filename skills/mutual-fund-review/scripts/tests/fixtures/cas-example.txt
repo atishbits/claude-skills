@@ -1,0 +1,26 @@
+                         Consolidated Account Statement
+                         01-Jan-2018 To 25-Oct-2026
+
+Example One Mutual Fund
+Folio No: 1111222233 / 0                    KYC: OK
+EX01-Example Large Cap Fund - Direct Plan Growth (Non-Demat) - ISIN: INF000X01AA1(Advisor: DIRECT) Registrar : EXAMPLE
+Opening Unit Balance: 0.000
+08-Apr-2020   Purchase                                           50,000.00      1,428.571       35.0000       1,428.571
+08-Apr-2020   *** Stamp Duty ***                                      2.50
+10-May-2021   Systematic Investment Purchase - Instalment 1        5,000.00        100.000       50.0000       1,528.571
+15-Jan-2024   Redemption - via Internet                        (10,000.00)      (100.000)      100.0000       1,428.571
+Closing Unit Balance: 1,428.571      NAV on 23-Oct-2026: INR 120.0000      Total Cost Value: 45,000.00      Market Value on 23-Oct-2026: INR 171,428.52
+
+EX02-Example Small Cap Fund - Direct Plan Growth (Non-Demat) - ISIN: INF000X01BB2(Advisor: DIRECT) Registrar : EXAMPLE
+Opening Unit Balance: 0.000
+05-Apr-2018   Purchase                                           30,000.00        600.000       50.0000         600.000
+05-Jun-2019   Switch In - From Example Liquid Fund                10,000.00        200.000       50.0000         800.000
+Closing Unit Balance: 800.000      NAV on 23-Oct-2026: INR 190.0000      Total Cost Value: 40,000.00      Market Value on 23-Oct-2026: INR 152,000.00
+
+Example Two Mutual Fund
+Folio No: 4444555566 / 12                   KYC: OK
+EX03-Example Infra Fund - Direct Plan - IDCW (Non-Demat) - ISIN: INF000X01CC3(Advisor: DIRECT) Registrar : EXAMPLE
+Opening Unit Balance: 50.000
+02-Jan-2019   Purchase                                            5,000.00         50.000      100.0000         100.000
+10-Mar-2025   IDCW Paid                                             250.00
+Closing Unit Balance: 100.000      NAV on 23-Oct-2026: INR 300.0000      Total Cost Value: 10,000.00      Market Value on 23-Oct-2026: INR 30,000.00

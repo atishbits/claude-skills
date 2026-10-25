@@ -85,8 +85,8 @@ uses them; see `shared/README.md`.
 ## Installing as a plugin
 
 `.claude-plugin/marketplace.json` makes this repository a plugin source. It lists every skill
-here: `news-briefing`, `portfolio-review`, `pdf-unlock`, `itr2-filing-assistant`, `advance-tax`
-and `bond-portfolio-monitor`. In Cowork, add the marketplace `atishbits/claude-skills` once and
+here: `news-briefing`, `portfolio-review`, `pdf-unlock`, `itr2-filing-assistant`, `advance-tax`,
+`bond-portfolio-monitor` and `mutual-fund-review`. In Cowork, add the marketplace `atishbits/claude-skills` once and
 install each plugin; in Claude Code:
 
     /plugin install news-briefing --marketplace atishbits/claude-skills
@@ -95,6 +95,7 @@ install each plugin; in Claude Code:
     /plugin install itr2-filing-assistant --marketplace atishbits/claude-skills
     /plugin install advance-tax --marketplace atishbits/claude-skills
     /plugin install bond-portfolio-monitor --marketplace atishbits/claude-skills
+    /plugin install mutual-fund-review --marketplace atishbits/claude-skills
 
 An installed plugin follows this repository: update the plugin to get the latest commit. A skill
 can instead be symlinked into `~/.claude/skills/` from a clone, as described above; it then keeps
@@ -105,6 +106,6 @@ its data in its own gitignored `data/` folder unless told otherwise.
 [MIT](LICENSE). Take these, fork them, adapt them.
 
 The skills that touch money — `advance-tax`, `itr2-filing-assistant`, `portfolio-review`,
-`bond-portfolio-monitor` — are tooling for my own use, published in case they are useful. They are not tax, legal or investment
+`bond-portfolio-monitor`, `mutual-fund-review` — are tooling for my own use, published in case they are useful. They are not tax, legal or investment
 advice, and the MIT warranty disclaimer means exactly what it says: verify anything that matters
 with your own CA or adviser before acting on it.

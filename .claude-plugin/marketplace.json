@@ -64,6 +64,16 @@
         "./skills/bond-portfolio-monitor"
       ],
       "homepage": "https://github.com/atishbits/claude-skills"
+    },
+    {
+      "name": "mutual-fund-review",
+      "description": "Review mutual-fund holdings across platforms and statements: returns against the right index and an after-tax FD, costs, and the tax in each fund. Fetches fresh data through a browser or a statement when asked, and otherwise works from the newest copy in your cloud storage.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/mutual-fund-review"
+      ],
+      "homepage": "https://github.com/atishbits/claude-skills"
     }
   ]
 }

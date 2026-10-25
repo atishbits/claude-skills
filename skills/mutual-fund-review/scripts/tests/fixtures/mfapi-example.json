@@ -1,0 +1,4 @@
+{"meta": {"scheme_code": 900001, "scheme_name": "Example Large Cap Fund - Direct Plan - Growth", "isin_growth": "INF000X01AA1"},
+ "data": [{"date": "23-10-2026", "nav": "120.00000"}, {"date": "22-10-2026", "nav": "119.00000"},
+          {"date": "16-10-2026", "nav": "118.00000"}, {"date": "14-10-2026", "nav": "117.00000"}],
+ "status": "SUCCESS"}

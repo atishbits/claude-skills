@@ -1,0 +1,4 @@
+kind,date,folio,isin,scheme,plan,option,type,amount,units,nav,invested,current_value
+holding,2026-10-23,9876543210,INF000X01CC3,Example Large Cap Fund,direct,growth,,,50.000,,5000,7500
+tx,2024-01-10,9876543210,INF000X01CC3,Example Large Cap Fund,direct,growth,buy,3000,30.000,100,,
+tx,2025-01-10,9876543210,INF000X01CC3,Example Large Cap Fund,direct,growth,sip,2000,20.000,100,,
