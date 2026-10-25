@@ -1,0 +1,9 @@
+{
+ "_comment": "Invented layout. A card statement PDF turned into text with pdftotext -layout. line_regex picks transaction lines; a line ending in the credit marker is money back onto the card (payment or refund); holder_regex lines start each cardholder's section, and the label comes from the card's addons list in accounts.json.",
+ "account": "card-1",
+ "kind": "pdf_text",
+ "line_regex": "^\\s*(?P<date>\\d{2}/\\d{2}/\\d{4})\\s+(?P<description>.+?)\\s+(?P<amount>[\\d,]+\\.\\d{2})\\s*(?P<drcr>Cr)?\\s*$",
+ "credit_marker": "Cr",
+ "holder_regex": "^\\s*(?P<holder>[A-Z][A-Z .]+?)\\s+\\(?Card ending (?P<last4>\\d{4})",
+ "date_format": "%d/%m/%Y"
+}

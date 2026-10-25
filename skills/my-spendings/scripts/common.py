@@ -5,6 +5,7 @@ parsing the date and amount formats bank and card statements use. No network.
     python3 scripts/common.py --where [--root PATH]
 """
 import datetime as dt
+import json
 import os
 import re
 import sys
@@ -95,6 +96,14 @@ def payee_key(desc):
             continue
         return tok[:20]
     return "UNKNOWN"
+
+
+def load_json(path, default=None):
+    """The JSON in path, or default when the file does not exist."""
+    if not os.path.exists(path):
+        return default
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def mask(acct):

@@ -1,0 +1,17 @@
+{
+ "_comment": "Invented layout. A bank statement saved as CSV/XLSX/XLS: a few title rows, then a header row, then one row per transaction. Copy to data/adapters/<name>.json and change the header names to your bank's.",
+ "account": "savings-main",
+ "kind": "table",
+ "header_contains": ["Transaction Date", "Withdrawal"],
+ "columns": {
+  "date": "Transaction Date",
+  "description": "Transaction Remarks",
+  "debit": "Withdrawal Amount(INR)",
+  "credit": "Deposit Amount(INR)",
+  "amount": null,
+  "drcr": null,
+  "balance": "Balance(INR)",
+  "reference": "Cheque Number"
+ },
+ "date_format": "%d/%m/%Y"
+}
