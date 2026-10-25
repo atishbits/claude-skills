@@ -74,6 +74,16 @@
         "./skills/mutual-fund-review"
       ],
       "homepage": "https://github.com/atishbits/claude-skills"
+    },
+    {
+      "name": "my-spendings",
+      "description": "A financial check-up from your own bank and credit-card statements: spending by category, savings vs investing, recurring payments, fees and odd transactions to review, and card-offer decisions. Downloads statements through a read-only guarded browser or reads files you drop in, and keeps reports in your cloud storage so the latest one is available anywhere.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/my-spendings"
+      ],
+      "homepage": "https://github.com/atishbits/claude-skills"
     }
   ]
 }
