@@ -4,10 +4,13 @@ A collection of Claude Code skills I'm building.
 
 ## Invariant: no personal data, ever
 
-**This repo holds tools. It never holds anyone's financial or personal data.** Not broker exports
-or holdings, not per-stock notes carrying quantities and cost, not generated portfolio reports,
+**This repo holds tools. It never holds anyone's financial or personal data.** Not bank account
+details, statements or transactions; not credit or debit card numbers (full or masked), bills or
+spends; not stock holdings, broker exports or per-stock notes carrying quantities and cost; not the
+mutual funds held, folio numbers, units or SIPs; not bond or FD holdings; not generated reports;
 not tax paperwork — no ITR, Form 16, 26AS, AIS, capital-gains or contract-note files — and no
-identifiers (PAN, Aadhaar, demat or bank account numbers).
+identifiers (PAN, Aadhaar, demat, folio, card or bank account numbers). The full list is in
+[`docs/skill-spec.md`](docs/skill-spec.md).
 
 This matters more here than in a normal repo: a skill directory is designed to be **symlinked into
 a working folder that does hold that data**, so the scripts run from inside this checkout and a
@@ -76,11 +79,10 @@ uses them; see `shared/README.md`.
 
 ## Adding a new skill
 
-1. Create `skills/<skill-name>/SKILL.md`
-2. Add frontmatter with `name` and `description`
-3. Write the instructions the skill should follow
-4. Keep the invariant above: no real data in examples, and anything the skill generates from a
-   user's own files belongs in `.gitignore`
+Follow [`docs/skill-spec.md`](docs/skill-spec.md): the folder layout, the local and cloud copies of
+a skill's data, the plugin entry, and a checklist. Keep the invariant above throughout: no real data
+in examples, and anything the skill generates from a user's own files stays in its gitignored
+`data/`.
 
 ## Installing as a plugin
 

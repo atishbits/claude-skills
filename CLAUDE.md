@@ -1,14 +1,26 @@
 # Working in this repo
 
 This repo holds Claude Code skills as tooling. **It must never contain personal or financial
-data** — broker exports or holdings, per-stock notes with quantities and cost, generated portfolio
-reports, tax paperwork (ITR, Form 16, 26AS, AIS, capital-gains statements, contract notes), or
-identifiers such as PAN, Aadhaar, demat or bank account numbers. The README states the invariant in
+data** — bank account details, statements or transactions; credit or debit card numbers (full or
+masked), bills or spends; stock holdings, broker exports, per-stock notes with quantities and cost;
+the mutual funds held, folio numbers, units or SIPs; bond or FD holdings; generated reports; tax
+paperwork (ITR, Form 16, 26AS, AIS, capital-gains statements, contract notes); or identifiers such
+as PAN, Aadhaar, demat, folio, card or bank account numbers. Full list: `docs/skill-spec.md` §1. The README states the invariant in
 full; `hooks/pre-commit` and `.gitignore` enforce it.
 
 Why the risk is real: a skill directory here is symlinked into a working folder that *does* hold
 that data (for `portfolio-review`, `~/Documents/mygitprojects/atishstocks`), so the scripts execute
 from inside this checkout and a careless `git add` would publish someone's portfolio.
+
+## Building or restructuring a skill
+
+**Read `docs/skill-spec.md` first** and follow it: the folder layout (tracked skill folder vs a
+gitignored `data/` with `raw/` and `skill-data/`), the local + cloud-storage copy so the skill runs
+the same in Claude Code and the Claude app, and the `marketplace.json` plugin entry (no `version`,
+so installs follow the latest commit). Don't ask the user to restate these each time.
+
+**Keep the spec current.** Any change that sets or alters a convention shared across skills updates
+`docs/skill-spec.md` in the same commit.
 
 Rules when you commit here:
 
