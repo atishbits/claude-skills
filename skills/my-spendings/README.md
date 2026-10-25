@@ -115,7 +115,15 @@ card offer. Statements only ever come down; the ledger stays local.
 
 ## Install
 
-From this repository's marketplace (`marketplace.json`), plugin `my-spendings`.
+From this repository's marketplace (`marketplace.json`), plugin `my-spendings`. In Claude Code:
+
+    /plugin marketplace add atishbits/claude-skills
+    /plugin install my-spendings --marketplace atishbits/claude-skills
+
+Turn on auto-update for the marketplace under `/plugin` → Marketplaces so the plugin follows the
+latest commit. In the Claude app, add the marketplace `atishbits/claude-skills` once and install the
+plugin; it answers from the newest report in the cloud copy (statements are pulled on the laptop).
+Or symlink this folder into `~/.claude/skills/` from a clone.
 
 ## Tests
 
