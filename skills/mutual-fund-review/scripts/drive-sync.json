@@ -1,0 +1,15 @@
+{
+ "marker": "mutual-fund-review-sync.json",
+ "root_env": "MF_ROOT",
+ "data_dir": "data",
+ "kinds": {
+  "state": {"patterns": ["profile.json", "notes.md", "fds.csv", "adapters/*.json",
+                         "skill-data/fund-meta.json", "skill-data/PORTFOLIO.md",
+                         "*.conflict-*", "skill-data/*.conflict-*"]},
+  "pulled": {"patterns": ["raw/*-capture-*.json", "raw/*.txt", "raw/*.csv",
+                          "skill-data/transactions.csv", "skill-data/snapshot-*.json"]},
+  "run": {"patterns": ["skill-data/analysis-*.json"]},
+  "statement": {"patterns": ["raw/*.pdf"], "upload": false}
+ },
+ "_comment": "State, what a session with a browser or a statement brought in, and saved analyses go both ways, so a session on another device (or the Claude app) works from the newest copy. Statement PDFs only come down: the user drops a CAS into the cloud folder, it is never uploaded from here. The NAV cache is not synced; it is re-fetched."
+}

@@ -103,6 +103,13 @@ class TestUnrealised(unittest.TestCase):
         self.assertAlmostEqual(t["equity_lt_taxable_after_exemption"], 65000)
         self.assertAlmostEqual(t["tax_if_all_sold"], round(65000 * 0.125 * 1.196, 2))
 
+    def test_holding_tax(self):
+        h = {"tax_class": "equity", "st_gain": 100.0, "lt_gain": 1000.0}
+        self.assertAlmostEqual(tax.holding_tax(h, RULES, PERSON),
+                               round((100 * 0.20 + 1000 * 0.125) * 1.196, 2))
+        self.assertEqual(tax.holding_tax({"tax_class": "equity", "st_gain": -5, "lt_gain": 0},
+                                         RULES, PERSON), 0)
+
     def test_debt_taxed_at_slab(self):
         u = self.run_u([tx("2024-01-01", "buy", 100, 1)], 120, "2026-10-25", "specified_debt")
         self.assertAlmostEqual(u["totals"]["tax_if_all_sold"], round(20 * 0.3588, 2))

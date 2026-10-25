@@ -112,6 +112,21 @@ def is_long_term(buy_date, as_of, tax_class, rules):
     return dt.date.fromisoformat(as_of) > _add_months(dt.date.fromisoformat(buy_date), months)
 
 
+def holding_tax(h, rules, person):
+    """Tax if this one holding were sold today, ignoring the yearly exemption
+    and set-off against other holdings (conservative)."""
+    st, lt = max(0.0, h["st_gain"]), max(0.0, h["lt_gain"])
+    m, slab = person["ltcg_multiplier"], person["effective_slab_pct"] / 100
+    cls = h["tax_class"]
+    if cls == "equity":
+        t = (st * rules["equity"]["stcg_pct"] + lt * rules["equity"]["ltcg_pct"]) / 100 * m
+    elif cls == "hybrid_gold_intl":
+        t = st * slab + lt * rules["hybrid_gold_intl"]["ltcg_pct"] / 100 * m
+    else:
+        t = (st + lt) * slab
+    return round(t, 2)
+
+
 def unrealised(lot_map, nav_by_isin, as_of, rules, tax_class_by_isin, person, gf_nav_by_isin=None):
     gf_nav_by_isin = gf_nav_by_isin or {}
     gf_date = rules["grandfather_date"]

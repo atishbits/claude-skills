@@ -124,6 +124,14 @@ class TestAnalyse(unittest.TestCase):
         self.assertAlmostEqual(f["xirr"], 0.12, places=2)
         self.assertAlmostEqual(f["er_gap_vs_index"], 0.39, places=2)
 
+    def test_switch_cost_per_fund(self):
+        sw = self.funds["INF000X01AA1"]["switch"]
+        self.assertGreater(sw["tax_if_sold_inr"], 0)
+        self.assertEqual(sw["exit_load_inr"], 0.0)
+        self.assertIsNotNone(sw["breakeven_years_to_index"])
+        self.assertGreater(sw["breakeven_years_to_index"], 0)
+        self.assertIsNone(self.funds["INF000X01BB2"]["switch"]["breakeven_years_to_index"])
+
     def test_hurdle(self):
         h = self.a["hurdle"]
         self.assertAlmostEqual(h["post_tax_pct"], 4.17, places=2)

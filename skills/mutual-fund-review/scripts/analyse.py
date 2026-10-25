@@ -86,6 +86,7 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
                                                   + prof["equity_risk_premium_pts"], 2)
 
     funds, complete_rows, all_flows, by_source = [], [], [], {}
+    keys = {}
     for h in snap["holdings"]:
         m = meta.get(h["isin"], {})
         rows = _rows_for(h, txs)
@@ -109,7 +110,10 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
              "benchmark_note": bench.get("note") if bench else None,
              "er_pct": m.get("expense_ratio_pct"), "er_as_of": m.get("er_as_of"),
              "xirr": None, "same_flows": None, "trailing": {}, "bench_trailing": {},
-             "rolling": None, "er_gap_vs_index": None, "flags": flags}
+             "rolling": None, "er_gap_vs_index": None, "flags": flags,
+             "switch": {"exit_load_inr": None, "tax_if_sold_inr": None,
+                        "breakeven_years_to_index": None}}
+        keys[id(f)] = (h["source"], h.get("folio_ref") or None, h["isin"], is_index, m)
         if complete:
             flows = returns.flows_from_tx(rows)
             f["xirr"] = returns.xirr(flows + [(as_of, value)])
@@ -176,6 +180,21 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
         classes = {f["isin"]: f["tax_class"] for f in funds}
         tax_out = tax.unrealised(lot_map, navs, as_of, rules, classes, person)["totals"]
         tax_out["excluded_isins"] = incomplete
+        by_h = tax.unrealised(lot_map, navs, as_of, rules, classes, person)["by_holding"]
+        for f in funds:
+            src, folio, isin, is_index, m = keys[id(f)]
+            hk = (src, folio, isin)
+            if hk not in by_h:
+                continue
+            sw = f["switch"]
+            sw["tax_if_sold_inr"] = tax.holding_tax(by_h[hk], rules, person)
+            sw["exit_load_inr"] = costs.exit_load_inr(lot_map.get(hk, []), as_of,
+                                                      m.get("exit_load_pct"),
+                                                      m.get("exit_load_days"), f["nav"])
+            if not is_index and f["er_pct"] is not None:
+                sw["breakeven_years_to_index"] = costs.switch_breakeven(
+                    f["value"], sw["exit_load_inr"], sw["tax_if_sold_inr"],
+                    prof["expected_return_pct"], f["er_pct"], prof.get("index_fund_er_pct", 0.2))
 
     cost = costs.weighted_er([{"isin": f["isin"], "value": f["value"]} for f in funds], meta)
 
