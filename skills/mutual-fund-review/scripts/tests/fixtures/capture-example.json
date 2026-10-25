@@ -1,0 +1,23 @@
+{
+ "source": "exampleportal",
+ "captured_at": "2026-10-25T10:00:00Z",
+ "transactions_complete": true,
+ "holdings": [
+  {"scheme": "Example Nifty 50 Index Fund", "isin": "INF000X01AA1", "folio": "1234567890",
+   "plan": "direct", "option": "growth", "units": "2,000.000", "invested": "₹20,000.10",
+   "current_value": "₹19,000.00", "nav": "9.5000"},
+  {"scheme": "Example Small Cap Fund", "isin": "INF000X01BB2", "folio": "1234567890",
+   "units": "100.000", "invested": "5,000", "current_value": "6,000"}
+ ],
+ "transactions": [
+  {"scheme": "Example Nifty 50 Index Fund", "isin": "INF000X01AA1", "folio": "1234567890",
+   "date": "16th Feb 2026", "amount": "10,000.05", "units": "1,000.000", "nav": "10.0000",
+   "raw": "16th Feb 2026\t10,000.05\t10.0000\t1,000.000"},
+  {"scheme": "Example Nifty 50 Index Fund", "isin": "INF000X01AA1", "folio": "1234567890",
+   "date": "16th Feb 2026", "amount": "10,000.05", "units": "1,000.000", "nav": "10.0000",
+   "raw": "16th Feb 2026\t10,000.05\t10.0000\t1,000.000"},
+  {"scheme": "Example Small Cap Fund", "isin": "INF000X01BB2", "folio": "1234567890",
+   "date": "2025-09-15", "type": "sip", "amount": "5,000", "units": "100.000",
+   "raw": "15th Sep 2025\t5,000\t50.0000\t100.000"}
+ ]
+}

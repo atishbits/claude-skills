@@ -144,3 +144,30 @@ def latest_snapshot(root):
     except FileNotFoundError:
         return None
     return os.path.join(sd, names[-1]) if names else None
+
+
+def ingest(root, source, holdings, tx, date, transactions_complete, force=False):
+    """Merge one source's rows into the ledger and write a new snapshot that
+    keeps every other source's newest holdings. Nothing is written when the
+    source's holdings do not reconcile, unless force."""
+    p = common.paths(root)
+    existing = read_transactions(p["transactions"])
+    merged, stats = merge(existing, tx)
+    recon = reconcile([r for r in merged if r["source"] == source], holdings)
+    if not force and not all(r["units_ok"] for r in recon):
+        bad = [r.get("scheme") or r["isin"] for r in recon if not r["units_ok"]]
+        raise ValueError(f"{source}: holdings do not reconcile with transactions: {bad}. "
+                         "Re-capture, or pass --force to record them flagged.")
+    prev_path = latest_snapshot(root)
+    prev = {"holdings": [], "sources": {}, "reconciliation": []}
+    if prev_path:
+        import json
+        with open(prev_path) as f:
+            prev = json.load(f)
+    keep = [h for h in prev.get("holdings", []) if h["source"] != source]
+    keep_recon = [r for r in prev.get("reconciliation", []) if r["source"] != source]
+    sources = {k: v for k, v in prev.get("sources", {}).items() if k != source}
+    sources[source] = {"holdings_as_of": date, "transactions_complete": bool(transactions_complete)}
+    write_transactions(p["transactions"], merged)
+    snap = write_snapshot(root, date, keep + holdings, keep_recon + recon, sources, force=True)
+    return {**stats, "reconciliation": recon, "snapshot": snap}

@@ -1,0 +1,28 @@
+{
+ "_comment": "Invented example. A real adapter lives in the user's data/adapters/ (gitignored) because its selectors name a specific portal.",
+ "source": "exampleportal",
+ "transactions_complete": true,
+ "row_selector": ".holdings-table .row",
+ "expand": "click",
+ "wait_ms": 2000,
+ "detail": "next_sibling",
+ "holding": {
+  "scheme": {"line": 0},
+  "isin": {"selector": "a[href*='/fund/']", "attr": "href", "regex": "(INF[0-9A-Z]{9})"},
+  "invested": {"line": 6},
+  "current_value": {"line": 7}
+ },
+ "holding_detail": {
+  "units": {"label": "Units"},
+  "folio": {"label": "Folio no."}
+ },
+ "transaction": {
+  "row_selector": ".transactions tr",
+  "fields": {
+   "date": {"selector": "td:nth-child(1)"},
+   "amount": {"selector": "td:nth-child(3)"},
+   "nav": {"selector": "td:nth-child(4)"},
+   "units": {"selector": "td:nth-child(5)"}
+  }
+ }
+}
