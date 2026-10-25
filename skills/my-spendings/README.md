@@ -86,6 +86,11 @@ Before opening a bank site the skill checks that the guard is active by making o
 block; if that call goes through, it uses the folder route instead. Browser pulls are for Claude
 Code only.
 
+The hook command looks for the guard script in the skill's folder (`$CLAUDE_SKILL_DIR`, which
+Claude Code does not always set for hooks), then the plugin's folder, then
+`~/.claude/skills/my-spendings`. If it finds none it blocks every browser action, so a broken
+install fails safe: downloads stop working rather than the guard switching off.
+
 ## Cloud copy
 
 `scripts/drive-sync.json` and `references/cloud_sync.md` keep settings, labels, adapters, offers

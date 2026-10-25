@@ -30,7 +30,7 @@ hooks:
     - matcher: "mcp__claude-in-chrome__.*|mcp__Claude_Browser__.*|mcp__remote-devices__.*|mcp__computer-use__.*"
       hooks:
         - type: command
-          command: "python3 \"${CLAUDE_SKILL_DIR}/scripts/browser_guard.py\""
+          command: 'for d in "$CLAUDE_SKILL_DIR" "$CLAUDE_PLUGIN_ROOT/skills/my-spendings" "$HOME/.claude/skills/my-spendings"; do [ -f "$d/scripts/browser_guard.py" ] && exec python3 "$d/scripts/browser_guard.py"; done; echo "my-spendings read-only guard not found: browser action blocked" >&2; exit 2'
 ---
 
 Request for this run: **$ARGUMENTS**

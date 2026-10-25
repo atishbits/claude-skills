@@ -84,3 +84,37 @@ class TestGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHookCommand(unittest.TestCase):
+    """The command SKILL.md registers must find the guard however the skill is
+    installed, and block (exit 2) when it cannot."""
+
+    def command(self):
+        import re
+        with open(os.path.join(os.path.dirname(SCRIPT), "..", "SKILL.md"), encoding="utf-8") as f:
+            front = f.read().split("---")[1]
+        m = re.search(r"command: '(.+)'", front)
+        self.assertIsNotNone(m, "hook command must be a single-quoted YAML string")
+        return m.group(1).replace("''", "'")
+
+    def run_cmd(self, env):
+        inp = json.dumps({"tool_name": C + "javascript_tool", "tool_input": {}})
+        full = {"PATH": os.environ["PATH"], "HOME": env.pop("HOME", "/nonexistent")}
+        full.update(env)
+        return subprocess.run(["sh", "-c", self.command()], input=inp, capture_output=True,
+                              text=True, env=full)
+
+    def test_finds_guard_via_skill_dir(self):
+        skill = os.path.abspath(os.path.join(os.path.dirname(SCRIPT), ".."))
+        out = self.run_cmd({"CLAUDE_SKILL_DIR": skill})
+        self.assertIn('"deny"', out.stdout)
+
+    def test_finds_guard_via_plugin_root(self):
+        repo = os.path.abspath(os.path.join(os.path.dirname(SCRIPT), "..", "..", ".."))
+        out = self.run_cmd({"CLAUDE_PLUGIN_ROOT": repo})
+        self.assertIn('"deny"', out.stdout)
+
+    def test_blocks_when_guard_missing(self):
+        out = self.run_cmd({})
+        self.assertEqual(out.returncode, 2)
