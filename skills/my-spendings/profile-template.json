@@ -1,0 +1,10 @@
+{
+ "_comment": "Copy to data/profile.json. Thresholds for the flags; change any to taste.",
+ "tiny_debit_max": 10,
+ "new_payee_min": 25000,
+ "outlier_multiple": 3,
+ "recurring_amount_tolerance": 0.15,
+ "max_asset_type_share_pct": 50,
+ "max_single_holding_share_pct": 20,
+ "history_months_first_run": 12
+}
