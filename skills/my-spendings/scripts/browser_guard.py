@@ -4,7 +4,7 @@ that my-spendings declares while it is active.
 
 Browser tools get an allowlist: reading pages, opening and closing tabs, and
 clicks or form choices whose own description is about statements, dates and
-file formats. Anything that could move money, change a setting or reveal a
+file formats, or about the menus that lead to them (cards, transaction history). Anything that could move money, change a setting or reveal a
 secret is denied, and so is any tool the list does not know (page scripts,
 batched actions, uploads). The decision keys off Claude's own description of
 each action, so it stops mistakes and instructions planted in a page, not a
@@ -25,9 +25,11 @@ LOOK_ACTIONS = {"screenshot", "zoom", "scroll", "scroll_to", "wait", "hover"}
 NAV_KEYS = {"escape", "tab", "shift+tab", "up", "down", "left", "right", "page_up", "page_down",
             "home", "end"}
 
-# A click or form choice must be about getting a statement: these words say so.
+# A click or form choice must be about getting a statement, or about reaching the page that has
+# it (menus for cards and transaction history): these words say so.
 INTENT = re.compile(r"\b(statements?|download|dates?|month|year|period|format|pdf|xlsx?|csv|excel|"
-                    r"calendar)", re.I)
+                    r"calendar|menu|cards?|credit cards?|transactions?|history|billed|"
+                    r"unbilled|overview)", re.I)
 # Anything that commits, moves money, changes a setting or touches a secret.
 DENY = re.compile(
     r"\b(pay|pays|paid|paying|payments?|payee|transfer|send|beneficiar|otp|pin\b|m-?pin|cvv|password|"
@@ -41,6 +43,7 @@ DENY = re.compile(
 DATE_TEXT = re.compile(r"^(\d{1,2}[ /.-](\d{1,2}|[A-Za-z]{3,9})[ /.-]\d{2,4}|(19|20)\d\d)$")
 VALUE_OK = re.compile(
     r"^((\d{1,2}[ /.-](\d{1,2}|[A-Za-z]{3,9})[ /.-]\d{2,4})|(\d{4}-\d{2}-\d{2})|((19|20)\d\d)|"
+    r"(\d{1,2}/\d{1,2}/\d{4} ?(-|to) ?\d{1,2}/\d{1,2}/\d{4})|"
     r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*( (19|20)\d\d)?|pdf|xlsx?|csv|excel|"
     r"((last|previous|current|this) ([0-9]{1,2} )?(days?|weeks?|months?|quarters?|years?|financial year)))$",
     re.I)

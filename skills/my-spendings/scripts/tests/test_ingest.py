@@ -57,6 +57,22 @@ class TestParse(unittest.TestCase):
         t = card_rows()
         self.assertEqual([x["holder"] for x in t], ["", "", "", "", "Spouse", "Spouse"])
 
+    def test_table_card_addon_sections(self):
+        # Invented card CSV: a bare card-number row starts each holder's section.
+        rows = [["Date", "Ref", "Details", "Amount", "Sign"],
+                ["1111222233334444"],
+                ["01/09/2026", "1", "GROCER", "500.00", ""],
+                ["02/09/2026", "2", "PAYMENT RECEIVED", "500.00", "CR"],
+                ["1111222233335555"],
+                ["03/09/2026", "3", "PHARMACY", "250.00", ""]]
+        ad = {"account": "card-1", "kind": "table", "header_contains": ["Details", "Sign"],
+              "columns": {"date": "Date", "description": "Details", "amount": "Amount",
+                          "drcr": "Sign", "reference": "Ref"},
+              "holder_regex": "^\\d{12}(?P<last4>\\d{4})$", "date_format": "%d/%m/%Y"}
+        t = ingest.parse(rows, ad, {"5555": "Spouse"})
+        self.assertEqual([x["amount"] for x in t], [-500.0, 500.0, -250.0])
+        self.assertEqual([x["holder"] for x in t], ["", "", "Spouse"])
+
     def test_balance_check_tolerates_intraday_order(self):
         t = bank_rows()
         t[1], t[2] = t[2], t[1]          # same-day rows in another order

@@ -117,6 +117,21 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(len(s["fuel_txns"]), 2)
         self.assertEqual(s["factor"], 2.0)
 
+    def test_spend_12m_annualises_each_account_by_its_own_coverage(self):
+        # The bank account has 6 months of statements, the card only 3: card
+        # spending is scaled up by the card's months, not the bank's.
+        rows = [t("2026-04-26", -6000, "groceries", account="bank-1"),
+                t("2026-07-20", -3000, "fuel", account="card-1"),
+                t("2026-09-20", -3000, "fuel", account="card-1")]
+        cov = {"bank-1": [["2026-04-26", "2026-10-25"]],
+               "card-1": [["2026-07-18", "2026-08-17"], ["2026-08-18", "2026-09-17"],
+                          ["2026-09-18", "2026-10-17"]]}
+        s = analyse.spend_12m(rows, "2026-10-25", cov)
+        self.assertEqual(s["months_by_account"], {"bank-1": 6.01, "card-1": 3.02})
+        self.assertEqual(s["by_category"]["fuel"], round(6000 * round(12 / 3.02, 4), 2))
+        self.assertEqual(s["by_category"]["groceries"], round(6000 * round(12 / 6.01, 4), 2))
+        self.assertEqual([x["factor"] for x in s["fuel_txns"]], [round(12 / 3.02, 4)] * 2)
+
     def test_addon_spend_counted_and_marked(self):
         rows = [t("2026-04-01", -100, "fuel"), t("2026-04-02", -300, "shopping", holder="Spouse")]
         self.assertEqual(analyse.rates(rows)["spend"], 400.0)

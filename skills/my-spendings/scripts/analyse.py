@@ -169,25 +169,51 @@ def mix(holdings, flows, profile):
             "as_of": max((h.get("as_of") or "" for h in holdings), default="")}
 
 
-def spend_12m(txns, as_of):
+DAYS_PER_MONTH = 365.25 / 12
+
+
+def _covered_months(spans, start, end):
+    """Months of statements an account has inside (start, end], from its coverage spans."""
+    days = 0
+    for a, b in spans:
+        lo, hi = max(_d(a), start + dt.timedelta(days=1)), min(_d(b), end)
+        if hi >= lo:
+            days += (hi - lo).days + 1
+    return round(min(12.0, days / DAYS_PER_MONTH), 2)
+
+
+def spend_12m(txns, as_of, coverage=None):
+    """Spending in the last 12 months, scaled to a year. Each account is scaled by
+    its own months of statements (from coverage), so a card with 3 months of
+    statements is not scaled as if it had the bank account's 7; an account with
+    no coverage record falls back to calendar months since its first spend."""
     end = _d(as_of)
     start = end - dt.timedelta(days=365)
     rows = [t for t in txns if t["bucket"] == "spend" and start < _d(t["date"]) <= end]
+    coverage = coverage or {}
     if rows:
         first = min(_d(t["date"]) for t in rows)
         months = min(12, (end.year - first.year) * 12 + end.month - first.month + 1)
     else:
         months = 0
     factor = round(12 / months, 4) if months else 0.0
-    out = {"months_covered": months, "annualised": 0 < months < 12, "factor": factor,
+    by_acct = {}
+    for acct in sorted({t["account"] for t in rows}):
+        m = _covered_months(coverage[acct], start, end) if coverage.get(acct) else 0
+        by_acct[acct] = m or months
+    fac = {a: (round(12 / m, 4) if m else 0.0) for a, m in by_acct.items()}
+    out = {"months_covered": months, "annualised": any(m < 12 for m in by_acct.values()),
+           "factor": factor, "months_by_account": by_acct,
            "by_category": {}, "by_account": {}, "by_holder": {}, "fuel_txns": []}
     for t in rows:
-        v = -_a(t) * factor
+        f = fac[t["account"]]
+        v = -_a(t) * f
         for key, k in (("by_category", t["category"]), ("by_account", t["account"]),
                        ("by_holder", t.get("holder") or "self")):
             out[key][k] = _r(out[key].get(k, 0.0) + v)
         if t["category"] == "fuel":
-            out["fuel_txns"].append({"date": t["date"], "amount": _r(-_a(t)), "account": t["account"]})
+            out["fuel_txns"].append({"date": t["date"], "amount": _r(-_a(t)), "account": t["account"],
+                                     "factor": f})
     return out
 
 
@@ -237,7 +263,7 @@ def run(root, as_of=None, frm=None, to=None):
          "recurring": recurring(hist, to, profile["recurring_amount_tolerance"]),
          "fees": fees(period), "anomalies": anomalies(period, profile, hist),
          "mix": mix(_holdings(p["holdings"]), period, profile),
-         "spend_12m": spend_12m(hist, to), "addon_spend": addon_spend(period),
+         "spend_12m": spend_12m(hist, to, coverage), "addon_spend": addon_spend(period),
          "warnings": [w for w in warnings if frm <= w["date"] <= to],
          "uncategorised": classify.uncategorised(period), "top_payees": _top_payees(period)}
     os.makedirs(p["skill_data"], exist_ok=True)

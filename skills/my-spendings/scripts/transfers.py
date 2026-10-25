@@ -55,28 +55,29 @@ def resolve(txns, accounts, coverage):
                 continue
             card = next((c for c in cards if c.get("bill_payment_pattern") and
                          re.search(c["bill_payment_pattern"], t.get("description", ""), re.I)), None)
-            if card is None:
-                # No pattern names the card: match a payment credit on any card instead.
-                j = next((j for j, u in enumerate(out) if j not in used and u["category"] == "card_payment"
-                          and accts.get(u["account"], {}).get("type") == "card"
-                          and abs(float(u["amount"]) + amt) <= 1
-                          and abs((_d(u["date"]) - _d(t["date"])).days) <= CARD_MATCH_DAYS
-                          and _covered(coverage.get(u["account"], []), t["date"])), None)
-                if j is not None:
-                    used.add(j)
-                    t["bucket"] = "excluded"
-                    continue
-            if card and _covered(coverage.get(card["alias"], []), t["date"]):
+            card_in = bool(card) and _covered(coverage.get(card["alias"], []), t["date"])
+
+            def _match(only=None):
+                return next((j for j, u in enumerate(out) if j not in used
+                             and u["category"] == "card_payment"
+                             and accts.get(u["account"], {}).get("type") == "card"
+                             and (only is None or u["account"] == only)
+                             and abs(float(u["amount"]) + amt) <= 1
+                             and abs((_d(u["date"]) - _d(t["date"])).days) <= CARD_MATCH_DAYS
+                             and _covered(coverage.get(u["account"], []), t["date"])), None)
+            # The card the pattern names first; then any card with a statement in,
+            # since one bill-pay app or wallet can pay several cards.
+            j = (_match(card["alias"]) if card_in else None)
+            if j is None:
+                j = _match()
+            if j is not None:
+                used.add(j)
                 t["bucket"] = "excluded"
-                match = next((j for j, u in enumerate(out) if j not in used
-                              and u["account"] == card["alias"] and u["category"] == "card_payment"
-                              and abs(float(u["amount"]) + amt) <= 1
-                              and abs((_d(u["date"]) - _d(t["date"])).days) <= CARD_MATCH_DAYS), None)
-                if match is None:
-                    warnings.append({"kind": "card_payment_unmatched", "date": t["date"],
-                                     "amount": amt, "detail": f"no matching payment on {card['alias']}"})
-                else:
-                    used.add(match)
+                continue
+            if card_in:
+                t["bucket"] = "excluded"
+                warnings.append({"kind": "card_payment_unmatched", "date": t["date"],
+                                 "amount": amt, "detail": f"no matching payment on {card['alias']}"})
             else:
                 t["bucket"] = "spend"
                 t["category"] = "card_spend_unexpanded"

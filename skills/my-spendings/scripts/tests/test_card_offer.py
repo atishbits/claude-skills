@@ -36,6 +36,15 @@ class TestValue(unittest.TestCase):
         o = dict(BASE, rates={"fuel": 0.05}, reward_cap_month={"fuel": 250})
         self.assertEqual(card_offer.value(o, spend(monthly_fuel(10000)))["rewards"], 3000.0)
 
+    def test_per_txn_factor_used_for_fuel(self):
+        # Three months of fuel on a card, each scaled by 4 to a year.
+        txns = [{"date": f"2026-{m:02d}-10", "amount": 5000, "account": "c", "factor": 4.0} for m in (7, 8, 9)]
+        o = dict(BASE, rates={"fuel": 0.05}, reward_cap_month={"fuel": 200}, surcharge_waiver_pct=100,
+                 surcharge_txn_max=None)
+        v = card_offer.value(o, spend(txns, factor=1.7))
+        self.assertEqual(v["rewards"], 2400.0)        # 200 cap x 3 months x 4
+        self.assertEqual(v["surcharge_saved"], 600.0)  # 50 x 3 x 4
+
     def test_surcharge_only_in_txn_band(self):
         o = dict(BASE, surcharge_waiver_pct=100)
         txns = [{"date": "2026-01-01", "amount": a, "account": "x"} for a in (300, 2000, 5000)]
@@ -88,6 +97,28 @@ class TestValue(unittest.TestCase):
         v = card_offer.value(o, s)
         self.assertEqual(v["rewards"], 100.0)
         self.assertTrue(any("left out" in n and "loan_emi" in n for n in v["notes"]))
+
+    def test_scale_fuel_scales_each_fill(self):
+        # Price drop: 4,500 fills fall to 3,600, inside a 4,000 surcharge band.
+        txns = [{"date": "2026-01-10", "amount": 4500, "account": "x"}]
+        s = card_offer.scale_spend(spend(txns), {"fuel": 0.8})
+        self.assertEqual(s["fuel_txns"][0]["amount"], 3600.0)
+        self.assertEqual(s["by_category"]["fuel"], 3600.0)
+        o = dict(BASE, surcharge_waiver_pct=100)
+        self.assertEqual(card_offer.value(o, spend(txns))["surcharge_saved"], 0.0)
+        self.assertEqual(card_offer.value(o, s)["surcharge_saved"], 36.0)
+
+    def test_scale_leaves_input_and_other_categories(self):
+        base = spend(monthly_fuel(1000), other={"dining": 500.0})
+        s = card_offer.scale_spend(base, {"fuel": 0.5})
+        self.assertEqual(s["by_category"]["dining"], 500.0)
+        self.assertEqual(base["fuel_txns"][0]["amount"], 1000)
+
+    def test_parse_scales(self):
+        self.assertEqual(card_offer._parse_scales(["fuel=0.85"]), {"fuel": 0.85})
+        for bad in (["fuel"], ["=0.5"], ["fuel=-1"]):
+            with self.assertRaises(SystemExit):
+                card_offer._parse_scales(bad)
 
 
 if __name__ == "__main__":

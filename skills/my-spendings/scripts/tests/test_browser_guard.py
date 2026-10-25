@@ -25,6 +25,23 @@ class TestGuard(unittest.TestCase):
                                            "action_summary": "Sets format to XLS", "tabId": 1})
         self.assertTrue(ok)
 
+    def test_menu_navigation_allowed(self):
+        for s in ["Opens the Cards menu", "Opens the Credit Cards section",
+                  "Selects the second credit card", "Opens the transaction history page"]:
+            self.assertTrue(click(s)[0], s)
+
+    def test_period_range_value_allowed(self):
+        f = lambda v: g.decide(C + "form_input", {"ref": "r1", "value": v, "tabId": 1,
+                                                  "action_summary": "Sets the statement period"})[0]
+        self.assertTrue(f("16/8/2026-15/9/2026"))
+        self.assertFalse(f("4000111122223333"))
+        self.assertFalse(f("16/8/2026-15/9/2026 and pay"))
+
+    def test_menu_clicks_that_act_denied(self):
+        for s in ["Opens Pay Bills for the credit card", "Blocks the card", "Opens card limit settings",
+                  "Opens the Cards menu and adds a payee", "Converts the transaction to EMI"]:
+            self.assertFalse(click(s)[0], s)
+
     def test_money_actions_denied(self):
         for s in ["Pays the credit card bill", "Adds a new payee", "Confirms the transfer",
                   "Opens the Download statement panel and confirm payment", "Enters the OTP",

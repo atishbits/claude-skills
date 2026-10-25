@@ -36,7 +36,8 @@ One JSON file per statement layout, in `data/adapters/`. Examples with invented 
 
 - **`kind: "table"`** (CSV/XLSX/XLS): `header_contains` (words that find the header row below any
   title rows), `columns` (header names for `date`, `description`, `reference`, `balance`, and
-  either `debit` + `credit` or `amount` with an optional `drcr` column), `date_format`.
+  either `debit` + `credit` or `amount` with an optional `drcr` column), `date_format`. A table adapter may also take `holder_regex`, matched against the first cell of non-transaction
+  rows (for a card CSV that starts each cardholder's section with a bare card-number row).
 - **`kind: "pdf_text"`**: `line_regex` with named groups `date`, `description`, `amount` and
   optionally `drcr` and `reference`; `credit_marker` (a line ending in it is money back onto the
   card); optional `holder_regex` with a `last4` group that starts each cardholder's section, so
@@ -56,6 +57,10 @@ annual fee), `gst_on_fees_pct` (default 18), `rates` (reward rate per category, 
 transaction band the waiver applies to), `surcharge_waiver_cap_month`, `use_for` (the categories
 you would move to this card; default: everyday spending that cards usually accept, leaving out
 rent, EMIs, cash, fees, tax and education — the output notes what was left out), `source`, `as_of`.
+
+`card_offer.py --scale fuel=0.8` asks "what if": it values the cards with a category's spending
+scaled (here fuel at 80% of the statements, as after a price drop). Each fill-up is scaled, so
+per-fill bands and monthly caps apply to the new amounts.
 
 ## What it produces
 
@@ -78,7 +83,7 @@ rent, EMIs, cash, fees, tax and education — the output notes what was left out
 skill is active. It covers every browser- or desktop-driving tool (any MCP server whose name mentions a
 browser, Chrome, Playwright, Puppeteer, Selenium, DevTools or a computer). It lets Claude read pages,
 open and close tabs, and click or choose things whose description is about statements, dates or
-file formats. It denies any click or choice that also commits or moves something (pay, transfer,
+file formats, or about the menus that lead to them (cards, transaction history). It denies any click or choice that also commits or moves something (pay, transfer,
 proceed, continue, confirm, submit, save, cancel, open an FD, amount, OTP, and so on), every page
 script, `javascript:` link, batched action and upload, and any browser tool it does not know.
 Typing is limited to dates and years, form values to dates, months, periods and file formats, and

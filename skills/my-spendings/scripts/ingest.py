@@ -36,7 +36,7 @@ def _find_header(rows, wanted):
     raise SystemExit(f"Header row with {wanted} not found: check the adapter's header_contains.")
 
 
-def _parse_table(rows, ad):
+def _parse_table(rows, ad, addons=None):
     hi, header = _find_header(rows, ad["header_contains"])
     col = {}
     for key, name in ad["columns"].items():
@@ -47,12 +47,17 @@ def _parse_table(rows, ad):
             if not matches:
                 raise SystemExit(f"Column {name!r} not in header {header}")
             col[key] = matches[0]
-    out = []
+    holder_re = re.compile(ad["holder_regex"]) if ad.get("holder_regex") else None
+    holder, out = "", []
     for row in rows[hi + 1:]:
         get = lambda k: row[col[k]].strip() if k in col and col[k] < len(row) else ""
         try:
             date = common.parse_date(get("date"), ad.get("date_format"))
         except ValueError:
+            # a row like a bare card number starts one cardholder's section
+            h = holder_re.search((row[0] if row else "").strip()) if holder_re else None
+            if h:
+                holder = (addons or {}).get(h.groupdict().get("last4") or "", "")
             continue  # footer, blank or legend row
         if "amount" in col:
             amt = common.parse_amount(get("amount"))
@@ -64,7 +69,7 @@ def _parse_table(rows, ad):
         bal = get("balance")
         out.append({"date": date, "account": ad["account"], "amount": amt,
                     "description": get("description"), "reference": get("reference"),
-                    "balance": common.parse_amount(bal) if bal else None, "holder": ""})
+                    "balance": common.parse_amount(bal) if bal else None, "holder": holder})
     return out
 
 
@@ -100,7 +105,7 @@ def parse(rows, adapter, addons=None):
     """Normalised transactions from rows. addons maps a card's last 4 digits
     to the add-on holder's label; the primary holder's rows get ''."""
     if adapter["kind"] == "table":
-        return _parse_table(rows, adapter)
+        return _parse_table(rows, adapter, addons)
     if adapter["kind"] == "pdf_text":
         return _parse_text(rows, adapter, addons)
     raise SystemExit(f"Unknown adapter kind {adapter['kind']!r}")

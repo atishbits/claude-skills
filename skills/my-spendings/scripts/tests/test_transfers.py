@@ -47,6 +47,30 @@ class TestResolve(unittest.TestCase):
         self.assertEqual([x["kind"] for x in w], ["card_payment_unmatched"])
         self.assertEqual(w[0]["amount"], -20000.0)
 
+    def test_shared_bill_app_matched_to_covered_card_by_amount(self):
+        # One bill-pay app pays several cards: its pattern names a card with no
+        # statement, but the payment arrived on card-2, whose statement is in.
+        acc = {"accounts": ACCOUNTS["accounts"] + [
+            {"alias": "cards-via-app", "type": "card", "last4": "", "bill_payment_pattern": "BILLAPP"},
+            {"alias": "card-2", "type": "card", "last4": "8888", "bill_payment_pattern": ""}]}
+        rows = [t("2026-05-03", "savings-main", -9000, "card_payment", "UPI/BILLAPP/x"),
+                t("2026-05-03", "card-2", 9000, "card_payment", "PAYMENT RECEIVED"),
+                t("2026-05-05", "savings-main", -4000, "card_payment", "UPI/BILLAPP/y")]
+        out, w = transfers.resolve(rows, acc, {"card-2": [["2026-04-01", "2026-05-31"]]})
+        self.assertEqual([r["bucket"] for r in out], ["excluded", "excluded", "spend"])
+        self.assertEqual(out[2]["category"], "card_spend_unexpanded")
+        self.assertEqual(w, [])
+
+    def test_pattern_card_wrong_but_other_covered_card_matches(self):
+        acc = {"accounts": ACCOUNTS["accounts"] + [
+            {"alias": "card-2", "type": "card", "last4": "8888", "bill_payment_pattern": ""}]}
+        rows = [t("2026-05-03", "savings-main", -5000, "card_payment", "UPI/CARDPAY/x"),
+                t("2026-05-04", "card-2", 5000, "card_payment", "PAYMENT RECEIVED")]
+        cov = {"card-1": [["2026-04-01", "2026-05-31"]], "card-2": [["2026-04-01", "2026-05-31"]]}
+        out, w = transfers.resolve(rows, acc, cov)
+        self.assertEqual([r["bucket"] for r in out], ["excluded", "excluded"])
+        self.assertEqual(w, [])
+
     def test_own_transfer_pair_excluded(self):
         rows = [t("2026-05-03", "savings-main", -15000, "own_transfer"),
                 t("2026-05-04", "savings-2", 15000, "own_transfer")]
