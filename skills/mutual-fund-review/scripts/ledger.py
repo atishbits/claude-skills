@@ -146,10 +146,14 @@ def latest_snapshot(root):
     return os.path.join(sd, names[-1]) if names else None
 
 
-def ingest(root, source, holdings, tx, date, transactions_complete, force=False):
+def ingest(root, source, holdings, tx, date, transactions_complete, force=False,
+           supersede=False):
     """Merge one source's rows into the ledger and write a new snapshot that
     keeps every other source's newest holdings. Nothing is written when the
-    source's holdings do not reconcile, unless force."""
+    source's holdings do not reconcile, unless force. With supersede (a
+    statement that carries full history), another source's holding of the same
+    folio and ISIN is dropped from the snapshot; its transactions stay in the
+    ledger but no holding refers to them, so analysis ignores them."""
     p = common.paths(root)
     existing = read_transactions(p["transactions"])
     merged, stats = merge(existing, tx)
@@ -164,8 +168,18 @@ def ingest(root, source, holdings, tx, date, transactions_complete, force=False)
         import json
         with open(prev_path) as f:
             prev = json.load(f)
-    keep = [h for h in prev.get("holdings", []) if h["source"] != source]
-    keep_recon = [r for r in prev.get("reconciliation", []) if r["source"] != source]
+    def same(a, b):
+        if a.get("isin") != b.get("isin"):
+            return False
+        return not (a.get("folio_ref") and b.get("folio_ref")) or a["folio_ref"] == b["folio_ref"]
+
+    def kept(row):
+        if row["source"] == source:
+            return False
+        return not (supersede and any(same(row, h) for h in holdings))
+
+    keep = [h for h in prev.get("holdings", []) if kept(h)]
+    keep_recon = [r for r in prev.get("reconciliation", []) if kept(r)]
     sources = {k: v for k, v in prev.get("sources", {}).items() if k != source}
     sources[source] = {"holdings_as_of": date, "transactions_complete": bool(transactions_complete)}
     write_transactions(p["transactions"], merged)
