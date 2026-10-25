@@ -43,6 +43,11 @@ class TestCosts(unittest.TestCase):
         self.assertAlmostEqual(costs.exit_load_inr(lots, "2026-10-25", 1.0, 365, 20.0), 1.0)
         self.assertEqual(costs.exit_load_inr(lots, "2026-10-25", 0, 365, 20.0), 0)
 
+    def test_exit_load_unknown_period_is_none(self):
+        lots = [{"date": "2026-10-01", "units": 5, "cost_per_unit": 10}]
+        self.assertIsNone(costs.exit_load_inr(lots, "2026-10-25", 1.0, None, 20.0))
+        self.assertIsNone(costs.switch_breakeven(1000, None, 0, 10, 0.5, 0.1))
+
 
 if __name__ == "__main__":
     unittest.main()

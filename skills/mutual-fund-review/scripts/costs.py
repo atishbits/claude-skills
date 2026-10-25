@@ -32,7 +32,9 @@ def vs_index(er_pct, proxy_er_pct):
 def switch_breakeven(value, exit_load_inr, tax_inr, r_pct, er_old_pct, er_new_pct):
     """Years until a cheaper fund has earned back exit load + tax paid to move:
     n = ln(V/(V-C)) / ln((1+r-e_new)/(1+r-e_old)). None if the new fund is not cheaper."""
-    c = (exit_load_inr or 0) + (tax_inr or 0)
+    if exit_load_inr is None or tax_inr is None:
+        return None
+    c = exit_load_inr + tax_inr
     if c <= 0:
         return 0
     if er_new_pct >= er_old_pct or c >= value:
@@ -42,8 +44,12 @@ def switch_breakeven(value, exit_load_inr, tax_inr, r_pct, er_old_pct, er_new_pc
 
 
 def exit_load_inr(lots, as_of, exit_load_pct, exit_load_days, nav):
-    if not exit_load_pct or not exit_load_days:
+    """Rupees of exit load on units still inside the load period; None when a
+    load applies but its period is not recorded (unknown, not zero)."""
+    if not exit_load_pct:
         return 0
+    if not exit_load_days:
+        return None
     cutoff = dt.date.fromisoformat(as_of) - dt.timedelta(days=int(exit_load_days))
     units = sum(l["units"] for l in lots if dt.date.fromisoformat(l["date"]) > cutoff)
     return round(units * nav * exit_load_pct / 100, 2)

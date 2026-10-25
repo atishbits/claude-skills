@@ -155,9 +155,10 @@ def unrealised(lot_map, nav_by_isin, as_of, rules, tax_class_by_isin, person, gf
         by[key] = {"tax_class": cls, "units": round(units, 4), "cost": round(cost, 2),
                    "value": round(units * nav, 2), "st_gain": round(st, 2), "lt_gain": round(lt, 2)}
     eq_st, eq_lt = buckets[("equity", "st")], buckets[("equity", "lt")]
-    if eq_st < 0:           # a short-term loss sets off short- then long-term gains
-        eq_lt += eq_st
-        eq_st = 0.0
+    if eq_st < 0 < eq_lt:   # a short-term loss also sets off long-term gains; what is left stays short-term
+        absorbed = min(-eq_st, eq_lt)
+        eq_lt -= absorbed
+        eq_st += absorbed
     exemption = rules["ltcg_exemption_inr"]
     eq_lt_taxable = max(0.0, eq_lt - exemption)
     m = person["ltcg_multiplier"]
@@ -165,7 +166,7 @@ def unrealised(lot_map, nav_by_isin, as_of, rules, tax_class_by_isin, person, gf
     hy_st = max(0.0, buckets[("hybrid_gold_intl", "st")])
     hy_lt = max(0.0, buckets[("hybrid_gold_intl", "lt")])
     debt = max(0.0, buckets[("specified_debt", "st")] + buckets[("specified_debt", "lt")])
-    tax_total = (eq_st * rules["equity"]["stcg_pct"] / 100 * m
+    tax_total = (max(0.0, eq_st) * rules["equity"]["stcg_pct"] / 100 * m
                  + eq_lt_taxable * rules["equity"]["ltcg_pct"] / 100 * m
                  + hy_lt * rules["hybrid_gold_intl"]["ltcg_pct"] / 100 * m
                  + (hy_st + debt) * slab)

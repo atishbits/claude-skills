@@ -28,7 +28,7 @@ FLAG_TEXT = {
     "keeps_fee": "earns its fee", "fails_fee_test": "fee not earned", "index_fund": "index fund",
     "below_fd_hurdle_rolling": "below FD hurdle", "short_history": "short history",
     "transactions_incomplete": "history incomplete", "idcw_growth_proxy": "IDCW plan",
-    "er_missing": "ER missing",
+    "er_missing": "ER missing", "exit_load_period_unknown": "exit-load period unknown",
 }
 
 

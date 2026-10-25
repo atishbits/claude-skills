@@ -110,6 +110,26 @@ class TestUnrealised(unittest.TestCase):
         self.assertEqual(tax.holding_tax({"tax_class": "equity", "st_gain": -5, "lt_gain": 0},
                                          RULES, PERSON), 0)
 
+    def test_st_loss_only_absorbs_positive_lt_gain(self):
+        rows = [tx("2020-01-01", "buy", 1000, 10),                       # LT loss 200 at 80
+                tx("2026-09-01", "buy", 1000, 10, isin="INF000X01BB2")]   # ST loss 200 at 80
+        u = tax.unrealised(tax.lots(rows), {"INF000X01AA1": 80, "INF000X01BB2": 80}, "2026-10-25",
+                           RULES, {"INF000X01AA1": "equity", "INF000X01BB2": "equity"}, PERSON)
+        self.assertEqual(u["totals"]["equity_st_net"], -200)
+        self.assertEqual(u["totals"]["equity_lt_net"], -200)
+        rows = [tx("2020-01-01", "buy", 1000, 10),                       # LT gain 50 at 105
+                tx("2026-09-01", "buy", 1000, 10, isin="INF000X01BB2")]   # ST loss 200 at 80
+        u = tax.unrealised(tax.lots(rows), {"INF000X01AA1": 105, "INF000X01BB2": 80}, "2026-10-25",
+                           RULES, {"INF000X01AA1": "equity", "INF000X01BB2": "equity"}, PERSON)
+        self.assertEqual(u["totals"]["equity_st_net"], -150)
+        self.assertEqual(u["totals"]["equity_lt_net"], 0)
+
+    def test_losses_never_make_tax_negative(self):
+        rows = [tx("2026-09-01", "buy", 1000, 10)]
+        u = tax.unrealised(tax.lots(rows), {"INF000X01AA1": 80}, "2026-10-25", RULES,
+                           {"INF000X01AA1": "equity"}, PERSON)
+        self.assertEqual(u["totals"]["tax_if_all_sold"], 0)
+
     def test_debt_taxed_at_slab(self):
         u = self.run_u([tx("2024-01-01", "buy", 100, 1)], 120, "2026-10-25", "specified_debt")
         self.assertAlmostEqual(u["totals"]["tax_if_all_sold"], round(20 * 0.3588, 2))

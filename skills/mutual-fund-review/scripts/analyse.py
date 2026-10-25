@@ -15,6 +15,7 @@ Each fund gets deterministic flags; Claude words verdicts from them:
   transactions_incomplete  history does not add up to units held: no XIRR or tax lots
   idcw_growth_proxy        IDCW plan compared with a growth-plan index proxy
   er_missing               no expense ratio recorded
+  exit_load_period_unknown a load applies but its period is not recorded: switch cost unknown
 """
 import argparse
 import datetime as dt
@@ -191,6 +192,8 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
             sw["exit_load_inr"] = costs.exit_load_inr(lot_map.get(hk, []), as_of,
                                                       m.get("exit_load_pct"),
                                                       m.get("exit_load_days"), f["nav"])
+            if sw["exit_load_inr"] is None:
+                f["flags"].append("exit_load_period_unknown")
             if not is_index and f["er_pct"] is not None:
                 sw["breakeven_years_to_index"] = costs.switch_breakeven(
                     f["value"], sw["exit_load_inr"], sw["tax_if_sold_inr"],
