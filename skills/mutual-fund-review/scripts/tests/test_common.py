@@ -39,6 +39,12 @@ class TestParsing(unittest.TestCase):
         self.assertIsNone(common.folio_ref(""))
 
 
+class TestFolioSuffix(unittest.TestCase):
+    def test_check_digit_suffix_ignored(self):
+        self.assertEqual(common.folio_ref("1111222233 / 0"), common.folio_ref("1111222233"))
+        self.assertEqual(common.folio_ref("1111222233/12"), common.folio_ref("1111222233"))
+
+
 class TestRootAndProfile(unittest.TestCase):
     def test_profile_defaults_overlaid(self):
         with tempfile.TemporaryDirectory() as tmp:

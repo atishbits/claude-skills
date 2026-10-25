@@ -24,6 +24,7 @@ UNITS_IN = {"buy", "sip", "switch_in", "dividend_reinvest"}
 UNITS_OUT = {"sell", "switch_out"}
 UNIT_TOLERANCE = 0.001
 NUMERIC = ("amount", "units", "nav")
+SUPERSEDING = {"cas"}
 
 
 def make_row_id(source, raw, ordinal):
@@ -102,7 +103,8 @@ def _net_amount(rows):
 
 def reconcile(rows, holdings):
     """One line per holding. A holding with no folio_ref matches transactions
-    of that source and ISIN in any folio."""
+    of that source and ISIN in any folio. Units a statement carried in as an
+    opening balance count towards the transactions' total."""
     units = units_by_holding(rows)
     amounts = _net_amount(rows)
 
@@ -113,7 +115,7 @@ def reconcile(rows, holdings):
 
     out = []
     for h in holdings:
-        tx_units = round(total(units, h), 6)
+        tx_units = round(total(units, h) + float(h.get("opening_units") or 0), 6)
         held = float(h["units"])
         inv = h.get("invested")
         out.append({
@@ -178,6 +180,12 @@ def ingest(root, source, holdings, tx, date, transactions_complete, force=False,
             return False
         return not (supersede and any(same(row, h) for h in holdings))
 
+    # A statement with full history outranks a portal view of the same folio
+    # and fund, whichever arrives first.
+    if source not in SUPERSEDING:
+        stronger = [h for h in prev.get("holdings", []) if h["source"] in SUPERSEDING]
+        holdings = [h for h in holdings if not any(same(h, c) for c in stronger)]
+        recon = [r for r in recon if not any(same(r, c) for c in stronger)]
     keep = [h for h in prev.get("holdings", []) if kept(h)]
     keep_recon = [r for r in prev.get("reconciliation", []) if kept(r)]
     sources = {k: v for k, v in prev.get("sources", {}).items() if k != source}

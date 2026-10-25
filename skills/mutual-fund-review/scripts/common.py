@@ -85,8 +85,9 @@ def parse_num(s):
 
 def folio_ref(folio):
     """Last four characters plus a short hash: enough to tell folios apart,
-    never enough to recover the folio number."""
-    folio = (folio or "").strip() if folio is not None else ""
+    never enough to recover the folio number. A "/ n" check suffix is dropped
+    so a statement and a portal that print it differently still match."""
+    folio = re.split(r"\s*/", (folio or "").strip())[0] if folio is not None else ""
     if not folio:
         return None
     return f"{folio[-4:]}-{hashlib.sha256(folio.encode()).hexdigest()[:8]}"

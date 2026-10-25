@@ -70,10 +70,11 @@ def period_pnl(rows, value_at, start, end):
 
 def same_flows_benchmark(rows, bench_series, end, end_value):
     """What the same purchases and sales on the same dates would be worth in the
-    benchmark: a buy of X buys X of benchmark units, a sale of X sells X of them."""
+    benchmark: a buy of X buys X of benchmark units; a sale or dividend paid out
+    of X sells X of them, so both sides return the same cash."""
     units = 0.0
     for r in sorted(rows, key=lambda r: r["date"]):
-        if r["type"] not in MONEY_IN | {"sell", "switch_out"}:
+        if r["type"] not in MONEY_IN | MONEY_OUT:
             continue
         price = nav_on(bench_series, r["date"])
         if price is None:

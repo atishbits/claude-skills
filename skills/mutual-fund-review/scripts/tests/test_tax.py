@@ -57,6 +57,10 @@ class TestLots(unittest.TestCase):
         self.assertAlmostEqual(lots[K][0]["cost_per_unit"], 120.0)
         self.assertEqual(lots[K][0]["date"], "2025-01-01")
 
+    def test_same_day_buy_counted_before_sell(self):
+        lots = tax.lots([tx("2025-06-01", "sell", 50, 5), tx("2025-06-01", "buy", 100, 10)])
+        self.assertAlmostEqual(lots[K][0]["units"], 5.0)
+
     def test_oversell_raises(self):
         with self.assertRaises(ValueError):
             tax.lots([tx("2024-01-01", "buy", 1000, 10), tx("2025-06-01", "sell", 2100, 11)])
@@ -129,6 +133,14 @@ class TestUnrealised(unittest.TestCase):
         u = tax.unrealised(tax.lots(rows), {"INF000X01AA1": 80}, "2026-10-25", RULES,
                            {"INF000X01AA1": "equity"}, PERSON)
         self.assertEqual(u["totals"]["tax_if_all_sold"], 0)
+
+    def test_pre_april_2023_debt_gets_long_term_rate(self):
+        old = self.run_u([tx("2023-03-31", "buy", 100, 1)], 150, "2026-10-25", "specified_debt")
+        new = self.run_u([tx("2023-04-01", "buy", 100, 1)], 150, "2026-10-25", "specified_debt")
+        self.assertEqual(old["by_holding"][K]["lt_gain"], 50)
+        self.assertAlmostEqual(old["totals"]["tax_if_all_sold"], round(50 * 0.125 * 1.196, 2))
+        self.assertEqual(new["by_holding"][K]["st_gain"], 50)
+        self.assertAlmostEqual(new["totals"]["tax_if_all_sold"], round(50 * 0.3588, 2))
 
     def test_debt_taxed_at_slab(self):
         u = self.run_u([tx("2024-01-01", "buy", 100, 1)], 120, "2026-10-25", "specified_debt")

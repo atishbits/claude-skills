@@ -8,8 +8,9 @@ only network use, through nav.history and its cache).
 Writes data/skill-data/analysis-<as_of>.json and prints a short summary.
 Each fund gets deterministic flags; Claude words verdicts from them:
   below_fd_hurdle_rolling  rolling median return under the pre-tax FD equivalent
-  keeps_fee / fails_fee_test  active fund: beat its index in >= keep_min_window_win_pct
-                           of rolling windows AND median excess > its fee gap to an index fund
+  keeps_fee / fails_fee_test  active fund: beat an index fund on its benchmark in
+                           >= keep_min_window_win_pct of rolling windows AND by a positive
+                           median margin (both NAVs are after fees, so the fee is already paid)
   index_fund               an index fund (judged on cost and tracking, not the fee test)
   short_history            fewer than 12 rolling windows
   transactions_incomplete  history does not add up to units held: no XIRR or tax lots
@@ -32,6 +33,12 @@ import returns
 import tax
 
 MIN_WINDOWS = 12
+
+
+def xirr_meaningful(first_date, as_of):
+    """An annualised return on money held under a year exaggerates: a 2% move
+    in ten days reads as 100%+. Show the absolute return instead."""
+    return (dt.date.fromisoformat(as_of) - dt.date.fromisoformat(first_date)).days >= 365
 
 
 def _units_at(rows, date):
@@ -96,7 +103,8 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
         if price is None:
             price = h.get("nav") or ((h.get("current_value") or 0) / h["units"] if h["units"] else 0)
         value = round(h["units"] * price, 2)
-        src_ok = snap.get("sources", {}).get(h["source"], {}).get("transactions_complete", False)
+        src_ok = h.get("transactions_complete",
+                       snap.get("sources", {}).get(h["source"], {}).get("transactions_complete", False))
         units_ok = abs(_units_at(rows, as_of) - h["units"]) <= ledger.UNIT_TOLERANCE
         complete = bool(src_ok and units_ok and rows)
         flags = []
@@ -104,6 +112,7 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
         bench = fund_meta.benchmark_for(m) if m else None
         bseries = series(bench["proxy_amfi_code"]) if bench and bench.get("proxy_amfi_code") else {}
         is_index = (m.get("category") or "").startswith("index_")
+        record = series(m.get("growth_amfi_code")) if m.get("growth_amfi_code") else s
         f = {"isin": h["isin"], "scheme": h.get("scheme", ""), "source": h["source"],
              "category": m.get("category"), "tax_class": cls, "units": h["units"],
              "nav": price, "value": value, "invested": h.get("invested"),
@@ -112,12 +121,18 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
              "er_pct": m.get("expense_ratio_pct"), "er_as_of": m.get("er_as_of"),
              "xirr": None, "same_flows": None, "trailing": {}, "bench_trailing": {},
              "rolling": None, "er_gap_vs_index": None, "flags": flags,
+             "xirr_meaningful": None, "abs_return": None, "first_buy": None,
              "switch": {"exit_load_inr": None, "tax_if_sold_inr": None,
                         "breakeven_years_to_index": None}}
         keys[id(f)] = (h["source"], h.get("folio_ref") or None, h["isin"], is_index, m)
         if complete:
             flows = returns.flows_from_tx(rows)
             f["xirr"] = returns.xirr(flows + [(as_of, value)])
+            put_in = -sum(a for _, a in flows if a < 0)
+            taken_out = sum(a for _, a in flows if a > 0)
+            f["first_buy"] = flows[0][0] if flows else None
+            f["xirr_meaningful"] = xirr_meaningful(flows[0][0], as_of) if flows else None
+            f["abs_return"] = (value + taken_out) / put_in - 1 if put_in else None
             all_flows += flows
             complete_rows += rows
             if bseries:
@@ -125,11 +140,14 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
         else:
             flags.append("transactions_incomplete")
         for y in (1, 3, 5):
-            f["trailing"][f"{y}y"] = returns.trailing_cagr(s, as_of, y) if s else None
+            f["trailing"][f"{y}y"] = returns.trailing_cagr(record, as_of, y) if record else None
             f["bench_trailing"][f"{y}y"] = returns.trailing_cagr(bseries, as_of, y) if bseries else None
         hurdle_pre = hurdle["required_pretax_pct"].get(cls) if hurdle else None
-        if s and bseries:
-            f["rolling"] = returns.rolling(s, bseries, prof["rolling_years"], as_of,
+        if m.get("option") == "idcw" and not m.get("growth_amfi_code"):
+            record = {}  # the IDCW NAV drops at each payout: no fair record without the growth plan
+            f["trailing"] = {k: None for k in f["trailing"]}
+        if record and bseries:
+            f["rolling"] = returns.rolling(record, bseries, prof["rolling_years"], as_of,
                                            hurdle_pct=hurdle_pre)
         roll = f["rolling"] or {}
         if f["er_pct"] is None:
@@ -137,17 +155,23 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
         else:
             f["er_gap_vs_index"] = costs.vs_index(f["er_pct"], prof.get("index_fund_er_pct", 0.2))
         if m.get("option") == "idcw" or h.get("option") == "idcw":
-            flags.append("idcw_growth_proxy")
-        if roll.get("windows", 0) < MIN_WINDOWS:
+            flags.append("idcw_growth_proxy" if m.get("growth_amfi_code") else "idcw_no_growth_series")
+        if not bseries:
+            flags.append("no_benchmark")
+        elif roll.get("windows", 0) < MIN_WINDOWS:
             flags.append("short_history")
+        if f["xirr_meaningful"] is False:
+            flags.append("held_under_1y")
         if roll.get("fund_median") is not None and hurdle_pre is not None \
                 and roll["fund_median"] < hurdle_pre:
             flags.append("below_fd_hurdle_rolling")
         if is_index:
             flags.append("index_fund")
         elif roll.get("windows", 0) >= MIN_WINDOWS and f["er_gap_vs_index"] is not None:
+            # Both NAVs are already net of their own fees, so a positive median
+            # excess means the fund earned its higher fee.
             keeps = (roll["win_pct"] >= prof["keep_min_window_win_pct"]
-                     and roll["median_excess"] > f["er_gap_vs_index"])
+                     and roll["median_excess"] > 0)
             flags.append("keeps_fee" if keeps else "fails_fee_test")
         funds.append(f)
         b = by_source.setdefault(h["source"], {"value": 0.0, "invested": 0.0, "flows": [],
@@ -176,12 +200,22 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
     tax_out = None
     if person:
         incomplete = sorted({f["isin"] for f in funds if "transactions_incomplete" in f["flags"]})
-        lot_map = tax.lots(complete_rows)
+        lot_map = {}
+        for f in funds:
+            if "transactions_incomplete" in f["flags"]:
+                continue
+            src, folio, isin, _ix, _m = keys[id(f)]
+            try:
+                lot_map.update(tax.lots(_rows_for({"source": src, "folio_ref": folio, "isin": isin}, txs)))
+            except ValueError:
+                f["flags"].append("lots_error")
+                incomplete.append(isin)
         navs = {f["isin"]: f["nav"] for f in funds}
         classes = {f["isin"]: f["tax_class"] for f in funds}
-        tax_out = tax.unrealised(lot_map, navs, as_of, rules, classes, person)["totals"]
-        tax_out["excluded_isins"] = incomplete
-        by_h = tax.unrealised(lot_map, navs, as_of, rules, classes, person)["by_holding"]
+        u = tax.unrealised(lot_map, navs, as_of, rules, classes, person)
+        tax_out = u["totals"]
+        tax_out["excluded_isins"] = sorted(set(incomplete))
+        by_h = u["by_holding"]
         for f in funds:
             src, folio, isin, is_index, m = keys[id(f)]
             hk = (src, folio, isin)
@@ -204,18 +238,26 @@ def run(root, as_of, fetch=nav.default_fetch, period=None):
     period_out = None
     if period:
         start, end = period
-        cr = [f for f in funds if "transactions_incomplete" not in f["flags"]]
+        included, excluded, prow = [], [], []
+        for f in funds:
+            if "transactions_incomplete" in f["flags"]:
+                excluded.append(f["isin"])
+                continue
+            src, folio, isin, _ix, m = keys[id(f)]
+            rows = _rows_for({"source": src, "folio_ref": folio, "isin": isin}, txs)
+            s_ = series(m.get("amfi_code"))
+            needs_start = _units_at(rows, start) > ledger.UNIT_TOLERANCE
+            if not s_ or nav.nav_on(s_, end) is None or (needs_start and nav.nav_on(s_, start) is None):
+                excluded.append(isin)  # never value a fund at zero for want of a price
+                continue
+            included.append((rows, s_))
+            prow += rows
 
         def value_at(d):
-            total = 0.0
-            for f in cr:
-                rows = [r for r in complete_rows if r["isin"] == f["isin"] and r["source"] == f["source"]]
-                s = series(meta.get(f["isin"], {}).get("amfi_code"))
-                price = nav.nav_on(s, d) if s else None
-                total += _units_at(rows, d) * (price or 0)
-            return total
-        period_out = returns.period_pnl(complete_rows, value_at, start, end)
-        period_out["covers"] = [f["isin"] for f in cr]
+            return sum(_units_at(rows, d) * (nav.nav_on(s_, d) or 0) for rows, s_ in included
+                       if _units_at(rows, d) > ledger.UNIT_TOLERANCE)
+        period_out = returns.period_pnl(prow, value_at, start, end)
+        period_out["excluded"] = sorted(set(excluded))
 
     out = {"as_of": as_of, "snapshot": os.path.basename(snap_path), "totals": totals,
            "by_source": sources, "funds": sorted(funds, key=lambda f: -f["value"]),

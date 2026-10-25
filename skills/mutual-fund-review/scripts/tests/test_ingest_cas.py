@@ -66,17 +66,39 @@ class TestIngest(unittest.TestCase):
             tp = os.path.join(root, "cas.txt")
             with open(tp, "w") as f:
                 f.write(text())
-            out = ingest_cas.main(["--text", tp, "--root", root, "--date", "2026-10-25",
-                                   "--force"])
+            out = ingest_cas.main(["--text", tp, "--root", root, "--date", "2026-10-25"])
             recon = {r["isin"]: r["units_ok"] for r in out["reconciliation"]}
-            self.assertTrue(recon["INF000X01AA1"])
-            self.assertTrue(recon["INF000X01BB2"])
-            self.assertFalse(recon["INF000X01CC3"])  # opening balance 50 not in transactions
+            self.assertTrue(all(recon.values()))  # opening balance counted, no --force needed
             with open(out["snapshot"]) as f:
                 snap = json.load(f)
             aa1 = [h for h in snap["holdings"] if h["isin"] == "INF000X01AA1"]
             self.assertEqual([h["source"] for h in aa1], ["cas"])
             self.assertFalse(snap["sources"]["cas"]["transactions_complete"])
+
+    def test_portal_refresh_after_cas_does_not_double_count(self):
+        with tempfile.TemporaryDirectory() as root:
+            cap = {"source": "portalx", "transactions_complete": False,
+                   "holdings": [{"scheme": "Example Large Cap Fund", "isin": "INF000X01AA1",
+                                 "folio": "1111222233/0", "units": "1428.571", "invested": "45000",
+                                 "current_value": "171428.52"}], "transactions": []}
+            p = os.path.join(root, "cap.json")
+            with open(p, "w") as f:
+                json.dump(cap, f)
+            ingest_capture.main(["--capture", p, "--root", root, "--date", "2026-10-24", "--force"])
+            tp = os.path.join(root, "cas.txt")
+            with open(tp, "w") as f:
+                f.write(text())
+            ingest_cas.main(["--text", tp, "--root", root, "--date", "2026-10-25"])
+            out = ingest_capture.main(["--capture", p, "--root", root, "--date", "2026-10-26",
+                                       "--force"])
+            with open(out["snapshot"]) as f:
+                snap = json.load(f)
+            aa1 = [h["source"] for h in snap["holdings"] if h["isin"] == "INF000X01AA1"]
+            self.assertEqual(aa1, ["cas"])
+
+    def test_systematic_withdrawal_is_a_sale(self):
+        self.assertEqual(ingest_cas.tx_type("Systematic Withdrawal - Instalment 3"), "sell")
+        self.assertEqual(ingest_cas.tx_type("SWP Redemption"), "sell")
 
     def test_password_never_in_argv(self):
         with self.assertRaises(SystemExit):

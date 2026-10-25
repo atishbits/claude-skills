@@ -26,8 +26,9 @@ Share of active funds that trailed their benchmark:
 
 Default from this: **index funds for large cap; mid and small cap judged fund by fund** on rolling
 returns against their own index. An active fund keeps its place only if it beat its index in at
-least `keep_min_window_win_pct` (65%) of rolling 3-year windows and its typical lead exceeds its
-extra fee.
+least `keep_min_window_win_pct` (65%) of rolling 3-year windows by a positive median margin. The
+comparison is against an index fund's NAV, so both sides are already after their fees: a positive
+margin means the higher fee was earned.
 
 ## Allocation
 

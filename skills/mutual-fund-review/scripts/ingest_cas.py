@@ -45,7 +45,7 @@ RE_CLOSE = re.compile(r"Closing Unit Balance\s*:\s*(" + NUM + r").*?NAV on\s+(\S
 
 def tx_type(desc):
     d = desc.lower()
-    rules = [("stamp duty", "stamp"), ("stt", "stt"), ("switch in", "switch_in"),
+    rules = [("systematic withdrawal", "sell"), ("swp", "sell"), ("stamp duty", "stamp"), ("stt", "stt"), ("switch in", "switch_in"),
              ("switch-in", "switch_in"), ("switch out", "switch_out"),
              ("switch-out", "switch_out"), ("redemption", "sell"),
              ("reinvest", "dividend_reinvest"), ("idcw paid", "dividend_payout"),
@@ -99,6 +99,7 @@ def parse_cas_text(text, owner="self"):
                              "current_value": common.parse_num(value),
                              "nav": common.parse_num(nav),
                              "nav_date": common.parse_date(nav_date.rstrip(":")),
+                             "opening_units": cur["opening"],
                              "transactions_complete": cur["opening"] <= ledger.UNIT_TOLERANCE})
             cur = None
             continue

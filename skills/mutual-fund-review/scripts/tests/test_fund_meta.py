@@ -49,7 +49,7 @@ class TestFundMeta(unittest.TestCase):
             meta = {}
             fund_meta.set_fields(meta, "INF000X01AA1", benchmark_key="large_cap",
                                  category="large_cap", expense_ratio_pct=0.5,
-                                 amfi_code="900001")
+                                 amfi_code="900001", exit_load_pct=0)
             fund_meta.save(root, meta)
             missing = fund_meta.missing(root)
             self.assertEqual([m["isin"] for m in missing], ["INF000X01BB2"])

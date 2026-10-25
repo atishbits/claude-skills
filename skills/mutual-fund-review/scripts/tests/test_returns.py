@@ -68,6 +68,15 @@ class TestBenchmark(unittest.TestCase):
         self.assertIsNone(returns.trailing_cagr(s, "2025-12-31", 10))
 
 
+class TestIdcw(unittest.TestCase):
+    def test_payout_reduces_benchmark_units(self):
+        s = series("2023-01-02", 3, 0.0)  # flat at 10
+        rows = [tx("2023-06-01", "buy", 1000, 100), tx("2024-06-03", "dividend_payout", 100)]
+        r = returns.same_flows_benchmark(rows, s, "2025-12-31", 900.0)
+        self.assertAlmostEqual(r["bench_value"], 900.0, places=6)
+        self.assertAlmostEqual(r["diff_pts"], 0.0, places=3)
+
+
 class TestRolling(unittest.TestCase):
     def test_rolling_counts_and_win_pct(self):
         f, b = series("2020-01-01", 5, 0.12), series("2020-01-01", 5, 0.10)

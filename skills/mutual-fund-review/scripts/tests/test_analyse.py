@@ -50,9 +50,10 @@ def make_root(tmp, src_date="2026-10-20", second_src_date="2026-09-10"):
                 "effective_slab_pct": 35.88, "ltcg_multiplier": 1.196}})
     common.write_json(p["fund_meta"], {
         "INF000X01AA1": {"amfi_code": "900001", "category": "large_cap", "benchmark_key": "large_cap",
-                         "expense_ratio_pct": 0.59, "tax_class": "equity", "option": "growth"},
+                         "expense_ratio_pct": 0.59, "tax_class": "equity", "option": "growth",
+                         "exit_load_pct": 0},
         "INF000X01BB2": {"amfi_code": "900002", "category": "index_nifty50",
-                         "benchmark_key": "index_nifty50", "expense_ratio_pct": 0.10,
+                         "benchmark_key": "index_nifty50", "expense_ratio_pct": 0.10, "exit_load_pct": 0,
                          "tax_class": "equity", "option": "growth"}})
     fref = common.folio_ref(FOLIO)
     rows, holdings = [], []
@@ -165,7 +166,86 @@ class TestAnalyse(unittest.TestCase):
         self.assertIn("INF000X01AA1", a["tax"]["excluded_isins"])
 
 
+class TestReviewFixes(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        make_root(self.tmp.name)
+        self.p = common.paths(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def meta(self, isin, **kw):
+        with open(self.p["fund_meta"]) as f:
+            m = json.load(f)
+        m[isin].update(kw)
+        for k in [k for k, v in kw.items() if v is None]:
+            del m[isin][k]
+        common.write_json(self.p["fund_meta"], m)
+
+    def test_period_skips_fund_without_nav_series(self):  # C1
+        self.meta("INF000X01BB2", amfi_code=None)
+        a = analyse.run(self.tmp.name, AS_OF, fetch=stub_fetch, period=("2025-10-23", AS_OF))
+        p = a["period"]
+        self.assertEqual(p["excluded"], ["INF000X01BB2"])
+        self.assertEqual(p["net_flows"], 0.0)
+        self.assertGreater(p["pnl"], 0)
+
+    def test_fee_test_uses_net_excess(self):  # I2: proxy NAV is already net of its fee
+        # fund beats the index fund by ~0.3 pts/yr after costs, ER gap 0.39 -> still keeps its fee
+        SERIES["900001"] = series("2019-01-01", AS_OF, 0.103)
+        try:
+            a = analyse.run(self.tmp.name, AS_OF, fetch=stub_fetch)
+        finally:
+            SERIES["900001"] = FUND
+        f = {x["isin"]: x for x in a["funds"]}["INF000X01AA1"]
+        self.assertIn("keeps_fee", f["flags"])
+
+    def test_under_one_year_shows_absolute_return(self):  # M2
+        a = analyse.run(self.tmp.name, AS_OF, fetch=stub_fetch)
+        tw = {x["isin"]: x for x in a["funds"]}["INF000X01BB2"]
+        self.assertTrue(tw["xirr_meaningful"])  # first buy 2025-01-06: held over a year
+        self.assertFalse(analyse.xirr_meaningful("2026-09-15", AS_OF))
+        self.assertTrue(analyse.xirr_meaningful("2025-10-23", AS_OF))
+        aa = {x["isin"]: x for x in a["funds"]}["INF000X01AA1"]
+        self.assertTrue(aa["xirr_meaningful"])
+        self.assertAlmostEqual(aa["abs_return"], aa["value"] / 20000.0 - 1, places=4)
+
+    def test_idcw_uses_growth_series_for_record(self):  # I1 related
+        self.meta("INF000X01AA1", option="idcw", growth_amfi_code="900001", amfi_code="900003")
+        SERIES["900003"] = series("2019-01-01", AS_OF, 0.06)  # IDCW NAV drops at every payout
+        try:
+            a = analyse.run(self.tmp.name, AS_OF, fetch=stub_fetch)
+        finally:
+            del SERIES["900003"]
+        f = {x["isin"]: x for x in a["funds"]}["INF000X01AA1"]
+        self.assertEqual(f["rolling"]["win_pct"], 100.0)
+        self.assertAlmostEqual(f["trailing"]["3y"], 0.12, places=2)
+
+    def test_oversell_flags_not_crash(self):  # M1
+        rows = ledger.read_transactions(self.p["transactions"])
+        bad = dict(rows[0]); bad["type"] = "sell"; bad["units"] = 9999.0; bad["date"] = "2021-01-04"
+        bad["row_id"] = "srca:bad"
+        ledger.write_transactions(self.p["transactions"], rows + [bad])
+        a = analyse.run(self.tmp.name, AS_OF, fetch=stub_fetch)
+        f = {x["isin"]: x for x in a["funds"]}["INF000X01AA1"]
+        self.assertTrue({"lots_error", "transactions_incomplete"} & set(f["flags"]))
+
+
 class TestReport(unittest.TestCase):
+    def test_short_holding_shows_absolute_return(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_root(tmp)
+            a = analyse.run(tmp, AS_OF, fetch=stub_fetch)
+            f = a["funds"][0]
+            f.update({"xirr": -0.567, "xirr_meaningful": False, "abs_return": -0.078})
+            f["flags"].append("held_under_1y")
+            md = report.render(a)
+            self.assertIn("-7.8% (under 1 yr)", md)
+            self.assertNotIn("-56.7%", md)
+            a["costs"]["weighted_er_pct"] = None
+            self.assertNotIn("None%", report.render(a))
+
     def test_render(self):
         with tempfile.TemporaryDirectory() as tmp:
             make_root(tmp)

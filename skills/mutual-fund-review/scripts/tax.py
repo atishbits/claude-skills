@@ -75,7 +75,7 @@ def required_pretax(post_tax_target_pct, years, tax_class, rules, person):
 def lots(rows):
     """Open FIFO lots per (source, folio_ref, isin): [{date, units, cost_per_unit}]."""
     out = defaultdict(list)
-    for r in sorted(rows, key=lambda r: r["date"]):
+    for r in sorted(rows, key=lambda r: (r["date"], r["type"] in UNITS_OUT)):
         key = (r["source"], r.get("folio_ref") or None, r["isin"])
         units = abs(float(r["units"] or 0))
         if r["type"] in UNITS_IN and units:
@@ -105,7 +105,16 @@ def _add_months(d, months):
             continue
 
 
+def lot_class(tax_class, buy_date, rules):
+    """Debt units bought before the April 2023 change keep the 24-month,
+    12.5% treatment; only later purchases are taxed at slab regardless."""
+    if tax_class == "specified_debt" and buy_date < rules["specified_debt"]["from"]:
+        return "hybrid_gold_intl"
+    return tax_class
+
+
 def is_long_term(buy_date, as_of, tax_class, rules):
+    tax_class = lot_class(tax_class, buy_date, rules)
     if tax_class == "specified_debt":
         return False
     months = rules["equity"]["lt_months"] if tax_class == "equity" else rules["hybrid_gold_intl"]["lt_months"]
@@ -146,12 +155,13 @@ def unrealised(lot_map, nav_by_isin, as_of, rules, tax_class_by_isin, person, gf
             gain = (nav - c) * lot["units"]
             cost += lot["cost_per_unit"] * lot["units"]
             units += lot["units"]
+            bucket_cls = lot_class(cls, lot["date"], rules)
             if is_long_term(lot["date"], as_of, cls, rules):
                 lt += gain
+                buckets[(bucket_cls, "lt")] += gain
             else:
                 st += gain
-        buckets[(cls, "st")] += st
-        buckets[(cls, "lt")] += lt
+                buckets[(bucket_cls, "st")] += gain
         by[key] = {"tax_class": cls, "units": round(units, 4), "cost": round(cost, 2),
                    "value": round(units * nav, 2), "st_gain": round(st, 2), "lt_gain": round(lt, 2)}
     eq_st, eq_lt = buckets[("equity", "st")], buckets[("equity", "lt")]

@@ -12,6 +12,9 @@ pages and records them here with a date and source; scripts only read them.
 Benchmark keys and their tax classes are in references/benchmarks.json. The
 expense-ratio basis matters: from April 2026 SEBI splits TER into a base ratio
 plus levies, so a pre-April figure is not comparable with a post-April one.
+Record exit_load_pct 0 for a fund with no load (missing means unknown). For an
+IDCW plan, growth_amfi_code is the growth plan of the same scheme: its NAV
+gives the fund's record without the drops at each payout.
 """
 import argparse
 import json
@@ -22,10 +25,10 @@ import ledger
 
 TAX_CLASSES = {"equity", "specified_debt", "hybrid_gold_intl"}
 NUM_FIELDS = {"expense_ratio_pct", "exit_load_pct", "exit_load_days", "lock_in_days"}
-ALLOWED = {"amfi_code", "scheme", "category", "benchmark_key", "expense_ratio_pct", "er_as_of",
+ALLOWED = {"amfi_code", "growth_amfi_code", "scheme", "category", "benchmark_key", "expense_ratio_pct", "er_as_of",
            "er_basis", "er_source", "exit_load_pct", "exit_load_days", "lock_in_days", "option",
            "tax_class"}
-NEEDED = ("amfi_code", "category", "benchmark_key", "expense_ratio_pct")
+NEEDED = ("amfi_code", "category", "benchmark_key", "expense_ratio_pct", "exit_load_pct")
 
 
 def load(root):

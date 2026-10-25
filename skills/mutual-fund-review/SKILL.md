@@ -139,7 +139,10 @@ Word each fund's verdict from its flags, with the evidence row beside it:
   `max_switch_breakeven_years`; otherwise suggest stopping new money into it instead. Switch in
   tranches that fit the yearly ₹1.25 lakh exemption.
 - **WATCH**: `below_fd_hurdle_rolling`, `short_history`, or a sector fund over its cap.
-- **Can't judge yet**: `transactions_incomplete` (say what statement would fix it), `er_missing`.
+- **Can't judge yet**: `transactions_incomplete` (say what statement would fix it), `er_missing`,
+  `exit_load_period_unknown` (switch cost unknown), `idcw_no_growth_series` (record the growth
+  plan's code as `growth_amfi_code`), `lots_error`, `no_benchmark`.
+- `held_under_1y`: quote the plain gain, never the annualised XIRR.
 
 Separate luck from skill: a fund's `same_flows.diff_pts` is about the user's timing and choice
 together; `rolling.win_pct` is about the fund alone. Never treat a high recent return as a reason.

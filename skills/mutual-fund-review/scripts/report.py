@@ -29,6 +29,8 @@ FLAG_TEXT = {
     "below_fd_hurdle_rolling": "below FD hurdle", "short_history": "short history",
     "transactions_incomplete": "history incomplete", "idcw_growth_proxy": "IDCW plan",
     "er_missing": "ER missing", "exit_load_period_unknown": "exit-load period unknown",
+    "held_under_1y": "held under a year", "no_benchmark": "no benchmark",
+    "idcw_no_growth_series": "IDCW plan, no growth series", "lots_error": "tax lots don't add up",
 }
 
 
@@ -53,6 +55,12 @@ def _pct(x, scale=100, nd=1):
     return "–" if x is None else f"{x * scale:.{nd}f}%"
 
 
+def _fund_return(f):
+    if f.get("xirr_meaningful") is False and f.get("abs_return") is not None:
+        return f"{f['abs_return'] * 100:.1f}% (under 1 yr)"
+    return _pct(f["xirr"])
+
+
 def render(a):
     t, h = a["totals"], a.get("hurdle")
     lines = [f"# Mutual funds — {a['as_of']}", ""]
@@ -69,21 +77,22 @@ def render(a):
     for name, s in sorted(a["by_source"].items()):
         lines.append(f"| {name} | {_inr(s['value'])} | {_inr(s['invested'])} | {_inr(s['pnl'])} "
                      f"| {_pct(s['xirr'])} |")
-    lines += ["", "| Fund | Value | XIRR | vs same money in index | 3y fund / index | "
+    lines += ["", "| Fund | Value | XIRR (or gain if under 1 yr) | vs same money in index | 3y fund / index | "
               "Rolling win % | ER | Flags |", "|---|---|---|---|---|---|---|---|"]
     for f in a["funds"]:
         sf = f.get("same_flows") or {}
         diff = sf.get("diff_pts")
         roll = f.get("rolling") or {}
         lines.append(
-            f"| {f['scheme']} | {_inr(f['value'])} | {_pct(f['xirr'])} | "
+            f"| {f['scheme']} | {_inr(f['value'])} | {_fund_return(f)} | "
             f"{'–' if diff is None else f'{diff:+.1f} pts'} | "
             f"{_pct(f['trailing'].get('3y'))} / {_pct(f['bench_trailing'].get('3y'))} | "
             f"{'–' if roll.get('win_pct') is None else str(roll['win_pct']) + '%'} | "
             f"{'–' if f['er_pct'] is None else str(f['er_pct']) + '%'} | "
             f"{', '.join(FLAG_TEXT.get(x, x) for x in f['flags'])} |")
     c = a["costs"]
-    lines += ["", f"**Costs:** weighted ER {c['weighted_er_pct']}% ≈ {_inr(c['annual_cost_inr'])} a year."
+    er = "–" if c["weighted_er_pct"] is None else f"{c['weighted_er_pct']:.3f}%"
+    lines += ["", f"**Costs:** weighted ER {er} ≈ {_inr(c['annual_cost_inr'])} a year."
               + (f" ER missing for {len(c['missing_er'])} fund(s)." if c["missing_er"] else "")
               + (" ERs mix pre- and post-April-2026 bases." if c["mixed_basis"] else "")]
     tx = a.get("tax")

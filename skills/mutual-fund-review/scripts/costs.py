@@ -44,8 +44,10 @@ def switch_breakeven(value, exit_load_inr, tax_inr, r_pct, er_old_pct, er_new_pc
 
 
 def exit_load_inr(lots, as_of, exit_load_pct, exit_load_days, nav):
-    """Rupees of exit load on units still inside the load period; None when a
-    load applies but its period is not recorded (unknown, not zero)."""
+    """Rupees of exit load on units still inside the load period; None when
+    the load or its period is not recorded (unknown, not zero)."""
+    if exit_load_pct is None:
+        return None
     if not exit_load_pct:
         return 0
     if not exit_load_days:
