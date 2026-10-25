@@ -74,11 +74,14 @@ you would move to this card; default all), `source`, `as_of`.
 ## The read-only browser guard
 
 `SKILL.md` declares a `PreToolUse` hook, `scripts/browser_guard.py`, that runs only while the
-skill is active. It lets Claude read pages, open and close tabs, and click or choose things whose
-description is about statements, dates and file formats. It denies anything that could move
-money, change a setting or touch a secret (pay, transfer, payee, OTP, confirm, mandate, limit,
-apply, and so on), every page script, batched action and upload, and any browser tool it does not
-know. Typing is limited to dates and keys to navigation keys.
+skill is active. It covers every browser- or desktop-driving tool (any MCP server whose name mentions a
+browser, Chrome, Playwright, Puppeteer, Selenium, DevTools or a computer). It lets Claude read pages,
+open and close tabs, and click or choose things whose description is about statements, dates or
+file formats. It denies any click or choice that also commits or moves something (pay, transfer,
+proceed, continue, confirm, submit, save, cancel, open an FD, amount, OTP, and so on), every page
+script, `javascript:` link, batched action and upload, and any browser tool it does not know.
+Typing is limited to dates and years, form values to dates, months, periods and file formats, and
+keys to navigation keys. If the guard itself fails, the action is blocked.
 
 Limitation: the guard judges an action by Claude's own description of it, so it stops mistakes
 and instructions planted in a page, not a model mislabelling on purpose. Keep watching the tab.

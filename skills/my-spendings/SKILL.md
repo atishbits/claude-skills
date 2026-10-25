@@ -27,7 +27,7 @@ allowed-tools:
   - WebFetch
 hooks:
   PreToolUse:
-    - matcher: "mcp__claude-in-chrome__.*|mcp__Claude_Browser__.*|mcp__remote-devices__.*|mcp__computer-use__.*"
+    - matcher: "mcp__.*([Cc]hrome|[Bb]rowser|[Pp]laywright|[Pp]uppeteer|[Ss]elenium|[Dd]ev[Tt]ools|[Cc]omputer).*"
       hooks:
         - type: command
           command: 'for d in "$CLAUDE_SKILL_DIR" "$CLAUDE_PLUGIN_ROOT/skills/my-spendings" "$HOME/.claude/skills/my-spendings"; do [ -f "$d/scripts/browser_guard.py" ] && exec python3 "$d/scripts/browser_guard.py"; done; echo "my-spendings read-only guard not found: browser action blocked" >&2; exit 2'
@@ -99,7 +99,8 @@ report says what it cannot see.
 syncs down). A password-protected PDF is unlocked with the user's PDF-unlock skill; never ask for
 the password here.
 
-**Browser route** — only in Claude Code, and only after the guard is proven this session:
+**Browser route** — only in Claude Code, only with the Chrome extension's tools, and only after
+the guard is proven this session:
 
 1. Open a new tab in your own tab group and call `javascript_tool` on it once with `1`. It must
    be **blocked** by "my-spendings read-only guard". If it runs, the guard is not active: do not

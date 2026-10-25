@@ -118,3 +118,50 @@ class TestHookCommand(unittest.TestCase):
     def test_blocks_when_guard_missing(self):
         out = self.run_cmd({})
         self.assertEqual(out.returncode, 2)
+
+
+class TestReviewFindings(unittest.TestCase):
+    def test_honest_money_steps_denied(self):
+        for s in ["Click Proceed to complete the transaction", "Click Close account on the account page",
+                  "Click Open FD on account page", "Click Cancel card", "Click Yes on the card page dialog",
+                  "Click Continue on card page", "Clicks Save on the account settings",
+                  "Opens the account page", "Clicks Submit"]:
+            self.assertFalse(click(s)[0], s)
+
+    def test_statement_steps_still_allowed(self):
+        for s in ["Opens the View Statement page", "Clicks OK in the date picker",
+                  "Opens the account dropdown on the statement page",
+                  "Selects the previous month in the calendar", "Closes the statement dialog"]:
+            self.assertTrue(click(s)[0], s)
+
+    def test_bare_numbers_only_years(self):
+        t = lambda x: g.decide(C + "computer", {"action": "type", "text": x, "tabId": 1})[0]
+        self.assertTrue(t("2026"))
+        self.assertFalse(t("1234"))
+        self.assertFalse(t("50000"))
+
+    def test_form_values_constrained(self):
+        f = lambda s, v: g.decide(C + "form_input", {"ref": "r", "value": v, "action_summary": s})[0]
+        self.assertFalse(f("Sets amount on the account page", "50000"))
+        self.assertFalse(f("Sets the statement field", "123456"))
+        self.assertTrue(f("Sets the statement start date", "25/04/2026"))
+        self.assertTrue(f("Sets the statement format", "XLS"))
+        self.assertTrue(f("Sets the statement month", "April"))
+        self.assertTrue(f("Sets the statement period", "Last 6 months"))
+
+    def test_script_urls_denied(self):
+        for u in ["javascript:alert(1)", " JavaScript:void(0)", "data:text/html,<b>x</b>"]:
+            self.assertFalse(g.decide(C + "navigate", {"url": u})[0], u)
+        self.assertTrue(g.decide(C + "navigate", {"url": "https://bank.example/statement"})[0])
+
+    def test_other_browser_servers_guarded(self):
+        self.assertFalse(g.decide("mcp__playwright__browser_click", {})[0])
+        self.assertFalse(g.decide("mcp__chrome-devtools__evaluate_script", {})[0])
+        self.assertTrue(g.decide("mcp__remote-devices__Claude_Browser__read_page", {})[0])
+        self.assertFalse(g.decide("mcp__remote-devices__Claude_Browser__javascript_tool", {})[0])
+
+    def test_crash_fails_closed(self):
+        inp = json.dumps({"tool_name": C + "computer", "tool_input": {"action": "left_click",
+                                                                      "action_summary": 5}})
+        out = subprocess.run([sys.executable, SCRIPT], input=inp, capture_output=True, text=True)
+        self.assertTrue(out.returncode == 2 or '"deny"' in out.stdout)
