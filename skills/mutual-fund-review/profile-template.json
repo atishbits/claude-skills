@@ -15,5 +15,6 @@
  "equity_risk_premium_pts": 3,
  "horizon_years": 5,
  "expected_return_pct": 10,
- "index_fund_er_pct": 0.2
+ "index_fund_er_pct": 0.2,
+ "exclude_isins": []
 }

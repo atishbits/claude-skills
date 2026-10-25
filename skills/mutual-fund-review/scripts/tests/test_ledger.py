@@ -84,5 +84,24 @@ class TestUnitsAndReconcile(unittest.TestCase):
             self.assertTrue(path.endswith("snapshot-2026-10-25.json"))
 
 
+class TestExclude(unittest.TestCase):
+    def test_ingest_drops_excluded_isins(self):
+        import common
+        with tempfile.TemporaryDirectory() as tmp:
+            common.write_json(common.paths(tmp)["profile"], {"exclude_isins": ["INF000X01ZZ9"]})
+            keep = tx(isin="INF000X01AA1", source="cas")
+            drop = tx(isin="INF000X01ZZ9", source="cas", amount=100.0, units=10.0)
+            holdings = [{"source": "cas", "folio_ref": "0001-abcdef12", "isin": i, "units": u}
+                        for i, u in (("INF000X01AA1", 3382.003), ("INF000X01ZZ9", 10.0))]
+            out = ledger.ingest(tmp, "cas", holdings, [keep, drop], "2026-10-25", True)
+            self.assertEqual(out["excluded"], 2)
+            rows = ledger.read_transactions(common.paths(tmp)["transactions"])
+            self.assertEqual({r["isin"] for r in rows}, {"INF000X01AA1"})
+            with open(out["snapshot"]) as f:
+                snap = json.load(f)
+            self.assertEqual([h["isin"] for h in snap["holdings"]], ["INF000X01AA1"])
+            self.assertEqual(len(snap["reconciliation"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

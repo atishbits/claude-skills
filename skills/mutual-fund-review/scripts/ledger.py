@@ -155,8 +155,15 @@ def ingest(root, source, holdings, tx, date, transactions_complete, force=False,
     source's holdings do not reconcile, unless force. With supersede (a
     statement that carries full history), another source's holding of the same
     folio and ISIN is dropped from the snapshot; its transactions stay in the
-    ledger but no holding refers to them, so analysis ignores them."""
+    ledger but no holding refers to them, so analysis ignores them. Funds whose
+    ISIN is in the profile's `exclude_isins` are dropped before anything else;
+    `excluded` counts the rows and holdings dropped."""
     p = common.paths(root)
+    skip = set(common.load_profile(root).get("exclude_isins") or [])
+    n_before = len(tx) + len(holdings)
+    tx = [r for r in tx if r.get("isin") not in skip]
+    holdings = [h for h in holdings if h.get("isin") not in skip]
+    excluded = n_before - len(tx) - len(holdings)
     existing = read_transactions(p["transactions"])
     merged, stats = merge(existing, tx)
     recon = reconcile([r for r in merged if r["source"] == source], holdings)
@@ -192,4 +199,4 @@ def ingest(root, source, holdings, tx, date, transactions_complete, force=False,
     sources[source] = {"holdings_as_of": date, "transactions_complete": bool(transactions_complete)}
     write_transactions(p["transactions"], merged)
     snap = write_snapshot(root, date, keep + holdings, keep_recon + recon, sources, force=True)
-    return {**stats, "reconciliation": recon, "snapshot": snap}
+    return {**stats, "excluded": excluded, "reconciliation": recon, "snapshot": snap}
