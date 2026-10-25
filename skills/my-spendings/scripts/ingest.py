@@ -109,15 +109,21 @@ def parse(rows, adapter, addons=None):
 def check_balance(txns):
     """None when opening balance + all flows = closing balance (the order of rows
     within a day does not matter); otherwise the error text."""
-    b = [t for t in txns if t.get("balance") is not None]
-    if len(b) < 2 or len(b) != len(txns):
+    if len(txns) < 2 or any(t.get("balance") is None for t in txns):
         return None
-    opening = b[0]["balance"] - b[0]["amount"]
-    expected = round(opening + sum(t["amount"] for t in txns), 2)
-    if abs(expected - b[-1]["balance"]) > 0.01:
-        return (f"balance check failed: opening {opening:.2f} + flows gives {expected:.2f}, "
-                f"statement closes at {b[-1]['balance']:.2f}. A row may be missing or misread.")
-    return None
+    rows = sorted(txns, key=lambda t: t["date"])   # works for newest-first statements too
+    first, last = rows[0]["date"], rows[-1]["date"]
+    # Rows within one day may be printed in any order, so the opening balance is
+    # one of (balance - amount) on the first day and the closing one of the
+    # balances on the last day.
+    openings = {round(t["balance"] - t["amount"], 2) for t in rows if t["date"] == first}
+    closings = {round(t["balance"], 2) for t in rows if t["date"] == last}
+    flows = sum(t["amount"] for t in rows)
+    if any(abs(o + flows - c) <= 0.01 for o in openings for c in closings):
+        return None
+    o = sorted(openings)[0]
+    return (f"balance check failed: opening {o:.2f} + flows gives {o + flows:.2f}, but the "
+            f"statement closes at {sorted(closings)[-1]:.2f}. A row may be missing or misread.")
 
 
 def with_occurrence(txns):
@@ -175,6 +181,21 @@ def merge(ledger_path, txns, source_file):
     return {"added": added, "skipped": skipped}
 
 
+def new_inside_coverage(ledger_path, coverage_path, txns):
+    """How many of txns are new to the ledger yet dated inside dates already
+    covered for their account: a sign the same account was ingested from a
+    differently formatted file, which would double-count those days."""
+    have = {r["txn_id"] for r in load_ledger(ledger_path)}
+    cov = common.load_json(coverage_path, {})
+    n = 0
+    for t in with_occurrence(txns):
+        if txn_id(t) in have:
+            continue
+        if any(a <= t["date"] <= b for a, b in cov.get(t["account"], [])):
+            n += 1
+    return n
+
+
 def update_coverage(path, account, frm, to):
     cov = common.load_json(path, {})
     spans = sorted(cov.get(account, []) + [[frm, to]])
@@ -214,11 +235,15 @@ def main():
     err = check_balance(txns)
     if err and not a.force:
         sys.exit(err + " Re-download the statement, or pass --force to ingest it anyway.")
+    inside = new_inside_coverage(p["ledger"], p["coverage"], txns)
     res = merge(p["ledger"], txns, a.file)
     update_coverage(p["coverage"], adapter["account"], min(t["date"] for t in txns),
                     max(t["date"] for t in txns))
     res.update({"account": adapter["account"], "from": min(t["date"] for t in txns),
                 "to": max(t["date"] for t in txns), "balance_check": err or "ok"})
+    if inside:
+        res["warning"] = (f"{inside} new rows fall on dates this account already had. If this file is "
+                          "another format of a statement already ingested, they are duplicates.")
     print(json.dumps(res))
 
 

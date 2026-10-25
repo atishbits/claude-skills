@@ -4,7 +4,7 @@
   ["\\bSALARY\\b|PAYROLL", "income", "in"],
   ["DIVIDEND|\\bINT\\.?\\s?PD\\b|INTEREST (CREDIT|PAID)|\\bINT CR\\b|SAVINGS INTEREST", "interest", "in"],
   ["DIRECT ?TAX|\\bDTAX\\b|ADVANCE TAX|SELF ASSESSMENT TAX|INCOME TAX|\\bCBDT\\b", "tax", "any"],
-  ["TRF TO FD|\\bFD\\b|FIXED DEPOSIT|TERM DEPOSIT|RECURRING DEPOSIT|\\bRD\\b", "investment:fd", "any"],
+  ["TRF TO FD|\\bFD\\b|FIXED DEPOSIT|TERM DEPOSIT|RECURRING DEPOSIT", "investment:fd", "any"],
   ["MUTUAL FUND|\\bMF\\b|\\bSIP\\b|\\bAMC\\b", "investment:mf", "any"],
   ["CLEARING|BROKING|BROKERAGE|SECURITIES|\\bDEMAT\\b|STOCK ?BROK", "investment:stocks", "any"],
   ["\\bBONDS?\\b|DEBENTURE|\\bNCD\\b", "investment:bonds", "any"],

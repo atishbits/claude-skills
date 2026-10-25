@@ -54,7 +54,8 @@ annual fee), `gst_on_fees_pct` (default 18), `rates` (reward rate per category, 
 `point_value_inr` (rupee value of one reward unit; 1 for cashback), `fuel_surcharge_pct` (default
 1), `surcharge_waiver_pct` (100 = fully waived), `surcharge_txn_min` / `surcharge_txn_max` (the
 transaction band the waiver applies to), `surcharge_waiver_cap_month`, `use_for` (the categories
-you would move to this card; default all), `source`, `as_of`.
+you would move to this card; default: everyday spending that cards usually accept, leaving out
+rent, EMIs, cash, fees, tax and education — the output notes what was left out), `source`, `as_of`.
 
 ## What it produces
 

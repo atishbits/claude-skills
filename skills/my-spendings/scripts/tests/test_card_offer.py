@@ -80,6 +80,15 @@ class TestValue(unittest.TestCase):
             names = [r["name"] for r in json.loads(out.stdout)]
             self.assertEqual(names, ["High", "Low"])
 
+    def test_default_use_for_skips_uncardable(self):
+        o = dict(BASE, rates={"default": 0.01})
+        o.pop("use_for")
+        s = spend([], {"fuel": 0.0, "dining": 10000.0, "loan_emi": 100000.0, "housing": 50000.0,
+                       "card_spend_unexpanded": 50000.0})
+        v = card_offer.value(o, s)
+        self.assertEqual(v["rewards"], 100.0)
+        self.assertTrue(any("left out" in n and "loan_emi" in n for n in v["notes"]))
+
 
 if __name__ == "__main__":
     unittest.main()

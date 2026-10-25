@@ -21,6 +21,13 @@ DEFAULTS = {"joining_fee": 0, "annual_fee": 0, "fee_waiver_spend": None, "gst_on
             "surcharge_waiver_cap_month": None, "use_for": None}
 
 
+# Spending that can usually go on a credit card. Rent, EMIs, cash, fees, tax,
+# school fees and unknown or not-broken-down spend are left out unless an
+# offer's use_for names them.
+CARDABLE = ["fuel", "groceries", "food_delivery", "dining", "shopping", "utilities", "travel",
+            "transport", "health", "insurance", "subscriptions", "entertainment", "personal_care"]
+
+
 def _r(x):
     return round(x, 2)
 
@@ -36,7 +43,8 @@ def _by_month(txns, pred=lambda t: True):
 def value(offer, spend_12m):
     o = dict(DEFAULTS, **offer)
     factor = spend_12m.get("factor") or 1.0
-    cats = o["use_for"] or list(spend_12m["by_category"])
+    cats = o["use_for"] or [c for c in CARDABLE if c in spend_12m["by_category"]]
+    left = sorted(c for c in spend_12m["by_category"] if c not in cats and spend_12m["by_category"][c] > 0)
     pv = o["point_value_inr"]
     rewards = 0.0
     notes = []
@@ -68,6 +76,8 @@ def value(offer, spend_12m):
     if spend_12m.get("annualised"):
         notes.append(f"spend annualised from {spend_12m.get('months_covered')} months of statements")
     notes.append("assumes all of " + ", ".join(cats) + " spending moves to this card")
+    if left:
+        notes.append("left out (usually not payable by card): " + ", ".join(left))
     return {"name": o.get("name", "?"), "rewards": _r(rewards), "surcharge_saved": _r(saved),
             "fees": _r(fees), "first_year_extra": _r(o["joining_fee"] * gst),
             "net": _r(rewards + saved - fees), "spend_on_card": _r(on_card), "notes": notes,

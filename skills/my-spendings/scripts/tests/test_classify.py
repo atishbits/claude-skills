@@ -75,6 +75,13 @@ class TestClassify(unittest.TestCase):
     def test_default_rule_categories_are_known(self):
         for r in DEFAULTS:
             self.assertIn(r.category, classify.CATEGORIES, r.pattern)
+    def test_salary_with_own_name_is_income(self):
+        self.assertEqual(cat("NEFT CR-ACME CORP-JANE DOE-SALARY APR", 100000), "income")
+
+    def test_road_in_merchant_is_not_investment(self):
+        self.assertNotIn(cat("GREEN LEAF CAFE MG RD BENGALURU", -800, "card-1"),
+                         ("investment:fd", "investment:mf"))
+
 
 
 class TestAddRule(unittest.TestCase):

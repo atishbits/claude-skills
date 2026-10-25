@@ -75,6 +75,23 @@ class TestResolve(unittest.TestCase):
                 t("2026-05-02", "savings-main", 900, "dining")]
         self.assertEqual(run(rows, {})[0], ["other_in", "spend", "spend", "other_in"])
 
+    def test_first_bill_before_card_coverage_counts_once(self):
+        rows = [t("2026-04-03", "savings-main", -20000, "card_payment", "UPI/CARDPAY/x"),
+                t("2026-04-04", "card-1", 20000, "card_payment", "PAYMENT RECEIVED")]
+        b, c, _ = run(rows, {"card-1": [["2026-03-15", "2026-04-14"]]})
+        self.assertEqual((b[0], c[0]), ("spend", "card_spend_unexpanded"))
+
+    def test_unpatterned_bill_matched_by_card_credit(self):
+        rows = [t("2026-05-03", "savings-main", -20000, "card_payment", "BILLPAY CC"),
+                t("2026-05-05", "card-1", 20000, "card_payment", "PAYMENT RECEIVED")]
+        b, _, w = run(rows, {"card-1": [["2026-04-01", "2026-05-31"]]})
+        self.assertEqual(b, ["excluded", "excluded"])
+        self.assertEqual(w, [])
+
+    def test_card_credit_in_spend_category_reduces_spend(self):
+        rows = [t("2026-05-02", "card-1", 500, "shopping", "WEBSHOP REFUND")]
+        self.assertEqual(run(rows, {})[0], ["spend"])
+
 
 if __name__ == "__main__":
     unittest.main()

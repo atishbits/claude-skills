@@ -72,6 +72,9 @@ def classify(txn, user_rules, default_rules, accounts):
         if a.get("type") == "card" and a.get("bill_payment_pattern") and amount < 0 \
                 and re.search(a["bill_payment_pattern"], desc, re.I):
             return "card_payment"
+    for r in default_rules:   # salary or interest credits often carry the user's own name
+        if r.category in ("income", "interest") and r.direction == "in" and _hit(r, desc, amount):
+            return r.category
     for p in (accounts or {}).get("self_patterns", []):
         if re.search(p, desc, re.I):
             return "own_transfer"

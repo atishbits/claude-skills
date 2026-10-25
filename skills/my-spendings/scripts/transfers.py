@@ -12,7 +12,10 @@ that is not labelled as income or a refund), excluded.
 import datetime as dt
 import re
 
-BILL_CYCLE_DAYS = 35
+# A bill paid on day d pays the statement that closed up to ~20 days earlier,
+# whose purchases ran up to ~30 days before that. Day d-25 sits inside that
+# statement's period for the usual 30-day cycle and 15-20 day grace period.
+BILLED_DAY_OFFSET = 25
 CARD_MATCH_DAYS = 7
 OWN_MATCH_DAYS = 3
 
@@ -30,8 +33,8 @@ def _bucket_for(category):
 
 
 def _covered(spans, date):
-    d = _d(date)
-    return any(_d(a) <= d and _d(b) >= d - dt.timedelta(days=BILL_CYCLE_DAYS) for a, b in spans)
+    billed = _d(date) - dt.timedelta(days=BILLED_DAY_OFFSET)
+    return any(_d(a) <= billed <= _d(b) for a, b in spans)
 
 
 def resolve(txns, accounts, coverage):
@@ -52,6 +55,17 @@ def resolve(txns, accounts, coverage):
                 continue
             card = next((c for c in cards if c.get("bill_payment_pattern") and
                          re.search(c["bill_payment_pattern"], t.get("description", ""), re.I)), None)
+            if card is None:
+                # No pattern names the card: match a payment credit on any card instead.
+                j = next((j for j, u in enumerate(out) if j not in used and u["category"] == "card_payment"
+                          and accts.get(u["account"], {}).get("type") == "card"
+                          and abs(float(u["amount"]) + amt) <= 1
+                          and abs((_d(u["date"]) - _d(t["date"])).days) <= CARD_MATCH_DAYS
+                          and _covered(coverage.get(u["account"], []), t["date"])), None)
+                if j is not None:
+                    used.add(j)
+                    t["bucket"] = "excluded"
+                    continue
             if card and _covered(coverage.get(card["alias"], []), t["date"]):
                 t["bucket"] = "excluded"
                 match = next((j for j, u in enumerate(out) if j not in used
@@ -83,7 +97,7 @@ def resolve(txns, accounts, coverage):
                 t["bucket"] = "own_moved_out" if amt < 0 else "excluded"
             continue
         t["bucket"] = _bucket_for(cat)
-        if t["bucket"] == "spend" and amt > 0 and cat != "refund":
+        if t["bucket"] == "spend" and amt > 0 and cat != "refund" and acct.get("type") != "card":
             t["bucket"] = "other_in"   # unlabelled money in: neither income nor less spending
     for j in used:
         if out[j].get("bucket") is None or out[j]["category"] == "own_transfer":

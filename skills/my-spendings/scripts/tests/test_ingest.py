@@ -72,6 +72,22 @@ class TestParse(unittest.TestCase):
         ids = [ingest.txn_id(x) for x in ingest.with_occurrence(t)]
         self.assertEqual(len(set(ids)), len(ids))
 
+    def test_balance_check_newest_first(self):
+        self.assertIsNone(ingest.check_balance(list(reversed(bank_rows()))))
+
+    def test_balance_check_first_and_last_day_order(self):
+        t = bank_rows()
+        extra = dict(t[0], amount=-100.0, balance=t[0]["balance"] - 100, description="X")
+        t.insert(1, extra)
+        for r in t[2:]:
+            r["balance"] -= 100
+        t[0], t[1] = t[1], t[0]           # first-day rows swapped
+        self.assertIsNone(ingest.check_balance(t))
+        last = dict(t[-1], amount=-50.0, balance=t[-1]["balance"] - 50, description="Y")
+        t.append(last)
+        t[-1], t[-2] = t[-2], t[-1]       # last-day rows swapped
+        self.assertIsNone(ingest.check_balance(t))
+
 
 class TestLedger(unittest.TestCase):
     def setUp(self):
@@ -105,6 +121,13 @@ class TestLedger(unittest.TestCase):
         for r in ingest.load_ledger(self.ledger):
             self.assertEqual(r["account"], "savings-main")
             self.assertNotIn("1234", r["account"])
+    def test_new_rows_inside_coverage_counted(self):
+        ingest.merge(self.ledger, card_rows(), "card.txt")
+        ingest.update_coverage(self.cov, "card-1", "2026-04-01", "2026-04-30")
+        other = [dict(r, description=r["description"] + " CITY") for r in card_rows()[:2]]
+        self.assertEqual(ingest.new_inside_coverage(self.ledger, self.cov, other), 2)
+        self.assertEqual(ingest.new_inside_coverage(self.ledger, self.cov, card_rows()), 0)
+
 
 
 class TestCli(unittest.TestCase):
