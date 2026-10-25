@@ -34,7 +34,8 @@ the Income Tax Act, 1961 (renumbered 424/425 under the Income Tax Act 2025):
 **Where the personal numbers live.** The skill ships statutory constants only — the due-date
 schedule, the Section 24(a) standard deduction and the 4% cess. Every rate that depends on the
 person (slab, FD and savings rates, surcharge band) comes from *their* `tax-profile.json`, which
-is personal and is never committed. It sits in a **working folder** (WORKDIR below) with the rest
+is personal and is never committed. It sits in a **data folder** (WORKDIR below, the `data/` folder
+inside a working root, WORKROOT) with the rest
 of the skill's state: a payment ledger (`ledger.md`), `bond-interest.json` when the user holds
 bonds, and `notes.md`, the skill's local memory. **Read `WORKDIR/notes.md` first if it exists**: it
 is where the user's own sources for each input are written down (which account, platform or tool a
@@ -44,13 +45,17 @@ Nothing specific to a person, a platform they use or another tool of theirs belo
 ## Step 0 — working folder
 
 Run every command in this skill from the folder holding this file (`${CLAUDE_SKILL_DIR}` where that
-variable is set). First run `python3 scripts/compute_advance_tax.py --where`. It prints the working
-folder as JSON: `$ADVANCE_TAX_DIR`, else this skill's own `data/` folder if it already exists (the
-skill installed from a checkout of its repo, where `data/` is gitignored).
+variable is set). First run `python3 scripts/compute_advance_tax.py --where`. It prints JSON: the
+data folder (`folder`), the working root that holds it (`root`), and which state files exist. The
+data folder is `$ADVANCE_TAX_ROOT/data`, else this skill's own `data/` folder if it already exists
+(the skill installed from a checkout of its repo, where `data/` is gitignored).
 
-- **`folder` is set:** that is WORKDIR. Create it if `exists` is false.
-- **`folder` is null:** ask the user where to keep the files.
-  - **Claude Code:** any path, e.g. `~/Documents/advance-tax/`. Offer to set `ADVANCE_TAX_DIR` to
+- **`folder` is set:** that is WORKDIR, and `root` is WORKROOT. Create WORKDIR if `exists` is false.
+  If the output has a `note`, the user still has the old `ADVANCE_TAX_DIR` setting: the run works,
+  but pass the note on and offer to move the files.
+- **`folder` is null:** ask the user where to keep the files. The answer is WORKROOT, and WORKDIR is
+  its `data/` folder.
+  - **Claude Code:** any path, e.g. `~/Documents/advance-tax/`. Offer to set `ADVANCE_TAX_ROOT` to
     it in the `env` block of their Claude Code settings, so later runs find it.
   - **A desktop app with a folder shared to the session:** a folder inside it.
   - **Neither** (nothing written here outlasts the session): a temporary folder, with the cloud

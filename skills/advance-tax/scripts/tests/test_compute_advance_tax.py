@@ -78,40 +78,72 @@ class TestFindProfile(unittest.TestCase):
 
 
 class TestWorkingFolder(unittest.TestCase):
-    def test_the_variable_wins_over_the_data_folder(self):
+    def test_the_root_variable_wins_over_the_data_folder(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as root:
+            data = Path(root) / "data"
+            data.mkdir()
+            (data / cat.PROFILE_NAME).write_text("{}")
+            (data / "ledger.md").write_text("")
+            with mock.patch.object(cat, "DATA_DIR", Path(d)), \
+                    mock.patch.dict(os.environ, {cat.ROOT_ENV: root}, clear=True):
+                self.assertEqual(cat.working_folder(), (data, cat.ROOT_ENV))
+                out = cat.where()
+                self.assertEqual(out["files"], [cat.PROFILE_NAME, "ledger.md"])
+                self.assertEqual(out["root"], root)
+                with mock.patch.object(Path, "cwd", return_value=Path(d)):
+                    self.assertEqual(cat.find_profile(), data / cat.PROFILE_NAME)
+
+    def test_the_legacy_variable_still_works_and_says_how_to_move(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as work:
             (Path(work) / cat.PROFILE_NAME).write_text("{}")
-            (Path(work) / "ledger.md").write_text("")
             with mock.patch.object(cat, "DATA_DIR", Path(d)), \
-                    mock.patch.dict(os.environ, {cat.DIR_ENV: work}, clear=True):
-                self.assertEqual(cat.working_folder(), (Path(work), cat.DIR_ENV))
-                self.assertEqual(cat.where()["files"], [cat.PROFILE_NAME, "ledger.md"])
+                    mock.patch.dict(os.environ, {cat.LEGACY_DIR_ENV: work}, clear=True):
+                self.assertEqual(cat.working_folder(), (Path(work), cat.LEGACY_DIR_ENV))
+                out = cat.where()
+                self.assertIsNone(out["root"])
+                self.assertIn(cat.ROOT_ENV, out["note"])
                 with mock.patch.object(Path, "cwd", return_value=Path(d)):
                     self.assertEqual(cat.find_profile(), Path(work) / cat.PROFILE_NAME)
+
+    def test_the_root_variable_wins_over_the_legacy_one(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as work:
+            with mock.patch.dict(os.environ, {cat.ROOT_ENV: root, cat.LEGACY_DIR_ENV: work},
+                                 clear=True):
+                self.assertEqual(cat.working_folder(), (Path(root) / "data", cat.ROOT_ENV))
+
+    def test_the_skills_own_data_folder_has_the_skill_as_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = Path(d) / "data"
+            data.mkdir()
+            with mock.patch.object(cat, "DATA_DIR", data), \
+                    mock.patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(cat.where()["root"], d)
 
     def test_a_missing_data_folder_is_not_made_up(self):
         with tempfile.TemporaryDirectory() as d:
             with mock.patch.object(cat, "DATA_DIR", Path(d) / "data"), \
                     mock.patch.dict(os.environ, {}, clear=True):
                 self.assertEqual(cat.working_folder(), (None, None))
-                self.assertEqual(cat.where(), {"folder": None, "from": None,
+                self.assertEqual(cat.where(), {"folder": None, "from": None, "root": None,
                                                "exists": False, "files": []})
                 self.assertFalse((Path(d) / "data").exists())
 
-    def test_a_named_folder_not_yet_made(self):
+    def test_a_named_root_not_yet_made(self):
         with tempfile.TemporaryDirectory() as d:
-            new = str(Path(d) / "advance-tax")
-            with mock.patch.dict(os.environ, {cat.DIR_ENV: new}, clear=True):
-                self.assertEqual(cat.where(), {"folder": new, "from": cat.DIR_ENV,
+            root = str(Path(d) / "advance-tax")
+            with mock.patch.dict(os.environ, {cat.ROOT_ENV: root}, clear=True):
+                self.assertEqual(cat.where(), {"folder": str(Path(root) / "data"),
+                                               "from": cat.ROOT_ENV, "root": root,
                                                "exists": False, "files": []})
 
     def test_where_alone_prints_json(self):
         with tempfile.TemporaryDirectory() as d:
             buf = io.StringIO()
-            with mock.patch.dict(os.environ, {cat.DIR_ENV: d}, clear=True), \
+            with mock.patch.dict(os.environ, {cat.ROOT_ENV: d}, clear=True), \
                     contextlib.redirect_stdout(buf):
                 cat.main(["--where"])
-            self.assertEqual(json.loads(buf.getvalue())["folder"], d)
+            out = json.loads(buf.getvalue())
+            self.assertEqual((out["folder"], out["root"]), (str(Path(d) / "data"), d))
 
 
 class TestMain(unittest.TestCase):

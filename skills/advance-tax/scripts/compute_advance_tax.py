@@ -19,7 +19,7 @@ netted off to give the amount due now, per Sec 208/211 (renumbered
     Advance tax due now = cum_pct x estimated annual tax - tax already paid this FY
 
 Run `python3 compute_advance_tax.py --help` for all options, and
-`python3 compute_advance_tax.py --where` (alone) to print the working folder
+`python3 compute_advance_tax.py --where` (alone) to print the data folder
 the skill keeps its personal files in, as JSON.
 """
 import argparse
@@ -33,11 +33,15 @@ from pathlib import Path
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "tax-profile-template.json"
 PROFILE_NAME = "tax-profile.json"
-# The working folder holds the personal files. $ADVANCE_TAX_DIR names it; without
-# that, the skill's own data/ folder, gitignored, when the skill runs from a
-# checkout of the repo and that folder already exists.
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-DIR_ENV = "ADVANCE_TAX_DIR"
+# The personal files live in data/ inside a working root. $ADVANCE_TAX_ROOT names
+# the root; without it, the skill's own folder, when the skill runs from a
+# checkout of the repo and its data/ (gitignored) already exists.
+SKILL_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = SKILL_DIR / "data"
+ROOT_ENV = "ADVANCE_TAX_ROOT"
+# Before the shared layout, $ADVANCE_TAX_DIR named the data folder itself. Still
+# read, so an existing setup keeps working; --where says how to move off it.
+LEGACY_DIR_ENV = "ADVANCE_TAX_DIR"
 # What the skill keeps in the working folder, and syncs with its cloud copy.
 STATE_FILES = (PROFILE_NAME, "ledger.md", "notes.md", "bond-interest.json")
 
@@ -51,25 +55,34 @@ def load_config():
 
 
 def working_folder():
-    """(folder, where it came from): $ADVANCE_TAX_DIR, else the skill's data/
-    folder if it already exists, else (None, None). The skill never creates
-    data/ itself: installed as a plugin, its folder is replaced on update, so
-    a folder made there would be lost. With None the user names a folder."""
-    env = os.environ.get(DIR_ENV)
-    if env:
-        return Path(env).expanduser(), DIR_ENV
+    """(data folder, where it came from): $ADVANCE_TAX_ROOT/data, else the
+    legacy $ADVANCE_TAX_DIR, else the skill's data/ folder if it already
+    exists, else (None, None). The skill never creates data/ in its own
+    folder: installed as a plugin, that folder is replaced on update, so a
+    folder made there would be lost. With None the user names a root."""
+    root = os.environ.get(ROOT_ENV)
+    if root:
+        return Path(root).expanduser() / "data", ROOT_ENV
+    legacy = os.environ.get(LEGACY_DIR_ENV)
+    if legacy:
+        return Path(legacy).expanduser(), LEGACY_DIR_ENV
     if DATA_DIR.is_dir():
         return DATA_DIR, "skill data/"
     return None, None
 
 
 def where():
-    """What --where prints: the working folder and which state files it has."""
+    """What --where prints: the data folder, the working root that holds it
+    (what --root means to drive_sync.py), and which state files it has."""
     folder, source = working_folder()
     out = {"folder": str(folder) if folder else None, "from": source,
+           "root": str(folder.parent) if folder and folder.name == "data" else None,
            "exists": bool(folder and folder.is_dir()), "files": []}
     if out["exists"]:
         out["files"] = [n for n in STATE_FILES if (folder / n).is_file()]
+    if source == LEGACY_DIR_ENV:
+        out["note"] = (f"${LEGACY_DIR_ENV} is the old setting. Move these files into a data/ "
+                       f"folder inside a root of your choice and set ${ROOT_ENV} to that root.")
     return out
 
 
@@ -115,7 +128,7 @@ def load_person(args, statutory):
         raise SystemExit(
             f"Missing rate(s) for {args.person!r}: {', '.join(missing)}.\n"
             f"These are personal and are never stored with the skill. Either:\n"
-            f"  - copy {TEMPLATE_PATH} to {PROFILE_NAME} in your working folder (${DIR_ENV}),\n"
+            f"  - copy {TEMPLATE_PATH} to {PROFILE_NAME} in your working root's data/ folder (${ROOT_ENV}),\n"
             f"    or anywhere and pass --profile or set $TAX_PROFILE, and fill it in from last year's ITR, a\n"
             f"    salary slip or an FD receipt, or\n"
             f"  - pass them for this run: "

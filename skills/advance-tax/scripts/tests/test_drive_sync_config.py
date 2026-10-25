@@ -57,8 +57,8 @@ class TestAdvanceTaxConfig(unittest.TestCase):
 
     def test_marker_and_root(self):
         self.assertEqual(ds.CFG["marker"], "advance-tax-sync.json")
-        self.assertEqual(ds.CFG["root_env"], cat.DIR_ENV)
-        self.assertEqual(ds.CFG["data_dir"], ".")
+        self.assertEqual(ds.CFG["root_env"], cat.ROOT_ENV)
+        self.assertEqual(ds.CFG["data_dir"], "data")
 
 
 if __name__ == "__main__":
