@@ -84,6 +84,16 @@
         "./skills/my-spendings"
       ],
       "homepage": "https://github.com/atishbits/claude-skills"
+    },
+    {
+      "name": "html-slides",
+      "description": "Build visual HTML slide decks on any topic: charts, diagrams and big numbers with brief, sourced text, from web research (deep when asked), a report or data file, or a codebase. Arrow, swipe and tap navigation that reads on a phone; published as a private link. Keeps decks in a local folder with an optional copy in your cloud storage.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/html-slides"
+      ],
+      "homepage": "https://github.com/atishbits/claude-skills"
     }
   ]
 }

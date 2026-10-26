@@ -21,6 +21,12 @@ sbi-tt-rates.json
 
 !skills/*/*-template.*
 
+# Generated pages -- slide decks, reports -- carry the data they were built
+# from. The only HTML that belongs here is a skill's own template in assets/.
+*.html
+*.htm
+!skills/*/assets/*.html
+
 # The names hooks/pre-commit must never let in: brokers, platforms, banks,
 # tickers actually held. One term or extended regex per line. The list is as
 # private as what it guards, so it stays out of git.

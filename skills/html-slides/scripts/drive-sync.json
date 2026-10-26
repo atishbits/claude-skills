@@ -1,0 +1,12 @@
+{
+ "marker": "html-slides-sync.json",
+ "root_env": "SLIDES_ROOT",
+ "data_dir": "data",
+ "kinds": {
+  "state": {"patterns": ["notes.md", "profile.json", "*.conflict-*", "skill-data/*.conflict-*",
+                         "skill-data/decks/*.conflict-*"]},
+  "deck": {"patterns": ["skill-data/decks.json", "skill-data/decks/*.json", "skill-data/research/*.md"]},
+  "source": {"patterns": ["raw/*"], "upload": false}
+ },
+ "_comment": "Notes, settings, the deck index (with each deck's private link) and the deck files themselves go both ways: they are small, and the Claude app can rebuild any deck's HTML from its resolved .json. The HTML is not synced: it is rebuildable, larger, and viewed through its private link. raw/ only comes down, so a source file can be dropped into the cloud folder from the phone."
+}

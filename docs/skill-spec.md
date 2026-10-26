@@ -1,7 +1,7 @@
 # Skill spec
 
 How every skill in this repo is built. Read it before creating a skill or restructuring one, and
-copy the newest skill that follows it (`skills/my-spendings`, `skills/mutual-fund-review`) rather
+copy the newest skill that follows it (`skills/html-slides`, `skills/my-spendings`) rather
 than starting from a blank folder.
 
 **Keep it current.** When a change sets or alters a convention that more than one skill follows
@@ -27,7 +27,10 @@ The repo invariant in `README.md` and `CLAUDE.md` applies in full. In short:
     account statements;
   - **bonds, FDs and other investments:** what is held, amounts, maturity dates, the platform;
   - **tax and identity:** ITR, Form 16, 26AS, AIS, PAN, Aadhaar, address, phone, email;
-  - real amounts of any kind, and generated reports built from any of the above.
+  - real amounts of any kind, and generated reports built from any of the above;
+  - **generated pages**: no `.html` a run produced (a slide deck, a report page), whatever it
+    shows. `.gitignore` ignores every `.html` and `hooks/pre-commit` refuses one, except a skill's
+    own page template in `skills/<name>/assets/`.
 
   Examples and test fixtures use invented names, invented tickers (`STOCKA`, `FUNDX`), round numbers,
   and card numbers that fail the Luhn checksum: `hooks/pre-commit` (through `hooks/card_numbers.py`)
@@ -52,6 +55,7 @@ skills/<name>/                  tracked
   README.md                     what it does, where its data lives, how to install, tests
   *-template.json|csv|md        what the user fills in, with invented values
   references/                   docs the skill reads on demand (cloud_sync.md, glossary.md, ...)
+  assets/                       files a script fills in or copies, such as a page template (*.html)
   scripts/
     *.py                        every deterministic step (see CLAUDE.md)
     drive-sync.json             what syncs to cloud storage (section 3)

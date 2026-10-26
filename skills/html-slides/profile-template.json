@@ -1,0 +1,8 @@
+{
+ "_comment": "Copy to data/profile.json and change any value. accent: #rrggbb used for headings, bars and highlights. number_style: in (12,34,567), intl (1,234,567), lakh (12.3L), compact (1.2M) or plain. currency: the prefix money: true adds. max_slides: a warning above this. research: quick or deep, the default when a request does not say.",
+ "accent": "#2f6fde",
+ "number_style": "in",
+ "currency": "₹",
+ "max_slides": 16,
+ "research": "quick"
+}

@@ -40,6 +40,16 @@ while IFS= read -r f; do
       note "$f — generated from someone's holdings"; continue ;;
   esac
 
+  # Generated pages (a slide deck, a report) carry the data they were built
+  # from. Only a skill's own template, under skills/<name>/assets/, is tooling.
+  case "$low" in
+    *.html|*.htm)
+      case "$f" in
+        skills/*/assets/*.html) ;;
+        *) note "$f — generated HTML (a deck or report) never goes in git; only skills/<name>/assets/*.html"; continue ;;
+      esac ;;
+  esac
+
   # Source files are judged on their content further down, never on their name.
   # A skill *about* tax is legitimate tooling: skills/advance-tax/SKILL.md must
   # not trip a rule meant for a tax statement.

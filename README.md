@@ -19,10 +19,12 @@ a working folder that does hold that data**, so the scripts run from inside this
 Four things enforce it, and all four should stay:
 
 1. **`.gitignore`** excludes what a run produces — `data/`, `stocks/`, `PORTFOLIO.md`,
-   `*holdings*.csv`, `__pycache__/` — with the one exception of a skill's
-   `holdings-template.csv`, which contains only made-up rows.
+   `*holdings*.csv`, every `.html` page, `__pycache__/` — with the exceptions of a skill's
+   `*-template.*` files, which contain only made-up values, and its `assets/*.html` page
+   template.
 2. **`hooks/pre-commit`** blocks a commit whose staged files look like data: broker exports, tax
-   documents, spreadsheets and statements (`.xlsx`, `.pdf`, `.ofx`, …), generated reports, or
+   documents, spreadsheets and statements (`.xlsx`, `.pdf`, `.ofx`, …), generated reports and
+   HTML pages (anything `.html` outside a skill's `assets/`), or
    content matching a PAN, Aadhaar, demat ID, payment-card number or a broker export header. Enable it in a fresh clone
    with:
 
@@ -88,7 +90,7 @@ in examples, and anything the skill generates from a user's own files stays in i
 
 `.claude-plugin/marketplace.json` makes this repository a plugin source. It lists every skill
 here: `news-briefing`, `portfolio-review`, `pdf-unlock`, `itr2-filing-assistant`, `advance-tax`,
-`bond-portfolio-monitor`, `mutual-fund-review` and `my-spendings`. In Cowork, add the marketplace `atishbits/claude-skills` once and
+`bond-portfolio-monitor`, `mutual-fund-review`, `my-spendings` and `html-slides`. In Cowork, add the marketplace `atishbits/claude-skills` once and
 install each plugin; in Claude Code:
 
     /plugin install news-briefing --marketplace atishbits/claude-skills
@@ -99,6 +101,7 @@ install each plugin; in Claude Code:
     /plugin install bond-portfolio-monitor --marketplace atishbits/claude-skills
     /plugin install mutual-fund-review --marketplace atishbits/claude-skills
     /plugin install my-spendings --marketplace atishbits/claude-skills
+    /plugin install html-slides --marketplace atishbits/claude-skills
 
 An installed plugin follows this repository: update the plugin to get the latest commit. A skill
 can instead be symlinked into `~/.claude/skills/` from a clone, as described above; it then keeps
